@@ -182,3 +182,36 @@ h1 {
 .button:hover {
   background: var(--accent-hover);
 }
+
+.button:disabled {
+  cursor: not-allowed;
+}
+
+.loading {
+  padding: 2rem;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+
+.error-message {
+  padding: 1rem 1.5rem;
+  color: var(--critical);
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: 8px;
+  font-size: 0.9rem;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+select option {
+  background: #1a1a2e;
+  color: var(--text-main);
+}

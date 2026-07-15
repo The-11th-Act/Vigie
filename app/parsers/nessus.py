@@ -1,5 +1,9 @@
 import xml.etree.ElementTree as ET
+import logging
 from typing import List, Dict, Any
+
+logger = logging.getLogger(__name__)
+
 
 def parse_nessus_report(xml_content: bytes) -> List[Dict[str, Any]]:
     results = []
@@ -19,14 +23,17 @@ def parse_nessus_report(xml_content: bytes) -> List[Dict[str, Any]]:
                 cve_elements = item.findall('cve')
                 if not cve_elements:
                     continue
-                    
-                cvss_score = float(item.find('cvss_base_score').text) if item.find('cvss_base_score') is not None else 0.0
+
+                cvss_el = item.find('cvss_base_score')
+                cvss_score = float(cvss_el.text) if cvss_el is not None and cvss_el.text else 0.0
                 severity = item.attrib.get('severity', '0')
                 severity_map = {"0": "None", "1": "Low", "2": "Medium", "3": "High", "4": "Critical"}
                 severity_text = severity_map.get(severity, "Low")
 
                 for cve_el in cve_elements:
                     cve_id = cve_el.text
+                    if not cve_id:
+                        continue
                     results.append({
                         "ip_address": ip_address,
                         "hostname": hostname,
@@ -37,6 +44,6 @@ def parse_nessus_report(xml_content: bytes) -> List[Dict[str, Any]]:
                         "cvss_score": cvss_score,
                         "severity": severity_text
                     })
-    except Exception as e:
-        print(f"Error parsing Nessus file: {e}")
+    except ET.ParseError as e:
+        logger.error("Error parsing Nessus file: %s", e)
     return results

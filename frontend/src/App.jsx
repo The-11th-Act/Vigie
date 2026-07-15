@@ -4,15 +4,14 @@ import { LayoutDashboard, Server, ShieldAlert, UploadCloud } from 'lucide-react'
 import Dashboard from './components/Dashboard'
 import AssetsList from './components/AssetsList'
 import VulnerabilitiesList from './components/VulnerabilitiesList'
+import ScanUpload from './components/ScanUpload'
 
 function Sidebar() {
   return (
     <aside className="sidebar">
-      <div className="sidebar-header">
-        RBVM Platform
-      </div>
+      <div className="sidebar-header">RBVM Platform</div>
       <nav className="sidebar-nav">
-        <NavLink to="/" className={({isActive}) => isActive ? "nav-item active" : "nav-item"}>
+        <NavLink to="/" end className={({isActive}) => isActive ? "nav-item active" : "nav-item"}>
           <LayoutDashboard size={20} />
           Dashboard
         </NavLink>
@@ -23,6 +22,10 @@ function Sidebar() {
         <NavLink to="/vulnerabilities" className={({isActive}) => isActive ? "nav-item active" : "nav-item"}>
           <ShieldAlert size={20} />
           Vulnerabilities
+        </NavLink>
+        <NavLink to="/scans" className={({isActive}) => isActive ? "nav-item active" : "nav-item"}>
+          <UploadCloud size={20} />
+          Scan Upload
         </NavLink>
       </nav>
     </aside>
@@ -39,6 +42,7 @@ function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/assets" element={<AssetsList />} />
             <Route path="/vulnerabilities" element={<VulnerabilitiesList />} />
+            <Route path="/scans" element={<ScanUpload />} />
           </Routes>
         </main>
       </div>

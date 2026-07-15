@@ -41,6 +41,8 @@ services:
       - DATABASE_URL=postgresql://tvm_user:tvm_password@db:5432/tvm_platform
       - REDIS_URL=redis://redis:6379/0
       - SECRET_KEY=supersecretjwtkeychangeitinproduction1234567890
+      - ACCESS_TOKEN_EXPIRE_MINUTES=60
+      - BACKEND_CORS_ORIGINS=["http://localhost:5173","http://localhost:3000","http://frontend:5173"]
     depends_on:
       db:
         condition: service_healthy
@@ -71,6 +73,8 @@ services:
       - /app/node_modules
     ports:
       - "5173:5173"
+    environment:
+      - VITE_API_TARGET=http://web:8000
     depends_on:
       - web
 
