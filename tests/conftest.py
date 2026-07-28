@@ -1,10 +1,23 @@
-import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from app.db.database import Base, get_db
-from app.main import app
+import os
+
+# Must be set before anything imports app.core.config / app.db.database, which
+# build the engine at import time. Without this the suite tries to reach a real
+# PostgreSQL instance just to collect tests.
+os.environ.setdefault("DATABASE_URL", "sqlite:///./test.db")
+os.environ.setdefault("SECRET_KEY", "test-secret-key-not-used-in-production-0123456789")
+os.environ.setdefault("ENVIRONMENT", "development")
+
+import pytest  # noqa: E402
+from sqlalchemy import create_engine  # noqa: E402
+from sqlalchemy.orm import sessionmaker  # noqa: E402
+
+from app.db.database import Base, get_db  # noqa: E402
+from app.main import app  # noqa: E402
 
 TEST_DATABASE_URL = "sqlite:///./test.db"
+
+# Satisfies the registration password policy (>= 12 chars, letter + digit).
+VALID_PASSWORD = "testpass123456"
 
 
 @pytest.fixture(scope="session")
@@ -33,6 +46,29 @@ def db_session(db_engine):
 def client(db_session):
     from fastapi.testclient import TestClient
 
+    from app.core.security import decode_token, require_admin
+
+    def override_get_db():
+        try:
+            yield db_session
+        finally:
+            pass
+
+    def override_auth():
+        return {"sub": "1", "role": "admin", "username": "admin"}
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[decode_token] = override_auth
+    app.dependency_overrides[require_admin] = override_auth
+    yield TestClient(app)
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture(scope="function")
+def unauthenticated_client(db_session):
+    """Client with the auth dependency left in place, for access-control tests."""
+    from fastapi.testclient import TestClient
+
     def override_get_db():
         try:
             yield db_session
@@ -52,7 +88,7 @@ def auth_token(client, db_session):
     user = User(
         email="admin@test.com",
         username="admin",
-        hashed_password=get_password_hash("testpass123"),
+        hashed_password=get_password_hash(VALID_PASSWORD),
         role="admin",
     )
     db_session.add(user)
@@ -60,7 +96,7 @@ def auth_token(client, db_session):
 
     response = client.post(
         "/api/v1/auth/login",
-        json={"username": "admin", "password": "testpass123"},
+        json={"username": "admin", "password": VALID_PASSWORD},
     )
     return response.json()["access_token"]
 

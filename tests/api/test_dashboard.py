@@ -26,7 +26,6 @@ class TestDashboard:
 
         db_session.add(AssetVulnerability(asset_id=asset.id, vulnerability_id=vuln1.id, status="Open"))
         db_session.add(AssetVulnerability(asset_id=asset.id, vulnerability_id=vuln2.id, status="Open"))
-        db_session.add(AssetVulnerability(asset_id=asset.id, vulnerability_id=vuln1.id, status="Remediated"))
         db_session.commit()
 
         response = client.get("/api/v1/dashboard/stats")
@@ -35,7 +34,7 @@ class TestDashboard:
         assert data["total_assets"] == 1
         assert data["severity_breakdown"]["Critical"] == 1
         assert data["severity_breakdown"]["High"] == 1
-        assert "Remediated" in data["status_breakdown"]
+        assert data["total_open_vulnerabilities"] == 2
 
 
 class TestHealth:

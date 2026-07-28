@@ -88,6 +88,12 @@ class TestAssets:
         assert data["total"] == 1
         assert data["items"][0]["hostname"] == "web-prod-01"
 
-    def test_limit_capped(self, client):
+    def test_limit_above_maximum_is_rejected(self, client):
+        # The limit is now declared with le=MAX_LIMIT, so an oversized page size
+        # is an explicit 422 rather than being silently clamped.
         response = client.get("/api/v1/assets/?limit=10000")
+        assert response.status_code == 422
+
+    def test_limit_at_maximum_is_accepted(self, client):
+        response = client.get("/api/v1/assets/?limit=500")
         assert response.status_code == 200

@@ -17,12 +17,13 @@ class TestAssetVulnerabilities:
         db_session.add(asset)
         db_session.flush()
 
-        vuln = Vulnerability(cve_id="CVE-2024-AV1", title="Test", cvss_score=8.0, severity="High")
-        db_session.add(vuln)
+        vuln1 = Vulnerability(cve_id="CVE-2024-AV1-1", title="Test 1", cvss_score=8.0, severity="High")
+        vuln2 = Vulnerability(cve_id="CVE-2024-AV1-2", title="Test 2", cvss_score=7.0, severity="Medium")
+        db_session.add_all([vuln1, vuln2])
         db_session.flush()
 
-        db_session.add(AssetVulnerability(asset_id=asset.id, vulnerability_id=vuln.id, status="Open"))
-        db_session.add(AssetVulnerability(asset_id=asset.id, vulnerability_id=vuln.id, status="Remediated"))
+        db_session.add(AssetVulnerability(asset_id=asset.id, vulnerability_id=vuln1.id, status="Open"))
+        db_session.add(AssetVulnerability(asset_id=asset.id, vulnerability_id=vuln2.id, status="Remediated"))
         db_session.commit()
 
         response = client.get(f"/api/v1/vulnerabilities/assets/{asset.id}")
@@ -34,12 +35,13 @@ class TestAssetVulnerabilities:
         db_session.add(asset)
         db_session.flush()
 
-        vuln = Vulnerability(cve_id="CVE-2024-AV2", title="Test", cvss_score=5.0, severity="Medium")
-        db_session.add(vuln)
+        vuln1 = Vulnerability(cve_id="CVE-2024-AV2-1", title="Test 1", cvss_score=5.0, severity="Medium")
+        vuln2 = Vulnerability(cve_id="CVE-2024-AV2-2", title="Test 2", cvss_score=4.0, severity="Low")
+        db_session.add_all([vuln1, vuln2])
         db_session.flush()
 
-        db_session.add(AssetVulnerability(asset_id=asset.id, vulnerability_id=vuln.id, status="Open"))
-        db_session.add(AssetVulnerability(asset_id=asset.id, vulnerability_id=vuln.id, status="Remediated"))
+        db_session.add(AssetVulnerability(asset_id=asset.id, vulnerability_id=vuln1.id, status="Open"))
+        db_session.add(AssetVulnerability(asset_id=asset.id, vulnerability_id=vuln2.id, status="Remediated"))
         db_session.commit()
 
         response = client.get(f"/api/v1/vulnerabilities/assets/{asset.id}?status_filter=Open")

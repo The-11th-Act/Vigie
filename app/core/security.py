@@ -21,7 +21,7 @@ def create_access_token(
     to_encode = {"exp": expire, "sub": str(subject)}
     if extra_claims:
         to_encode.update(extra_claims)
-    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm="HS256")
+    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -39,12 +39,32 @@ def decode_token(token: str = Depends(oauth2_scheme)) -> dict:
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
-        if payload.get("sub") is None:
-            raise credentials_exception
-        return payload
+        payload = jwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM],
+            options={"require": ["exp", "sub"]},
+        )
     except jwt.PyJWTError:
         raise credentials_exception
+
+    if payload.get("sub") is None:
+        raise credentials_exception
+    return payload
+
+
+# Pre-computed hash of a throwaway password. Verifying against it costs the same
+# as verifying a real one, so an unknown username and a wrong password take
+# indistinguishable time — closing the user-enumeration side channel.
+_DUMMY_HASH = pwd_context.hash("timing-attack-mitigation-placeholder")
+
+
+def verify_password_constant_time(plain_password: str, hashed_password: str | None) -> bool:
+    """Verify a password, always doing the hashing work even for unknown users."""
+    if hashed_password is None:
+        pwd_context.verify(plain_password, _DUMMY_HASH)
+        return False
+    return pwd_context.verify(plain_password, hashed_password)
 
 
 def require_admin(token_data: dict = Depends(decode_token)) -> dict:
