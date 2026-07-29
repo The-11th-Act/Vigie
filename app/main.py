@@ -8,9 +8,10 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from starlette.responses import JSONResponse
 
-from app.api.v1 import assets, auth, dashboard, scans, vulnerabilities
+from app.api.v1 import assets, auth, dashboard, scans, users, vulnerabilities
+from app.core.bootstrap import bootstrap_admin_user
 from app.core.config import settings
-from app.db.database import get_db
+from app.db.database import SessionLocal, get_db
 
 
 def configure_logging() -> None:
@@ -55,6 +56,7 @@ app.add_middleware(
 )
 
 app.include_router(auth.router, prefix=f"{settings.API_V1_STR}/auth", tags=["Auth"])
+app.include_router(users.router, prefix=f"{settings.API_V1_STR}/users", tags=["Users"])
 app.include_router(
     dashboard.router, prefix=f"{settings.API_V1_STR}/dashboard", tags=["Dashboard"]
 )
@@ -65,6 +67,15 @@ app.include_router(
     tags=["Vulnerabilities"],
 )
 app.include_router(scans.router, prefix=f"{settings.API_V1_STR}/scans", tags=["Scans"])
+
+
+@app.on_event("startup")
+def _bootstrap_admin() -> None:
+    db = SessionLocal()
+    try:
+        bootstrap_admin_user(db)
+    finally:
+        db.close()
 
 
 @app.get("/", tags=["Health"])

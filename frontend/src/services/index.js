@@ -14,6 +14,9 @@ export const authService = {
 export const dashboardService = {
   getStats: () =>
     api.get('/dashboard/stats'),
+
+  getTopRisks: (limit = 10) =>
+    api.get('/dashboard/top-risks', { params: { limit } }),
 }
 
 export const assetService = {
@@ -42,6 +45,12 @@ export const vulnerabilityService = {
 
   getByAsset: (assetId, params = {}) =>
     api.get(`/vulnerabilities/assets/${assetId}`, { params }),
+
+  getFindings: (params = {}) =>
+    api.get('/vulnerabilities/findings', { params }),
+
+  updateFinding: (id, data) =>
+    api.patch(`/vulnerabilities/findings/${id}`, data),
 }
 
 export const scanService = {

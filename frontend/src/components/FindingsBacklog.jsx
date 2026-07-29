@@ -1,0 +1,258 @@
+import React, { useState, useCallback } from 'react';
+import { vulnerabilityService } from '../services';
+import { useFetch } from '../hooks/useFetch';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
+
+const PAGE_SIZE = 20;
+const STATUSES = ['Open', 'False Positive', 'Risk Accepted', 'Remediated'];
+const STATUSES_REQUIRING_NOTE = new Set(['False Positive', 'Risk Accepted']);
+
+function formatDate(value) {
+  if (!value) return '-';
+  return new Date(value).toLocaleDateString();
+}
+
+export default function FindingsBacklog() {
+  const [page, setPage] = useState(0);
+  const [statusFilter, setStatusFilter] = useState('');
+  const [minRisk, setMinRisk] = useState('');
+  const [overdueOnly, setOverdueOnly] = useState(false);
+  const [rowState, setRowState] = useState({});
+
+  const fetchFindings = useCallback(async () => {
+    const res = await vulnerabilityService.getFindings({
+      skip: page * PAGE_SIZE,
+      limit: PAGE_SIZE,
+      status_filter: statusFilter || undefined,
+      min_risk: minRisk || undefined,
+      overdue_only: overdueOnly || undefined,
+    });
+    return res.data;
+  }, [page, statusFilter, minRisk, overdueOnly]);
+
+  const { data, loading, error, refetch } = useFetch(fetchFindings, [
+    page,
+    statusFilter,
+    minRisk,
+    overdueOnly,
+  ]);
+
+  const totalPages = data ? Math.ceil(data.total / PAGE_SIZE) : 0;
+
+  const getRow = (id) => rowState[id] || { status: '', note: '', submitting: false, error: null };
+
+  const setRow = (id, patch) => {
+    setRowState((prev) => ({ ...prev, [id]: { ...getRow(id), ...patch } }));
+  };
+
+  const handleStatusChange = (finding, newStatus) => {
+    setRow(finding.id, { status: newStatus, note: '', error: null });
+  };
+
+  const handleSubmit = async (finding) => {
+    const row = getRow(finding.id);
+    const nextStatus = row.status || finding.status;
+
+    setRow(finding.id, { submitting: true, error: null });
+    try {
+      await vulnerabilityService.updateFinding(finding.id, {
+        status: nextStatus,
+        status_note: row.note || undefined,
+      });
+      setRow(finding.id, { submitting: false, status: '', note: '' });
+      refetch();
+    } catch (err) {
+      setRow(finding.id, {
+        submitting: false,
+        error: err.response?.data?.detail || err.message || 'Update failed',
+      });
+    }
+  };
+
+  return (
+    <div>
+      <h1>Risk-Ranked Backlog ({data?.total || 0})</h1>
+
+      <div
+        className="filters"
+        style={{ marginBottom: '1rem', display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}
+      >
+        <select
+          value={statusFilter}
+          onChange={(e) => {
+            setStatusFilter(e.target.value);
+            setPage(0);
+          }}
+          style={{
+            padding: '0.6rem 0.75rem', background: 'rgba(255,255,255,0.05)',
+            border: '1px solid var(--border)', borderRadius: '8px',
+            color: 'var(--text-main)', fontSize: '0.875rem', outline: 'none', cursor: 'pointer',
+          }}
+        >
+          <option value="">All Statuses</option>
+          {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+
+        <input
+          type="number"
+          min="0"
+          max="10"
+          step="0.1"
+          placeholder="Min risk score"
+          value={minRisk}
+          onChange={(e) => {
+            setMinRisk(e.target.value);
+            setPage(0);
+          }}
+          style={{
+            width: 140, padding: '0.6rem 0.75rem',
+            background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)',
+            borderRadius: '8px', color: 'var(--text-main)', fontSize: '0.875rem', outline: 'none',
+          }}
+        />
+
+        <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.875rem', color: 'var(--text-muted)' }}>
+          <input
+            type="checkbox"
+            checked={overdueOnly}
+            onChange={(e) => {
+              setOverdueOnly(e.target.checked);
+              setPage(0);
+            }}
+          />
+          Overdue only
+        </label>
+      </div>
+
+      {loading && <div className="loading">Loading backlog...</div>}
+      {error && <div className="error-message">Error: {error}</div>}
+
+      {data && (
+        <>
+          <div className="glass-panel data-table-container">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Asset</th>
+                  <th>CVE</th>
+                  <th>Risk</th>
+                  <th>Deadline</th>
+                  <th>Status</th>
+                  <th>Triage</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.items.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
+                      No findings match these filters
+                    </td>
+                  </tr>
+                ) : (
+                  data.items.map((finding) => {
+                    const row = getRow(finding.id);
+                    const pendingStatus = row.status || finding.status;
+                    const noteRequired = STATUSES_REQUIRING_NOTE.has(pendingStatus);
+                    const isChanged = row.status && row.status !== finding.status;
+
+                    return (
+                      <tr key={finding.id}>
+                        <td>
+                          {finding.asset?.hostname || finding.asset?.ip_address || `Asset #${finding.asset_id}`}
+                        </td>
+                        <td>
+                          <div style={{ fontWeight: 600, color: 'var(--accent)', fontFamily: 'monospace' }}>
+                            {finding.vulnerability?.cve_id}
+                          </div>
+                          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', maxWidth: 320, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {finding.vulnerability?.title}
+                          </div>
+                        </td>
+                        <td>
+                          <span className={`badge badge-${finding.risk_level.toLowerCase()}`}>
+                            {finding.risk_score.toFixed(2)}
+                          </span>
+                        </td>
+                        <td>
+                          {formatDate(finding.remediation_deadline)}
+                          {finding.is_overdue && (
+                            <div style={{ fontSize: '0.75rem', color: 'var(--high)' }}>Overdue</div>
+                          )}
+                        </td>
+                        <td>{finding.status}</td>
+                        <td>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', minWidth: 220 }}>
+                            <select
+                              value={pendingStatus}
+                              onChange={(e) => handleStatusChange(finding, e.target.value)}
+                              style={{
+                                padding: '0.4rem 0.5rem', background: 'rgba(255,255,255,0.05)',
+                                border: '1px solid var(--border)', borderRadius: '6px',
+                                color: 'var(--text-main)', fontSize: '0.8rem', outline: 'none', cursor: 'pointer',
+                              }}
+                            >
+                              {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+                            </select>
+
+                            {isChanged && noteRequired && (
+                              <textarea
+                                placeholder="Justification required..."
+                                value={row.note}
+                                onChange={(e) => setRow(finding.id, { note: e.target.value })}
+                                rows={2}
+                                style={{
+                                  padding: '0.4rem 0.5rem', background: 'rgba(255,255,255,0.05)',
+                                  border: '1px solid var(--border)', borderRadius: '6px',
+                                  color: 'var(--text-main)', fontSize: '0.8rem', outline: 'none', resize: 'vertical',
+                                }}
+                              />
+                            )}
+
+                            {isChanged && (
+                              <button
+                                className="button"
+                                disabled={row.submitting || (noteRequired && !row.note.trim())}
+                                onClick={() => handleSubmit(finding)}
+                                style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem', justifyContent: 'center' }}
+                              >
+                                {row.submitting ? 'Saving...' : 'Save'}
+                              </button>
+                            )}
+
+                            {row.error && <div className="error-message" style={{ padding: '0.4rem 0.6rem', fontSize: '0.75rem' }}>{row.error}</div>}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {totalPages > 1 && (
+            <div className="pagination" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1rem', marginTop: '1.5rem' }}>
+              <button
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                disabled={page === 0}
+                style={{ background: 'none', border: '1px solid var(--border)', borderRadius: '6px', padding: '0.4rem 0.6rem', color: 'var(--text-main)', cursor: page === 0 ? 'not-allowed' : 'pointer', opacity: page === 0 ? 0.4 : 1 }}
+              >
+                <ChevronLeft size={18} />
+              </button>
+              <span style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+                Page {page + 1} of {totalPages}
+              </span>
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                disabled={page >= totalPages - 1}
+                style={{ background: 'none', border: '1px solid var(--border)', borderRadius: '6px', padding: '0.4rem 0.6rem', color: 'var(--text-main)', cursor: page >= totalPages - 1 ? 'not-allowed' : 'pointer', opacity: page >= totalPages - 1 ? 0.4 : 1 }}
+              >
+                <ChevronRight size={18} />
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}

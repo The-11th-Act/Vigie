@@ -37,6 +37,12 @@ class Settings(BaseSettings):
 
     LOG_LEVEL: str = "INFO"
 
+    # All three required together: bootstraps (or promotes) the first admin
+    # account on startup. Left unset, no admin is created automatically.
+    ADMIN_USERNAME: str | None = None
+    ADMIN_EMAIL: str | None = None
+    ADMIN_PASSWORD: str | None = None
+
     model_config = SettingsConfigDict(
         case_sensitive=True, env_file=".env", extra="ignore"
     )
