@@ -27,6 +27,18 @@ services:
       timeout: 5s
       retries: 5
 
+  migrate:
+    build: .
+    container_name: tvm_migrate
+    command: alembic upgrade head
+    environment:
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required - see .env.example}
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-tvm_user}:${POSTGRES_PASSWORD:-tvm_password}@db:5432/${POSTGRES_DB:-tvm_platform}
+    depends_on:
+      db:
+        condition: service_healthy
+
   web:
     build: .
     container_name: tvm_api
@@ -44,6 +56,11 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-60}
       - BACKEND_CORS_ORIGINS=["http://localhost:5173","http://localhost:3000","http://frontend:5173"]
+      # Optional: auto-creates (or promotes) the first admin account on
+      # startup when all three are set. Leave unset to skip bootstrap.
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)\""]
       interval: 15s
@@ -55,6 +72,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
   worker:
     build: .
@@ -72,6 +91,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
   frontend:
     build: ./frontend

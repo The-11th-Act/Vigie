@@ -108,7 +108,8 @@ def get_findings(
     order by.
     """
     query = db.query(AssetVulnerability).options(
-        joinedload(AssetVulnerability.vulnerability)
+        joinedload(AssetVulnerability.vulnerability),
+        joinedload(AssetVulnerability.asset),
     )
 
     if status_filter:
