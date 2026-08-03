@@ -3,8 +3,9 @@
 Kept deliberately free of Celery imports so it can be unit-tested against a
 plain SQLAlchemy session; the worker task is a thin wrapper around it.
 """
+
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Tuple
 
@@ -170,9 +171,7 @@ def _unambiguous_hostnames(findings: List[Dict[str, Any]]) -> set:
     for finding in findings:
         hostname = _normalized_hostname(finding.get("hostname"))
         if hostname:
-            addresses_by_hostname.setdefault(hostname, set()).add(
-                finding["ip_address"]
-            )
+            addresses_by_hostname.setdefault(hostname, set()).add(finding["ip_address"])
 
     return {
         hostname

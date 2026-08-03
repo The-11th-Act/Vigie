@@ -106,7 +106,7 @@ async def upload_scan_file(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Scan processing queue is unavailable. Please retry shortly.",
-        )
+        ) from exc
 
     scan_job.task_id = task.id
     db.commit()
@@ -228,7 +228,7 @@ async def _stream_to_disk(file: UploadFile, destination: str, max_bytes: int) ->
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Scan storage is unavailable. Please retry shortly.",
-        )
+        ) from exc
 
     return total
 

@@ -12,15 +12,15 @@ MAX_PASSWORD_LENGTH = 72
 class UserCreate(BaseModel):
     email: EmailStr
     username: str = Field(..., min_length=3, max_length=64, pattern=r"^[A-Za-z0-9._-]+$")
-    password: str = Field(..., min_length=MIN_PASSWORD_LENGTH, max_length=MAX_PASSWORD_LENGTH)
+    password: str = Field(
+        ..., min_length=MIN_PASSWORD_LENGTH, max_length=MAX_PASSWORD_LENGTH
+    )
 
     @field_validator("password")
     @classmethod
     def validate_password_strength(cls, v: str) -> str:
         if len(v.encode("utf-8")) > MAX_PASSWORD_LENGTH:
-            raise ValueError(
-                f"password must be at most {MAX_PASSWORD_LENGTH} bytes long"
-            )
+            raise ValueError(f"password must be at most {MAX_PASSWORD_LENGTH} bytes long")
         if not any(c.isalpha() for c in v):
             raise ValueError("password must contain at least one letter")
         if not any(c.isdigit() for c in v):

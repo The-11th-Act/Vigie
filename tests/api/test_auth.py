@@ -59,9 +59,9 @@ class TestAuth:
     @pytest.mark.parametrize(
         "password",
         [
-            "short1",          # below the minimum length
-            "nodigitsatall",   # missing a digit
-            "1234567890123",   # missing a letter
+            "short1",  # below the minimum length
+            "nodigitsatall",  # missing a digit
+            "1234567890123",  # missing a letter
         ],
     )
     def test_register_rejects_weak_password(self, client, password):
@@ -79,11 +79,13 @@ class TestAuth:
         from app.core.security import get_password_hash
         from app.models.user import User
 
-        db_session.add(User(
-            email="existing@test.com",
-            username="existing",
-            hashed_password=get_password_hash(VALID_PASSWORD),
-        ))
+        db_session.add(
+            User(
+                email="existing@test.com",
+                username="existing",
+                hashed_password=get_password_hash(VALID_PASSWORD),
+            )
+        )
         db_session.commit()
 
         response = client.post(
@@ -104,11 +106,13 @@ class TestAuth:
         from app.core.security import get_password_hash
         from app.models.user import User
 
-        db_session.add(User(
-            email="login@test.com",
-            username="loginuser",
-            hashed_password=get_password_hash("correctpass123"),
-        ))
+        db_session.add(
+            User(
+                email="login@test.com",
+                username="loginuser",
+                hashed_password=get_password_hash("correctpass123"),
+            )
+        )
         db_session.commit()
 
         response = client.post(
@@ -142,7 +146,10 @@ class TestLoginThrottling:
         self, unauthenticated_client, registered_user
     ):
         for _ in range(settings.LOGIN_MAX_ATTEMPTS):
-            assert login(unauthenticated_client, password="wrongpass12345").status_code == 401
+            assert (
+                login(unauthenticated_client, password="wrongpass12345").status_code
+                == 401
+            )
 
         response = login(unauthenticated_client, password="wrongpass12345")
         assert response.status_code == 429
@@ -167,7 +174,10 @@ class TestLoginThrottling:
 
         # The earlier failures must not carry over into the next window.
         for _ in range(settings.LOGIN_MAX_ATTEMPTS - 1):
-            assert login(unauthenticated_client, password="wrongpass12345").status_code == 401
+            assert (
+                login(unauthenticated_client, password="wrongpass12345").status_code
+                == 401
+            )
 
 
 class TestTokenLifecycle:
@@ -224,7 +234,10 @@ class TestTokenLifecycle:
         body = login(unauthenticated_client).json()
         headers = {"Authorization": f"Bearer {body['access_token']}"}
 
-        assert unauthenticated_client.get("/api/v1/auth/me", headers=headers).status_code == 200
+        assert (
+            unauthenticated_client.get("/api/v1/auth/me", headers=headers).status_code
+            == 200
+        )
 
         logout = unauthenticated_client.post(
             "/api/v1/auth/logout",
@@ -235,7 +248,10 @@ class TestTokenLifecycle:
 
         # Regression: clearing browser storage used to leave a token valid for
         # its full remaining lifetime.
-        assert unauthenticated_client.get("/api/v1/auth/me", headers=headers).status_code == 401
+        assert (
+            unauthenticated_client.get("/api/v1/auth/me", headers=headers).status_code
+            == 401
+        )
 
     def test_logout_revokes_the_refresh_token(
         self, unauthenticated_client, registered_user

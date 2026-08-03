@@ -1,6 +1,8 @@
-from pydantic import BaseModel, field_validator
-from typing import Optional, List
 from datetime import datetime
+from typing import List, Optional
+
+from pydantic import BaseModel
+
 from app.models.asset import Criticality
 
 

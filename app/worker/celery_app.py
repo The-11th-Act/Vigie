@@ -21,9 +21,7 @@ if settings.CROWDSTRIKE_SYNC_ENABLED:
     celery_app.conf.beat_schedule = {
         "crowdstrike-sync": {
             "task": "app.worker.tasks.sync_crowdstrike_task",
-            "schedule": timedelta(
-                minutes=settings.CROWDSTRIKE_SYNC_INTERVAL_MINUTES
-            ),
+            "schedule": timedelta(minutes=settings.CROWDSTRIKE_SYNC_INTERVAL_MINUTES),
         }
     }
 

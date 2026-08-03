@@ -115,8 +115,8 @@ def refresh(body: RefreshRequest, db: Session = Depends(get_db)):
 
     try:
         user_id = int(payload["sub"])
-    except (KeyError, TypeError, ValueError):
-        raise INVALID_CREDENTIALS
+    except (KeyError, TypeError, ValueError) as exc:
+        raise INVALID_CREDENTIALS from exc
 
     user = db.get(User, user_id)
     if user is None:
@@ -163,11 +163,11 @@ def get_current_user_info(
 ):
     try:
         user_id = int(payload["sub"])
-    except (KeyError, TypeError, ValueError):
+    except (KeyError, TypeError, ValueError) as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token subject",
-        )
+        ) from exc
 
     user = db.get(User, user_id)
     if not user:

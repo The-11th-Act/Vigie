@@ -57,7 +57,9 @@ class TestBootstrapAdmin:
 
         assert db_session.query(User).filter(User.username == "repeatadmin").count() == 1
 
-    def test_invalid_credentials_are_skipped_without_raising(self, db_session, monkeypatch):
+    def test_invalid_credentials_are_skipped_without_raising(
+        self, db_session, monkeypatch
+    ):
         monkeypatch.setattr(settings, "ADMIN_USERNAME", "bad")
         monkeypatch.setattr(settings, "ADMIN_EMAIL", "not-an-email")
         monkeypatch.setattr(settings, "ADMIN_PASSWORD", "short")

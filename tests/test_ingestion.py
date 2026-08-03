@@ -111,7 +111,7 @@ class TestIngestion:
         ingest_findings(db_session, [finding()], "nessus")
 
         asset = db_session.query(Asset).filter(Asset.ip_address == "10.0.0.1").one()
-        assert asset.hostname == "curated-name"       # not clobbered
+        assert asset.hostname == "curated-name"  # not clobbered
         assert asset.operating_system == "Ubuntu 22.04"  # filled in
 
     def test_deduplicates_within_a_single_batch(self, db_session):
@@ -189,7 +189,9 @@ class TestAssetDeduplication:
 class TestCriticalityRules:
     def test_criticality_comes_from_the_subnet(self, db_session, monkeypatch):
         monkeypatch.setattr(
-            settings, "CRITICALITY_RULES", {"10.0.0.0/8": "Low", "10.0.5.0/24": "Critical"}
+            settings,
+            "CRITICALITY_RULES",
+            {"10.0.0.0/8": "Low", "10.0.5.0/24": "Critical"},
         )
 
         ingest_findings(
@@ -241,9 +243,7 @@ class TestAutomaticClosure:
                 "nessus",
             )
 
-        closed = db_session.query(AssetVulnerability).filter_by(
-            vulnerability_id=1
-        ).one()
+        closed = db_session.query(AssetVulnerability).filter_by(vulnerability_id=1).one()
         assert closed.status == Status.remediated
         assert closed.fixed_at is not None
 
@@ -256,9 +256,9 @@ class TestAutomaticClosure:
             "nessus",
         )
 
-        still_open = db_session.query(AssetVulnerability).filter_by(
-            vulnerability_id=1
-        ).one()
+        still_open = (
+            db_session.query(AssetVulnerability).filter_by(vulnerability_id=1).one()
+        )
         assert still_open.status == Status.open
         assert still_open.missed_scans == 1
 
@@ -271,9 +271,9 @@ class TestAutomaticClosure:
         )
         ingest_findings(db_session, [finding()], "nessus")
 
-        refreshed = db_session.query(AssetVulnerability).filter_by(
-            vulnerability_id=1
-        ).one()
+        refreshed = (
+            db_session.query(AssetVulnerability).filter_by(vulnerability_id=1).one()
+        )
         assert refreshed.missed_scans == 0
         assert refreshed.status == Status.open
 
@@ -288,9 +288,9 @@ class TestAutomaticClosure:
                 "openvas",
             )
 
-        untouched = db_session.query(AssetVulnerability).filter_by(
-            vulnerability_id=1
-        ).one()
+        untouched = (
+            db_session.query(AssetVulnerability).filter_by(vulnerability_id=1).one()
+        )
         assert untouched.status == Status.open
         assert untouched.missed_scans == 0
 
@@ -306,7 +306,10 @@ class TestAutomaticClosure:
             )
 
         assert (
-            db_session.query(AssetVulnerability).filter_by(vulnerability_id=1).one().status
+            db_session.query(AssetVulnerability)
+            .filter_by(vulnerability_id=1)
+            .one()
+            .status
             == Status.open
         )
 

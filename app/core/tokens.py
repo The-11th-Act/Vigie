@@ -5,6 +5,7 @@ expires unless something records that it was revoked. Each token carries a
 ``jti``; logging out (or rotating a refresh token) stores that id until the
 token's own expiry, after which the entry is pointless and Redis drops it.
 """
+
 import logging
 import time
 from typing import Optional

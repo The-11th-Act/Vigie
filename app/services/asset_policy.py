@@ -5,6 +5,7 @@ freshly discovered production host indistinguishable from a lab box until
 somebody curated it by hand. Mapping subnets to a business criticality lets the
 first scan already place findings in roughly the right order.
 """
+
 import ipaddress
 import logging
 from typing import Optional

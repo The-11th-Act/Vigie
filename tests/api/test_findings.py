@@ -131,8 +131,12 @@ class TestFindingsBacklog:
         assert scores == sorted(scores, reverse=True)
 
     def test_min_risk_filter(self, client, finding):
-        assert client.get("/api/v1/vulnerabilities/findings?min_risk=9").json()["total"] == 0
-        assert client.get("/api/v1/vulnerabilities/findings?min_risk=5").json()["total"] == 1
+        assert (
+            client.get("/api/v1/vulnerabilities/findings?min_risk=9").json()["total"] == 0
+        )
+        assert (
+            client.get("/api/v1/vulnerabilities/findings?min_risk=5").json()["total"] == 1
+        )
 
     def test_response_exposes_risk_level(self, client, finding):
         item = client.get("/api/v1/vulnerabilities/findings").json()["items"][0]

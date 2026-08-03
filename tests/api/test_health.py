@@ -1,4 +1,5 @@
 """Liveness, readiness, correlation ids and the error envelope."""
+
 import pytest
 from fastapi import APIRouter
 
@@ -30,9 +31,7 @@ class TestReadiness:
         assert response.status_code == 200
         assert response.json()["status"] == "ready"
 
-    @pytest.mark.parametrize(
-        "failing", ["database", "redis", "celery"]
-    )
+    @pytest.mark.parametrize("failing", ["database", "redis", "celery"])
     def test_degraded_when_a_dependency_is_down(self, client, monkeypatch, failing):
         self._stub(monkeypatch, **{failing: "unreachable"})
 

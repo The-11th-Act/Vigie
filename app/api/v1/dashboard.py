@@ -28,9 +28,10 @@ def get_dashboard_stats(
         .group_by(Vulnerability.severity)
         .all()
     )
-    severity_dict = {s.value: 0 for s in (
-        Severity.critical, Severity.high, Severity.medium, Severity.low
-    )}
+    severity_dict = {
+        s.value: 0
+        for s in (Severity.critical, Severity.high, Severity.medium, Severity.low)
+    }
     for severity, count in severity_counts:
         severity_dict[_value_of(severity)] = count
 

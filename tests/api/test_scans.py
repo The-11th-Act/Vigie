@@ -3,6 +3,7 @@
 Regression: this endpoint previously had no authentication at all, letting
 anyone inject arbitrary assets and findings or saturate the worker pool.
 """
+
 import io
 
 import pytest
@@ -108,9 +109,7 @@ class TestScanUploadValidation:
         def boom(*args, **kwargs):
             raise ConnectionError("redis is down")
 
-        monkeypatch.setattr(
-            "app.api.v1.scans.process_scan_file_task.apply_async", boom
-        )
+        monkeypatch.setattr("app.api.v1.scans.process_scan_file_task.apply_async", boom)
 
         response = client.post(
             "/api/v1/scans/upload",
@@ -125,9 +124,7 @@ class TestScanUploadValidation:
 class TestScanStaging:
     """The upload is written to disk; only its path reaches the broker."""
 
-    def test_file_is_staged_and_path_is_queued(
-        self, client, no_broker, scan_upload_dir
-    ):
+    def test_file_is_staged_and_path_is_queued(self, client, no_broker, scan_upload_dir):
         client.post(
             "/api/v1/scans/upload",
             data={"scan_type": "nessus"},
@@ -171,9 +168,7 @@ class TestScanStaging:
         def boom(*args, **kwargs):
             raise ConnectionError("redis is down")
 
-        monkeypatch.setattr(
-            "app.api.v1.scans.process_scan_file_task.apply_async", boom
-        )
+        monkeypatch.setattr("app.api.v1.scans.process_scan_file_task.apply_async", boom)
 
         client.post(
             "/api/v1/scans/upload",

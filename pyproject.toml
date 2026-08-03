@@ -1,0 +1,53 @@
+[tool.black]
+# Matches the width the codebase was already written to.
+line-length = 90
+target-version = ["py311"]
+extend-exclude = "app/db/migrations/versions"
+
+[tool.ruff]
+line-length = 90
+target-version = "py311"
+extend-exclude = ["app/db/migrations/versions"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle
+    "F",   # pyflakes
+    "I",   # import sorting
+    "B",   # bugbear
+    "C4",  # comprehensions
+]
+# "UP" (pyupgrade) is deliberately left out of this first adoption. It wants
+# ~160 mechanical rewrites (Optional[X] -> X | None, Dict -> dict) that would
+# bury real changes in churn, and UP042 would turn the (str, Enum) classes
+# backing our persisted severity/status values into StrEnum — where str() means
+# something different. Worth doing one day, as its own reviewed change.
+ignore = [
+    # Formatting is Black's job; leaving this on makes the two fight over
+    # lines Black has deliberately left long (URLs, long string literals).
+    "E501",
+    # FastAPI's whole dependency system is `Depends()` in a default argument.
+    "B008",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Test modules deliberately import inside functions to control import order.
+"tests/*" = ["E402"]
+"tests/conftest.py" = ["E402"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["app/db/migrations/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]

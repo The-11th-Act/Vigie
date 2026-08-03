@@ -4,6 +4,7 @@ Labels use the *route template* (``/api/v1/assets/{asset_id}``) rather than the
 resolved path: labelling by raw path would mint a new time series per asset id
 and blow up cardinality.
 """
+
 import logging
 
 from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram

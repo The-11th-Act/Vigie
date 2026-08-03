@@ -83,8 +83,8 @@ def _decode(token: str, expected_type: str) -> dict:
             algorithms=[settings.ALGORITHM],
             options={"require": ["exp", "sub"]},
         )
-    except jwt.PyJWTError:
-        raise credentials_exception
+    except jwt.PyJWTError as exc:
+        raise credentials_exception from exc
 
     if payload.get("sub") is None:
         raise credentials_exception

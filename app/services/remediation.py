@@ -1,4 +1,5 @@
 """Remediation SLA policy."""
+
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 

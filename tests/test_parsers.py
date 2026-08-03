@@ -4,6 +4,7 @@ These cover the failure modes that previously reached the database: severity
 values outside the enum, unparseable CVSS scores, junk CVE identifiers, and
 XML entity expansion attacks.
 """
+
 from app.models.vulnerability import Severity
 from app.parsers.nessus import parse_nessus_report
 from app.parsers.openvas import parse_openvas_report

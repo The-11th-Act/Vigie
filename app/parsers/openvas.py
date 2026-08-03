@@ -66,7 +66,9 @@ def parse_openvas_report(xml_content: bytes) -> List[Dict[str, Any]]:
             continue
 
         host_el = result.find("host")
-        ip_address = clean_text(host_el.text if host_el is not None else None) or "Unknown"
+        ip_address = (
+            clean_text(host_el.text if host_el is not None else None) or "Unknown"
+        )
 
         hostname_el = result.find("host/hostname")
         hostname = clean_text(hostname_el.text if hostname_el is not None else None)
@@ -77,9 +79,7 @@ def parse_openvas_report(xml_content: bytes) -> List[Dict[str, Any]]:
         # Newer GVM reports carry the score on <severity> instead.
         if cvss_score == 0.0:
             severity_el = result.find("severity")
-            cvss_score = safe_float(
-                severity_el.text if severity_el is not None else None
-            )
+            cvss_score = safe_float(severity_el.text if severity_el is not None else None)
 
         threat_el = result.find("threat")
         severity = normalize_severity(
@@ -87,7 +87,9 @@ def parse_openvas_report(xml_content: bytes) -> List[Dict[str, Any]]:
         )
 
         name_el = nvt_el.find("name")
-        title = clean_text(name_el.text if name_el is not None else None) or "Vulnerability"
+        title = (
+            clean_text(name_el.text if name_el is not None else None) or "Vulnerability"
+        )
 
         description_el = result.find("description")
         description = clean_text(

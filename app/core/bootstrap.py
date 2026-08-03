@@ -5,6 +5,7 @@ admin account, without an HTTP endpoint that could be abused to self-elevate.
 Configured via ``ADMIN_USERNAME`` / ``ADMIN_EMAIL`` / ``ADMIN_PASSWORD``; if
 any of the three is missing, this is a no-op.
 """
+
 import logging
 
 from pydantic import ValidationError
@@ -41,7 +42,9 @@ def bootstrap_admin_user(db: Session) -> None:
 
     existing = (
         db.query(User)
-        .filter(or_(User.username == credentials.username, User.email == credentials.email))
+        .filter(
+            or_(User.username == credentials.username, User.email == credentials.email)
+        )
         .first()
     )
 

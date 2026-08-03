@@ -2,11 +2,13 @@ from enum import Enum
 
 from sqlalchemy import (
     DateTime,
-    Enum as SAEnum,
     ForeignKey,
     Integer,
     String,
     Text,
+)
+from sqlalchemy import (
+    Enum as SAEnum,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func

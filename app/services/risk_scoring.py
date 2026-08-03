@@ -6,6 +6,7 @@ on the production payment database. The score below contextualises CVSS with
 business criticality and finding age so the backlog can be ordered by what
 actually needs fixing first.
 """
+
 from datetime import datetime, timezone
 from typing import Optional
 

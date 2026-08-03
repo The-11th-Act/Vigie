@@ -10,6 +10,7 @@ The response mapping follows CrowdStrike's published schema. It has not been
 exercised against a live tenant from here, so if a sync comes back empty the
 field names are the first thing to re-check against your own region's API.
 """
+
 import logging
 import time
 from typing import Any, Dict, Iterator, List, Optional

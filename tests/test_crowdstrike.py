@@ -5,9 +5,10 @@ credentials here, so the request/retry logic and the response mapping are what
 these tests establish. The field names themselves come from CrowdStrike's
 published schema and remain unverified against a real API.
 """
+
 import pytest
 
-from app.parsers.crowdstrike import CrowdStrikeError, CrowdstrikeClient
+from app.parsers.crowdstrike import CrowdstrikeClient, CrowdStrikeError
 
 
 class FakeResponse:
@@ -71,9 +72,7 @@ def entity(cve_id="CVE-2023-24897", ip="10.0.2.15", **overrides):
 
 
 def query_page(ids, after=None):
-    return FakeResponse(
-        200, {"resources": ids, "meta": {"pagination": {"after": after}}}
-    )
+    return FakeResponse(200, {"resources": ids, "meta": {"pagination": {"after": after}}})
 
 
 def entities_page(entities):

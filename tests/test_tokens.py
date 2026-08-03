@@ -15,9 +15,7 @@ from app.core.tokens import is_revoked, revoke
 
 
 def claims_of(token: str) -> dict:
-    return jwt.decode(
-        token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
-    )
+    return jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
 
 
 class TestTokenClaims:

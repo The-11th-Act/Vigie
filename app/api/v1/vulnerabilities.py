@@ -1,7 +1,8 @@
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status as http_status
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import status as http_status
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
@@ -172,9 +173,7 @@ def get_findings(
 
     total = query.count()
     items = (
-        query.order_by(
-            AssetVulnerability.risk_score.desc(), AssetVulnerability.id.desc()
-        )
+        query.order_by(AssetVulnerability.risk_score.desc(), AssetVulnerability.id.desc())
         .offset(skip)
         .limit(limit)
         .all()
@@ -203,9 +202,7 @@ def get_asset_vulnerabilities(
 
     total = query.count()
     items = (
-        query.order_by(
-            AssetVulnerability.risk_score.desc(), AssetVulnerability.id.desc()
-        )
+        query.order_by(AssetVulnerability.risk_score.desc(), AssetVulnerability.id.desc())
         .offset(skip)
         .limit(limit)
         .all()
