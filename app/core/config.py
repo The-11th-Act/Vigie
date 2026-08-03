@@ -56,6 +56,19 @@ class Settings(BaseSettings):
     ADMIN_EMAIL: str | None = None
     ADMIN_PASSWORD: str | None = None
 
+    # CrowdStrike Falcon Spotlight. The base URL is region-specific — check
+    # your tenant (api.eu-1, api.us-2, …) rather than assuming the default.
+    CROWDSTRIKE_CLIENT_ID: str | None = None
+    CROWDSTRIKE_CLIENT_SECRET: str | None = None
+    CROWDSTRIKE_BASE_URL: str = "https://api.crowdstrike.com"
+    CROWDSTRIKE_SYNC_ENABLED: bool = False
+    # Minutes between scheduled pulls, when the sync is enabled.
+    CROWDSTRIKE_SYNC_INTERVAL_MINUTES: int = 360
+
+    @property
+    def crowdstrike_configured(self) -> bool:
+        return bool(self.CROWDSTRIKE_CLIENT_ID and self.CROWDSTRIKE_CLIENT_SECRET)
+
     model_config = SettingsConfigDict(
         case_sensitive=True, env_file=".env", extra="ignore"
     )

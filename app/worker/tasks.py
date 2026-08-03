@@ -92,6 +92,57 @@ def process_scan_file_task(self, scan_file_path: str, scan_type: str, scan_job_i
         db.close()
 
 
+@celery_app.task(
+    name="app.worker.tasks.sync_crowdstrike_task",
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_backoff_max=600,
+    retry_jitter=True,
+    max_retries=3,
+    soft_time_limit=1800,
+    time_limit=2100,
+)
+def sync_crowdstrike_task(self):
+    """Pull open Spotlight findings and run them through the usual ingestion.
+
+    CrowdStrike is a polled source rather than an uploaded file, but its
+    findings are normalised into the same shape, so the whole scoring, SLA and
+    deduplication pipeline applies unchanged.
+    """
+    from app.core.config import settings
+    from app.parsers.crowdstrike import fetch_vulnerabilities_from_settings
+
+    if not settings.CROWDSTRIKE_SYNC_ENABLED:
+        logger.info("CrowdStrike sync is disabled; nothing to do")
+        return {"status": "skipped", "message": "CrowdStrike sync is disabled"}
+
+    if not settings.crowdstrike_configured:
+        logger.warning("CrowdStrike sync enabled but no credentials are configured")
+        return {"status": "skipped", "message": "CrowdStrike credentials are missing"}
+
+    db = SessionLocal()
+    try:
+        findings = fetch_vulnerabilities_from_settings()
+        result = ingest_findings(db, findings, "crowdstrike")
+        observe_ingestion("crowdstrike", result.processed_records)
+        return {"status": "success", **result.as_dict()}
+    except Exception as exc:
+        db.rollback()
+        logger.error(
+            "CrowdStrike sync failed (attempt %d/%d): %s",
+            self.request.retries + 1,
+            self.max_retries,
+            exc,
+            exc_info=True,
+        )
+        if self.request.retries >= self.max_retries:
+            return {"status": "error", "message": str(exc)}
+        raise
+    finally:
+        db.close()
+
+
 def _adopt_request_id(task) -> None:
     """Continue the correlation id of the request that queued this task."""
     try:
