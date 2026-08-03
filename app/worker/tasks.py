@@ -2,6 +2,8 @@ import logging
 import os
 from datetime import datetime, timezone
 
+from app.core.logging import set_request_id
+from app.core.metrics import observe_ingestion
 from app.db.database import SessionLocal
 from app.models.scan import ScanJob, ScanStatus
 from app.parsers.nessus import parse_nessus_report
@@ -39,6 +41,8 @@ def process_scan_file_task(self, scan_file_path: str, scan_type: str, scan_job_i
     exponential backoff; a malformed scan type is a permanent error and is
     returned immediately without burning retries.
     """
+    _adopt_request_id(self)
+
     scan_type = (scan_type or "").lower()
     parser = PARSERS.get(scan_type)
     if parser is None:
@@ -58,6 +62,7 @@ def process_scan_file_task(self, scan_file_path: str, scan_type: str, scan_job_i
         findings = parser(raw)
         result = ingest_findings(db, findings, scan_type)
 
+        observe_ingestion(scan_type, result.processed_records)
         _apply_result(db, scan_job_id, result)
         # Only drop the staged file once its contents are safely persisted.
         _discard(scan_file_path)
@@ -85,6 +90,16 @@ def process_scan_file_task(self, scan_file_path: str, scan_type: str, scan_job_i
         raise
     finally:
         db.close()
+
+
+def _adopt_request_id(task) -> None:
+    """Continue the correlation id of the request that queued this task."""
+    try:
+        request_id = (task.request.headers or {}).get("request_id")
+    except AttributeError:
+        request_id = None
+    if request_id:
+        set_request_id(request_id)
 
 
 def _mark_running(db, scan_job_id) -> None:

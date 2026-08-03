@@ -17,6 +17,7 @@ from fastapi import (
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.logging import get_request_id
 from app.core.security import decode_token
 from app.db.database import get_db
 from app.models.scan import ScanJob, ScanStatus
@@ -87,7 +88,12 @@ async def upload_scan_file(
     db.refresh(scan_job)
 
     try:
-        task = process_scan_file_task.delay(stored_path, normalized_type, scan_job.id)
+        # The request id rides along so the worker's log lines about this
+        # ingestion can be traced back to this upload.
+        task = process_scan_file_task.apply_async(
+            args=(stored_path, normalized_type, scan_job.id),
+            headers={"request_id": get_request_id()},
+        )
     except Exception as exc:
         # Typically the broker being unreachable — surface it as a 503 rather
         # than a generic 500, and never leak the raw exception to the client.

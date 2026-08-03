@@ -24,11 +24,13 @@ def no_broker(monkeypatch):
 
     calls = []
 
-    def fake_delay(*args, **kwargs):
-        calls.append(args)
+    def fake_apply_async(*args, **kwargs):
+        calls.append(kwargs)
         return FakeTask()
 
-    monkeypatch.setattr("app.api.v1.scans.process_scan_file_task.delay", fake_delay)
+    monkeypatch.setattr(
+        "app.api.v1.scans.process_scan_file_task.apply_async", fake_apply_async
+    )
     return calls
 
 
@@ -106,7 +108,9 @@ class TestScanUploadValidation:
         def boom(*args, **kwargs):
             raise ConnectionError("redis is down")
 
-        monkeypatch.setattr("app.api.v1.scans.process_scan_file_task.delay", boom)
+        monkeypatch.setattr(
+            "app.api.v1.scans.process_scan_file_task.apply_async", boom
+        )
 
         response = client.post(
             "/api/v1/scans/upload",
@@ -134,9 +138,19 @@ class TestScanStaging:
         assert len(staged) == 1
         assert staged[0].read_bytes() == b"<?xml version='1.0'?><report/>"
 
-        queued_path, queued_type, _job_id = no_broker[0]
+        queued_path, queued_type, _job_id = no_broker[0]["args"]
         assert queued_path == str(staged[0])
         assert queued_type == "nessus"
+
+    def test_request_id_is_propagated_to_the_worker(self, client, no_broker):
+        """So the worker's log lines can be traced back to this upload."""
+        client.post(
+            "/api/v1/scans/upload",
+            data={"scan_type": "nessus"},
+            files=xml_file(),
+            headers={"X-Request-ID": "trace-me-123"},
+        )
+        assert no_broker[0]["headers"]["request_id"] == "trace-me-123"
 
     def test_client_supplied_name_cannot_escape_the_directory(
         self, client, no_broker, scan_upload_dir
@@ -157,7 +171,9 @@ class TestScanStaging:
         def boom(*args, **kwargs):
             raise ConnectionError("redis is down")
 
-        monkeypatch.setattr("app.api.v1.scans.process_scan_file_task.delay", boom)
+        monkeypatch.setattr(
+            "app.api.v1.scans.process_scan_file_task.apply_async", boom
+        )
 
         client.post(
             "/api/v1/scans/upload",
