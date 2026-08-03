@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status as http_status
 from sqlalchemy import or_
@@ -11,6 +11,7 @@ from app.db.database import get_db
 from app.models.vulnerability import (
     CLOSED_STATUSES,
     AssetVulnerability,
+    FindingAuditLog,
     Severity,
     Status,
     Vulnerability,
@@ -18,6 +19,7 @@ from app.models.vulnerability import (
 from app.schemas.vulnerability import (
     AssetVulnerabilityResponse,
     AssetVulnerabilityUpdate,
+    FindingAuditLogResponse,
     PaginatedAssetVulnerabilityResponse,
     PaginatedVulnerabilityResponse,
     VulnerabilityCreate,
@@ -185,6 +187,8 @@ def update_finding_status(
             ),
         )
 
+    previous_status = _status_value(finding.status)
+
     finding.status = update_in.status
     if update_in.status_note is not None:
         finding.status_note = update_in.status_note
@@ -195,6 +199,49 @@ def update_finding_status(
         # Reopening clears the closure timestamp so SLA tracking resumes.
         finding.fixed_at = None
 
+    # Written before the commit so the decision and its trail land together:
+    # an audit entry that can be lost independently is worth little.
+    db.add(
+        FindingAuditLog(
+            finding_id=finding.id,
+            user_id=_user_id(payload),
+            username=payload.get("username"),
+            old_status=previous_status,
+            new_status=_status_value(update_in.status),
+            status_note=update_in.status_note,
+        )
+    )
+
     db.commit()
     db.refresh(finding)
     return finding
+
+
+@router.get(
+    "/findings/{finding_id}/history", response_model=List[FindingAuditLogResponse]
+)
+def get_finding_history(
+    finding_id: int,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(decode_token),
+):
+    """Who changed this finding's status, when, and with what justification."""
+    get_or_404(db, AssetVulnerability, finding_id)
+
+    return (
+        db.query(FindingAuditLog)
+        .filter(FindingAuditLog.finding_id == finding_id)
+        .order_by(FindingAuditLog.id.desc())
+        .all()
+    )
+
+
+def _status_value(status) -> str:
+    return getattr(status, "value", status)
+
+
+def _user_id(payload: dict) -> Optional[int]:
+    try:
+        return int(payload["sub"])
+    except (KeyError, TypeError, ValueError):
+        return None

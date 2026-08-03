@@ -144,6 +144,74 @@ class TestFindingsBacklog:
         assert response.json()["total"] == 0
 
 
+class TestTriageAudit:
+    """Regression: status and status_note are overwritten in place, so without
+    an audit trail nobody could tell who accepted a risk, or when."""
+
+    def test_status_change_is_recorded(self, client, finding):
+        client.patch(
+            f"/api/v1/vulnerabilities/findings/{finding.id}",
+            json={"status": "Remediated"},
+        )
+
+        history = client.get(
+            f"/api/v1/vulnerabilities/findings/{finding.id}/history"
+        ).json()
+        assert len(history) == 1
+        assert history[0]["old_status"] == "Open"
+        assert history[0]["new_status"] == "Remediated"
+
+    def test_records_who_made_the_decision(self, client, finding):
+        client.patch(
+            f"/api/v1/vulnerabilities/findings/{finding.id}",
+            json={
+                "status": "Risk Accepted",
+                "status_note": "Mitigated by network segmentation.",
+            },
+        )
+
+        entry = client.get(
+            f"/api/v1/vulnerabilities/findings/{finding.id}/history"
+        ).json()[0]
+        # The `client` fixture authenticates as user 1 / "admin".
+        assert entry["user_id"] == 1
+        assert entry["username"] == "admin"
+        assert entry["status_note"] == "Mitigated by network segmentation."
+
+    def test_history_is_ordered_most_recent_first(self, client, finding):
+        for status in ("Remediated", "Open", "False Positive"):
+            client.patch(
+                f"/api/v1/vulnerabilities/findings/{finding.id}",
+                json={"status": status, "status_note": "because"},
+            )
+
+        history = client.get(
+            f"/api/v1/vulnerabilities/findings/{finding.id}/history"
+        ).json()
+        assert [e["new_status"] for e in history] == [
+            "False Positive",
+            "Open",
+            "Remediated",
+        ]
+
+    def test_rejected_change_leaves_no_trace(self, client, finding):
+        """A 422 must not write an entry for a decision that never happened."""
+        response = client.patch(
+            f"/api/v1/vulnerabilities/findings/{finding.id}",
+            json={"status": "Risk Accepted"},
+        )
+        assert response.status_code == 422
+
+        history = client.get(
+            f"/api/v1/vulnerabilities/findings/{finding.id}/history"
+        ).json()
+        assert history == []
+
+    def test_history_of_unknown_finding_is_404(self, client):
+        response = client.get("/api/v1/vulnerabilities/findings/999999/history")
+        assert response.status_code == 404
+
+
 class TestDashboardRiskMetrics:
     def test_stats_include_risk_aggregates(self, client, finding):
         data = client.get("/api/v1/dashboard/stats").json()
