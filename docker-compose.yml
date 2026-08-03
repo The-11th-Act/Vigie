@@ -1,7 +1,7 @@
 services:
   db:
     image: postgres:15-alpine
-    container_name: tvm_db
+    container_name: vigie_db
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-tvm_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tvm_password}
@@ -18,7 +18,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: tvm_redis
+    container_name: vigie_redis
     ports:
       - "6379:6379"
     healthcheck:
@@ -29,7 +29,7 @@ services:
 
   migrate:
     build: .
-    container_name: tvm_migrate
+    container_name: vigie_migrate
     command: alembic upgrade head
     environment:
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required - see .env.example}
@@ -41,7 +41,7 @@ services:
 
   web:
     build: .
-    container_name: tvm_api
+    container_name: vigie_api
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     volumes:
       - .:/app
@@ -80,7 +80,7 @@ services:
 
   worker:
     build: .
-    container_name: tvm_celery_worker
+    container_name: vigie_celery_worker
     command: celery -A app.worker.celery_app worker --loglevel=info
     volumes:
       - .:/app
@@ -125,7 +125,7 @@ services:
 
   frontend:
     build: ./frontend
-    container_name: tvm_frontend
+    container_name: vigie_frontend
     volumes:
       - ./frontend:/app
       - /app/node_modules

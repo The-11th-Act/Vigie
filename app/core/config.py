@@ -16,7 +16,7 @@ INSECURE_SECRET_KEYS = {
 
 
 class Settings(BaseSettings):
-    PROJECT_NAME: str = "TVM Platform"
+    PROJECT_NAME: str = "Vigie"
     API_V1_STR: str = "/api/v1"
     ENVIRONMENT: str = "development"  # development | staging | production
 
