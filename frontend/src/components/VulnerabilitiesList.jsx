@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { vulnerabilityService } from '../services';
 import { useFetch } from '../hooks/useFetch';
 import { Search, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -24,12 +24,17 @@ export default function VulnerabilitiesList() {
 
   const { data, loading, error } = useFetch(fetchVulns, [page, debouncedSearch, severity]);
 
-  const handleSearch = (e) => {
-    setSearch(e.target.value);
-    setPage(0);
-    clearTimeout(window._vulnSearchTimer);
-    window._vulnSearchTimer = setTimeout(() => setDebouncedSearch(e.target.value), 300);
-  };
+  // Debounce held in a ref rather than on `window`: a module-level global was
+  // shared with every other list and leaked its timer between components.
+  const searchTimer = useRef(null);
+
+  useEffect(() => {
+    searchTimer.current = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(0);
+    }, 300);
+    return () => clearTimeout(searchTimer.current);
+  }, [search]);
 
   const handleSeverityChange = (e) => {
     setSeverity(e.target.value);
@@ -48,7 +53,7 @@ export default function VulnerabilitiesList() {
           <input
             type="text"
             value={search}
-            onChange={handleSearch}
+            onChange={(e) => setSearch(e.target.value)}
             placeholder="Search by CVE or title..."
             style={{
               width: '100%', padding: '0.6rem 0.75rem 0.6rem 2.25rem',
