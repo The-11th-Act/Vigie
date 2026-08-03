@@ -9,8 +9,10 @@ from app.schemas.vulnerability import (
     PaginatedVulnerabilityResponse, PaginatedAssetVulnerabilityResponse,
 )
 from app.schemas.user import UserCreate, UserLogin, Token, TokenPayload, UserResponse
+from app.schemas.scan import ScanJobResponse, PaginatedScanJobResponse
 
 __all__ = [
+    "ScanJobResponse", "PaginatedScanJobResponse",
     "AssetBase", "AssetCreate", "AssetUpdate", "AssetResponse", "PaginatedAssetResponse",
     "VulnerabilityBase", "VulnerabilityCreate", "VulnerabilityResponse",
     "AssetVulnerabilityBase", "AssetVulnerabilityCreate", "AssetVulnerabilityResponse",

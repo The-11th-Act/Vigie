@@ -11,6 +11,7 @@ import pytest  # noqa: E402
 from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 
+from app.core.config import settings  # noqa: E402
 from app.db.database import Base, get_db  # noqa: E402
 from app.main import app  # noqa: E402
 
@@ -18,6 +19,13 @@ TEST_DATABASE_URL = "sqlite:///./test.db"
 
 # Satisfies the registration password policy (>= 12 chars, letter + digit).
 VALID_PASSWORD = "testpass123456"
+
+
+@pytest.fixture(autouse=True)
+def scan_upload_dir(tmp_path, monkeypatch):
+    """Stage scan uploads in a throwaway directory rather than the real volume."""
+    monkeypatch.setattr(settings, "SCAN_UPLOAD_DIR", str(tmp_path / "scans"))
+    return tmp_path / "scans"
 
 
 @pytest.fixture(scope="session")

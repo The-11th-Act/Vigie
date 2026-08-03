@@ -45,6 +45,9 @@ services:
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     volumes:
       - .:/app
+      # Shared with the worker: the API stages the upload here and only hands
+      # the path to Celery, so both containers must see the same directory.
+      - scan_uploads:/var/lib/vigie/scans
     ports:
       - "8000:8000"
     environment:
@@ -81,6 +84,7 @@ services:
     command: celery -A app.worker.celery_app worker --loglevel=info
     volumes:
       - .:/app
+      - scan_uploads:/var/lib/vigie/scans
     environment:
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required - see .env.example}
       - ENVIRONMENT=${ENVIRONMENT:-development}
@@ -109,3 +113,4 @@ services:
 
 volumes:
   pgdata:
+  scan_uploads:

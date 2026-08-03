@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     # that a single upload cannot exhaust worker memory.
     MAX_SCAN_UPLOAD_BYTES: int = 50 * 1024 * 1024
 
+    # Uploads are staged here and only the path is handed to Celery: passing a
+    # 50 MB payload through the broker would serialise it into Redis in full.
+    # Must be a volume shared between the API and the worker.
+    SCAN_UPLOAD_DIR: str = "/var/lib/vigie/scans"
+
     LOG_LEVEL: str = "INFO"
 
     # All three required together: bootstraps (or promotes) the first admin
