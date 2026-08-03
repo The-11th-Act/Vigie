@@ -45,9 +45,14 @@ class UserLogin(BaseModel):
 
 class Token(BaseModel):
     access_token: str
+    refresh_token: Optional[str] = None
     token_type: str = "bearer"
     role: str
     username: str
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
 
 
 class TokenPayload(BaseModel):

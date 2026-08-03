@@ -17,6 +17,9 @@ export default function Login() {
     try {
       const res = await authService.login(username, password);
       localStorage.setItem('access_token', res.data.access_token);
+      if (res.data.refresh_token) {
+        localStorage.setItem('refresh_token', res.data.refresh_token);
+      }
       localStorage.setItem('role', res.data.role);
       localStorage.setItem('username', res.data.username);
       navigate('/', { replace: true });

@@ -6,6 +6,9 @@ import os
 os.environ.setdefault("DATABASE_URL", "sqlite:///./test.db")
 os.environ.setdefault("SECRET_KEY", "test-secret-key-not-used-in-production-0123456789")
 os.environ.setdefault("ENVIRONMENT", "development")
+# Most tests drive the login endpoint well past the lockout threshold on
+# purpose; the throttle is exercised explicitly in tests/test_ratelimit.py.
+os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
 
 import pytest  # noqa: E402
 from sqlalchemy import create_engine  # noqa: E402
@@ -26,6 +29,17 @@ def scan_upload_dir(tmp_path, monkeypatch):
     """Stage scan uploads in a throwaway directory rather than the real volume."""
     monkeypatch.setattr(settings, "SCAN_UPLOAD_DIR", str(tmp_path / "scans"))
     return tmp_path / "scans"
+
+
+@pytest.fixture(autouse=True)
+def isolated_key_value_store():
+    """Give every test a clean throttle/revocation store, never a real Redis."""
+    from app.core.keyvalue import InMemoryStore, reset_store
+
+    store = InMemoryStore()
+    reset_store(store)
+    yield store
+    reset_store(None)
 
 
 @pytest.fixture(scope="session")

@@ -23,6 +23,14 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+
+    # Login throttling. Disabled in the test suite, which drives the endpoint
+    # far past these thresholds on purpose.
+    RATE_LIMIT_ENABLED: bool = True
+    LOGIN_MAX_ATTEMPTS: int = 5
+    LOGIN_WINDOW_SECONDS: int = 300
+    LOGIN_LOCKOUT_SECONDS: int = 900
 
     DATABASE_URL: str = "postgresql://tvm_user:tvm_password@localhost:5432/tvm_platform"
     REDIS_URL: str = "redis://localhost:6379/0"
