@@ -48,6 +48,15 @@ class Settings(BaseSettings):
     # Must be a volume shared between the API and the worker.
     SCAN_UPLOAD_DIR: str = "/var/lib/vigie/scans"
 
+    # Subnet -> business criticality, applied to newly discovered assets.
+    # The most specific matching prefix wins. Example:
+    #   {"10.0.0.0/8": "Low", "10.0.5.0/24": "Critical"}
+    CRITICALITY_RULES: dict[str, str] = {}
+
+    # Consecutive scans of a source in which a finding may go unseen before it
+    # is closed as remediated. 0 disables automatic closure entirely.
+    AUTO_REMEDIATE_AFTER_MISSES: int = 3
+
     LOG_LEVEL: str = "INFO"
 
     # All three required together: bootstraps (or promotes) the first admin
