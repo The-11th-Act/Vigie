@@ -52,8 +52,11 @@ export default function Login() {
         {error && <div className="error-message">{error}</div>}
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-          <label style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Username</label>
+          <label htmlFor="login-username" style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+            Username
+          </label>
           <input
+            id="login-username"
             type="text"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
@@ -72,8 +75,11 @@ export default function Login() {
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-          <label style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Password</label>
+          <label htmlFor="login-password" style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+            Password
+          </label>
           <input
+            id="login-password"
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
