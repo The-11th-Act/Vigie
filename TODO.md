@@ -4,6 +4,8 @@
 Suite de tests : **109 tests, tous verts** (`pytest -q`).
 
 Priorités : **P0** = bloque un usage réel · **P1** = important · **P2** = confort / dette.
+Les sections suffixées **-DEP** (technologie & déploiement, ajoutées le 06/08/2026)
+découlent de l'audit détaillé dans [`docs/EVALUATION_TECHNIQUE.md`](docs/EVALUATION_TECHNIQUE.md).
 
 ---
 
@@ -146,3 +148,177 @@ Aucun `.github/workflows/`. Les 109 tests ne tournent que manuellement.
 - [ ] Middleware d'ID de corrélation propagé jusqu'aux tâches Celery
 - [ ] Handler d'exception global renvoyant une erreur normalisée sans fuite de stacktrace
 - [ ] Métriques Prometheus (latence API, débit d'ingestion, taille du backlog)
+
+---
+
+# Technologie & déploiement
+
+Issu de l'audit du 06/08/2026 (`docs/EVALUATION_TECHNIQUE.md`). Constat : la stack est
+bien choisie et le code applicatif est propre, mais **il n'existe aujourd'hui aucun
+chemin vers la production** — pas d'image de production, pas de CI, pas de gestion de
+secrets, pas d'observabilité. Les identifiants `D*` / `T*` renvoient à l'audit.
+
+## P0-DEP — Bloque tout déploiement
+
+### D2. Pas de `.dockerignore` — le `.env` réel finit dans l'image
+`COPY . .` (`Dockerfile:20`) embarque `venv/`, `.git/`, `.env`, `test.db`,
+`__pycache__/`, `code_complet.txt`, `node_modules/`. L'image gonfle inutilement, le cache
+de build est invalidé au moindre fichier touché, et surtout **le `SECRET_KEY` de
+production est copié dans une couche d'image**. Correction triviale, gravité maximale.
+
+- [ ] Ajouter `.dockerignore` à la racine et `frontend/.dockerignore`
+- [ ] Vérifier l'absence du secret : `docker run --rm --entrypoint sh <image> -c 'ls -a /app'`
+
+### D1 + D4. Aucun artefact de production
+`docker-compose.yml` est un environnement de développement et rien d'autre : `--reload`
+(ligne 45), code monté en volume (ligne 47, l'image construite n'est jamais exécutée),
+frontend en `npm run dev` (serveur Vite de dev), Postgres et Redis publiés sur l'hôte,
+Redis sans mot de passe, mots de passe Postgres par défaut en clair. Le SPA appelle
+`/api/v1` en relatif et `VITE_API_TARGET` ne sert qu'au proxy *de dev* : hors du compose,
+rien ne route les appels vers l'API.
+
+- [ ] `docker-compose.prod.yml` : `uvicorn --workers N` sans `--reload`, sans bind mount
+- [ ] `frontend/Dockerfile` multi-stage : `npm ci && npm run build`, servi par Nginx
+- [ ] Reverse proxy Nginx en façade : statiques + `/api` vers `web`, en-têtes de sécurité
+- [ ] Ne plus publier `5432` / `6379` sur l'hôte, mot de passe Redis (`requirepass`)
+- [ ] Retirer les valeurs par défaut des mots de passe Postgres du compose
+
+### D6. Pas d'intégration continue
+Aucun `.github/workflows/`. Les 109 tests, le build Docker et le build frontend ne
+tournent jamais automatiquement. Sur une plateforme de gestion de vulnérabilités,
+l'absence de scan de dépendances est difficile à défendre.
+*(Recoupe le point 12 de la TODO fonctionnelle, élargi au déploiement.)*
+
+- [ ] Workflow CI : `pytest`, `docker build`, `npm ci && npm run build`
+- [ ] `pip-audit` + Dependabot + scan d'image Trivy, bloquants sur vulnérabilité haute
+- [ ] Couverture (`pytest --cov`) publiée sur la PR
+
+---
+
+## P1-DEP — Robustesse d'exploitation
+
+### T2. Dépendances mortes et build non reproductible
+`lxml` n'est importé nulle part. `requests` ne sert qu'à `parsers/crowdstrike.py`, qui
+retourne des données factices. Toutes les versions sont en `>=` sans lockfile : deux
+`docker build` à deux dates donnent deux images différentes. Un `pip install` aujourd'hui
+tire une version de FastAPI où `@app.on_event("startup")` (`app/main.py:72`) est déprécié.
+
+- [ ] Retirer `lxml` (et `requests` si CrowdStrike est abandonné — cf. point 5)
+- [ ] Lockfile via `pip-tools` ou `uv`, utilisé par le Dockerfile
+- [ ] Migrer `@app.on_event("startup")` vers le gestionnaire `lifespan`
+
+### D3. Build Docker non optimisé
+- [ ] Multi-stage (build des wheels puis image d'exécution minimale)
+- [ ] Épingler l'image de base par digest plutôt que `python:3.11-slim`
+- [ ] `HEALTHCHECK` dans le `Dockerfile` (aujourd'hui seulement dans le compose, donc
+      perdu sur toute autre plateforme d'exécution)
+
+### T4. Aucun outillage qualité
+Pas de `pyproject.toml`, donc ni `ruff`, ni `black`, ni `mypy`, ni configuration `pytest`
+centralisée. Le style tient aujourd'hui parce qu'il n'y a qu'un auteur.
+
+- [ ] `pyproject.toml` avec `ruff` + `black` + config `pytest`
+- [ ] Brancher le lint en CI, en échec bloquant
+
+### D9. Observabilité au niveau zéro
+Logs texte non structurés, aucun identifiant de corrélation, aucune métrique, aucun
+tracing. `/health` ne teste que Postgres : une panne Redis laisse la sonde verte alors que
+toute l'ingestion est morte. *(Recoupe les points 11 et 18.)*
+
+- [ ] Logs JSON structurés + `X-Request-ID` propagé jusqu'aux tâches Celery
+- [ ] Séparer `/health` (liveness) et `/ready` (readiness : Postgres + Redis + workers)
+- [ ] Métriques Prometheus : latence API, débit d'ingestion, taille du backlog, retards SLA
+- [ ] Handler d'exception global : erreur normalisée, aucune stacktrace fuitée
+
+### T3. Les tests tournent sur SQLite, la production sur PostgreSQL
+`tests/conftest.py:17` force `sqlite:///./test.db`. Les 109 tests verts ne prouvent rien
+sur les `ENUM` natifs, les `ON DELETE CASCADE`, le comportement transactionnel ni la
+collation des `ilike`. Le code contient déjà des contournements explicites de cet écart
+(`risk_scoring.py:62`), ce qui montre que la divergence coûte déjà.
+
+- [ ] Faire tourner `tests/api/` sur un Postgres jetable (service CI ou `testcontainers`)
+- [ ] Conserver SQLite pour les tests unitaires purs (`services/`, `parsers/`), rapides
+
+### D5. Gestion des secrets
+Tout vient d'un `.env` sur disque, sans coffre ni rotation. Changer `SECRET_KEY` invalide
+d'un coup tous les tokens émis : pas de `kid`, pas de période de recouvrement.
+
+- [ ] Sortir les secrets du fichier (Docker secrets, SOPS, ou coffre managé)
+- [ ] `kid` dans l'en-tête JWT + acceptation de N clés pour permettre une rotation sans
+      déconnexion générale
+- [ ] Documenter la procédure de rotation
+
+### D8. Aucune sauvegarde
+Le volume `pgdata` n'a ni politique de sauvegarde ni procédure de restauration. Le perdre,
+c'est perdre l'historique des findings et des acceptations de risque — inacceptable pour
+un usage réglementaire.
+
+- [ ] `pg_dump` planifié, chiffré, avec rétention définie
+- [ ] Restauration testée et documentée (une sauvegarde jamais restaurée n'existe pas)
+
+### D10. Aucune limite de ressources
+Pas de `deploy.resources`, pas de `--max-memory-per-child` Celery. Le contenu du scan
+transite par Redis (`scans.py:63`) : le pic mémoire du worker n'est ni borné ni mesuré.
+*(Recoupe le point 7.)*
+
+- [ ] Limites CPU/mémoire par service
+- [ ] `--max-memory-per-child` et `--concurrency` explicites pour Celery
+
+### T6. Token JWT dans `localStorage`
+`services/api.js:9` : lisible par tout script injecté. Difficile à défendre en revue pour
+une plateforme de sécurité. *(À traiter avec le point 9, cycle de vie des tokens.)*
+
+- [ ] Cookie `HttpOnly` + `SameSite=Strict` + protection CSRF
+
+---
+
+## P2-DEP — Maturité
+
+### T1. Modèle de concurrence non assumé
+Driver `psycopg2` synchrone sous une API async : chaque requête DB occupe un thread du
+threadpool Starlette, et la file d'attente devient invisible. `pool_size=10` +
+`max_overflow=20` par process, sans lien avec le nombre de workers.
+
+- [ ] Trancher : full-sync assumé (le plus simple) ou `asyncpg` + `AsyncSession`
+- [ ] Documenter le dimensionnement `workers × threads × pool_size`
+
+### T5. Frontend outillé comme un prototype
+Vite 4 et React 18 (deux majeures de retard chacun), zéro test, zéro lint. `useFetch`
+n'inclut pas `fetchFn` dans les dépendances de son `useCallback` : un appelant qui ne
+mémoïse pas sa fonction déclenche une boucle de refetch. *(Recoupe le point 15.)*
+
+- [ ] TanStack Query en remplacement de `useFetch` (cache, déduplication, invalidation)
+- [ ] ESLint + Prettier, Vitest + Testing Library
+- [ ] Monter React et Vite de version
+
+### T7. Contrôle d'accès trop grossier
+`require_admin` (`security.py:70`) lit le rôle **dans le token**, pas en base : rétrograder
+un admin ne prend effet qu'à l'expiration (jusqu'à 60 min). Aucun cloisonnement par
+périmètre : toute équipe voit tous les assets.
+
+- [ ] Vérifier le rôle en base à chaque requête sensible (ou invalider le token au
+      changement de rôle)
+- [ ] Modèle de périmètres / groupes d'assets, filtrage des listings par périmètre
+
+### D7. Migrations sans stratégie de retour arrière
+- [ ] Tester les `downgrade()` en CI (upgrade head → downgrade base → upgrade head)
+- [ ] Documenter la procédure de rollback et le comportement en démarrage multi-répliques
+
+### D11. Un seul environnement
+`ENVIRONMENT` accepte `staging` mais rien ne le matérialise.
+
+- [ ] Environnement de staging avec le même overlay que la production
+- [ ] Chemin de promotion dev → staging → prod documenté
+
+---
+
+## Ordre d'attaque conseillé
+
+Les trois premiers items coûtent peu et débloquent tout le reste.
+
+1. `.dockerignore` (**D2**) — 10 min, arrête une fuite de secret
+2. CI (**D6**) — 2 h, tout ce qui suit devient vérifiable automatiquement
+3. Overlay de production + Nginx (**D1/D4**) — 4 h, rend le produit déployable
+4. Lockfile + `lifespan` + suppression de `lxml` (**T2**) — 2 h
+5. Dockerfile multi-stage (**D3**) et outillage qualité (**T4**) — 3 h
+6. Observabilité (**D9**) et tests sur Postgres (**T3**) — 7 h

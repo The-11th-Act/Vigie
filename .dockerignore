@@ -1,0 +1,48 @@
+# Rien de ce qui suit n'a de raison d'exister dans l'image. Sans ce fichier,
+# le `COPY . .` du Dockerfile embarque le .env réel — donc le SECRET_KEY de
+# production — dans une couche d'image.
+
+# Secrets et état local
+.env
+.env.*
+!.env.example
+*.db
+*.sqlite
+
+# Contrôle de version et métadonnées
+.git
+.gitignore
+.github
+
+# Environnements Python locaux
+venv/
+.venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+*.egg-info/
+.eggs/
+
+# Artefacts de test et de couverture
+.pytest_cache/
+.coverage
+htmlcov/
+tests/
+
+# Frontend (construit par frontend/Dockerfile, pas par celui-ci)
+frontend/node_modules/
+frontend/dist/
+node_modules/
+
+# Documentation et dumps
+docs/
+*.md
+code_complet.txt
+
+# Éditeurs et OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
