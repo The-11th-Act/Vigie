@@ -36,9 +36,9 @@ class TestAuth:
     @pytest.mark.parametrize(
         "password",
         [
-            "short1",          # below the minimum length
-            "nodigitsatall",   # missing a digit
-            "1234567890123",   # missing a letter
+            "short1",  # below the minimum length
+            "nodigitsatall",  # missing a digit
+            "1234567890123",  # missing a letter
         ],
     )
     def test_register_rejects_weak_password(self, client, password):
@@ -56,11 +56,13 @@ class TestAuth:
         from app.core.security import get_password_hash
         from app.models.user import User
 
-        db_session.add(User(
-            email="existing@test.com",
-            username="existing",
-            hashed_password=get_password_hash(VALID_PASSWORD),
-        ))
+        db_session.add(
+            User(
+                email="existing@test.com",
+                username="existing",
+                hashed_password=get_password_hash(VALID_PASSWORD),
+            )
+        )
         db_session.commit()
 
         response = client.post(
@@ -81,11 +83,13 @@ class TestAuth:
         from app.core.security import get_password_hash
         from app.models.user import User
 
-        db_session.add(User(
-            email="login@test.com",
-            username="loginuser",
-            hashed_password=get_password_hash("correctpass123"),
-        ))
+        db_session.add(
+            User(
+                email="login@test.com",
+                username="loginuser",
+                hashed_password=get_password_hash("correctpass123"),
+            )
+        )
         db_session.commit()
 
         response = client.post(

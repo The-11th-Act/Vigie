@@ -9,7 +9,7 @@ description = "Vigie — Risk-Based Vulnerability Management (RBVM) platform"
 requires-python = ">=3.11"
 
 [tool.setuptools]
-packages = ["app"]
+packages = ["app", "scripts"]
 
 # ---------------------------------------------------------------------------
 # Tests

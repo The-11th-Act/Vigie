@@ -63,7 +63,9 @@ def decode_token(token: str = Depends(oauth2_scheme)) -> dict:
 _DUMMY_HASH = pwd_context.hash("timing-attack-mitigation-placeholder")
 
 
-def verify_password_constant_time(plain_password: str, hashed_password: str | None) -> bool:
+def verify_password_constant_time(
+    plain_password: str, hashed_password: str | None
+) -> bool:
     """Verify a password, always doing the hashing work even for unknown users."""
     if hashed_password is None:
         pwd_context.verify(plain_password, _DUMMY_HASH)

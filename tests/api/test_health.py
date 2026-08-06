@@ -5,6 +5,7 @@ Redis laisse la première verte et fait tomber la seconde. C'est précisément
 l'écart qui empêchait de détecter qu'une ingestion était morte alors que la
 plateforme se déclarait en bonne santé.
 """
+
 from unittest.mock import patch
 
 import pytest

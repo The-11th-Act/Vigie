@@ -144,7 +144,5 @@ def readiness_check(db: Session = Depends(get_db)):
         ready = False
 
     if not ready:
-        return JSONResponse(
-            status_code=503, content={"status": "not_ready", **checks}
-        )
+        return JSONResponse(status_code=503, content={"status": "not_ready", **checks})
     return {"status": "ready", **checks}

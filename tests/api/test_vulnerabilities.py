@@ -24,12 +24,14 @@ class TestVulnerabilities:
         assert data["cvss_score"] == 8.5
 
     def test_create_duplicate_cve(self, client, db_session):
-        db_session.add(Vulnerability(
-            cve_id="CVE-2024-99999",
-            title="Existing",
-            cvss_score=5.0,
-            severity="Medium",
-        ))
+        db_session.add(
+            Vulnerability(
+                cve_id="CVE-2024-99999",
+                title="Existing",
+                cvss_score=5.0,
+                severity="Medium",
+            )
+        )
         db_session.commit()
 
         response = client.post(
@@ -68,8 +70,16 @@ class TestVulnerabilities:
         assert response.status_code == 422
 
     def test_filter_by_severity(self, client, db_session):
-        db_session.add(Vulnerability(cve_id="CVE-2024-A", title="A", cvss_score=9.0, severity="Critical"))
-        db_session.add(Vulnerability(cve_id="CVE-2024-B", title="B", cvss_score=5.0, severity="Medium"))
+        db_session.add(
+            Vulnerability(
+                cve_id="CVE-2024-A", title="A", cvss_score=9.0, severity="Critical"
+            )
+        )
+        db_session.add(
+            Vulnerability(
+                cve_id="CVE-2024-B", title="B", cvss_score=5.0, severity="Medium"
+            )
+        )
         db_session.commit()
 
         response = client.get("/api/v1/vulnerabilities/?severity=Critical")
@@ -79,8 +89,22 @@ class TestVulnerabilities:
         assert data["items"][0]["cve_id"] == "CVE-2024-A"
 
     def test_search_vulnerabilities(self, client, db_session):
-        db_session.add(Vulnerability(cve_id="CVE-2024-SEARCH1", title="Apache Log4j RCE", cvss_score=10.0, severity="Critical"))
-        db_session.add(Vulnerability(cve_id="CVE-2024-SEARCH2", title="Nginx DoS", cvss_score=4.0, severity="Medium"))
+        db_session.add(
+            Vulnerability(
+                cve_id="CVE-2024-SEARCH1",
+                title="Apache Log4j RCE",
+                cvss_score=10.0,
+                severity="Critical",
+            )
+        )
+        db_session.add(
+            Vulnerability(
+                cve_id="CVE-2024-SEARCH2",
+                title="Nginx DoS",
+                cvss_score=4.0,
+                severity="Medium",
+            )
+        )
         db_session.commit()
 
         response = client.get("/api/v1/vulnerabilities/?search=Apache")

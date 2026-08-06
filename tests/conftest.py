@@ -1,9 +1,20 @@
+"""Configuration de la suite de tests.
+
+La base de test est choisie par ``VIGIE_TEST_DATABASE_URL``. Par défaut,
+SQLite : rapide, sans service externe, suffisant pour la logique métier. En
+CI, la suite API est rejouée sur un vrai PostgreSQL, parce que SQLite ne dit
+rien des ENUM natifs, des ``ON DELETE CASCADE`` ni des collations — et que la
+production, elle, tourne sur PostgreSQL.
+"""
+
 import os
 
-# Must be set before anything imports app.core.config / app.db.database, which
-# build the engine at import time. Without this the suite tries to reach a real
-# PostgreSQL instance just to collect tests.
-os.environ.setdefault("DATABASE_URL", "sqlite:///./test.db")
+# Doit être défini avant tout import de app.core.config / app.db.database, qui
+# construisent le moteur au moment de l'import. Sans cela, la collecte des
+# tests tenterait de joindre une vraie instance PostgreSQL.
+TEST_DATABASE_URL = os.environ.get("VIGIE_TEST_DATABASE_URL", "sqlite:///./test.db")
+
+os.environ.setdefault("DATABASE_URL", TEST_DATABASE_URL)
 os.environ.setdefault("SECRET_KEY", "test-secret-key-not-used-in-production-0123456789")
 os.environ.setdefault("ENVIRONMENT", "development")
 
@@ -14,15 +25,23 @@ from sqlalchemy.orm import sessionmaker  # noqa: E402
 from app.db.database import Base, get_db  # noqa: E402
 from app.main import app  # noqa: E402
 
-TEST_DATABASE_URL = "sqlite:///./test.db"
-
-# Satisfies the registration password policy (>= 12 chars, letter + digit).
+# Satisfait la politique de mot de passe à l'inscription (>= 12 caractères,
+# au moins une lettre et un chiffre).
 VALID_PASSWORD = "testpass123456"
+
+IS_SQLITE = TEST_DATABASE_URL.startswith("sqlite")
 
 
 @pytest.fixture(scope="session")
 def db_engine():
-    engine = create_engine(TEST_DATABASE_URL, connect_args={"check_same_thread": False})
+    # check_same_thread ne concerne que SQLite ; le passer à PostgreSQL lève
+    # une erreur de connexion.
+    connect_args = {"check_same_thread": False} if IS_SQLITE else {}
+    engine = create_engine(TEST_DATABASE_URL, connect_args=connect_args)
+
+    # Repart d'un schéma vierge : un run précédent interrompu laisse sinon des
+    # tables (et des types ENUM) qui font échouer la création.
+    Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     yield engine
     Base.metadata.drop_all(bind=engine)

@@ -1,0 +1,344 @@
+name: CI
+
+# L'audit (docs/EVALUATION_TECHNIQUE.md, point D6) relevait qu'aucun des tests
+# ni des builds ne tournait automatiquement. Ce workflow rend verifiable tout
+# ce qui etait auparavant une affirmation.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.11"
+  NODE_VERSION: "20"
+
+jobs:
+  lint:
+    name: Lint & format (Python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - run: pip install -r requirements-dev.txt
+
+      - name: ruff
+        run: ruff check --output-format=github .
+
+      - name: black
+        run: black --check --diff .
+
+  test:
+    name: Tests (SQLite + PostgreSQL)
+    runs-on: ubuntu-latest
+
+    # La suite tournait uniquement sur SQLite alors que la production est sur
+    # PostgreSQL : les ENUM natifs, les ON DELETE CASCADE et les collations
+    # n'etaient jamais exerces (point T3 de l'audit).
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: vigie_ci
+          POSTGRES_PASSWORD: vigie_ci
+          POSTGRES_DB: vigie_ci
+        options: >-
+          --health-cmd "pg_isready -U vigie_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 6379:6379
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - run: pip install -r requirements-dev.txt
+
+      - name: Suite complete (SQLite, rapide)
+        env:
+          SECRET_KEY: ci-secret-key-not-used-anywhere-0123456789abcdef
+          ENVIRONMENT: development
+        run: pytest --cov --cov-report=term-missing --cov-report=xml
+
+      - name: Migrations Alembic sur PostgreSQL
+        env:
+          SECRET_KEY: ci-secret-key-not-used-anywhere-0123456789abcdef
+          ENVIRONMENT: development
+          DATABASE_URL: postgresql://vigie_ci:vigie_ci@localhost:5432/vigie_ci
+        run: |
+          alembic upgrade head
+          # Le retour arriere doit fonctionner : une migration qu'on ne peut
+          # pas annuler n'est pas deployable (point D7).
+          alembic downgrade base
+          alembic upgrade head
+
+      - name: Suite API sur PostgreSQL
+        env:
+          SECRET_KEY: ci-secret-key-not-used-anywhere-0123456789abcdef
+          ENVIRONMENT: development
+          DATABASE_URL: postgresql://vigie_ci:vigie_ci@localhost:5432/vigie_ci
+          VIGIE_TEST_DATABASE_URL: postgresql://vigie_ci:vigie_ci@localhost:5432/vigie_ci
+          REDIS_URL: redis://localhost:6379/0
+        run: pytest tests/api tests/test_ingestion.py
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage
+          path: coverage.xml
+          if-no-files-found: ignore
+
+  audit:
+    name: Audit des dependances
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - run: pip install pip-audit
+
+      # Une plateforme de gestion de vulnerabilites qui embarque des
+      # dependances vulnerables perd sa credibilite avant sa securite.
+      - name: pip-audit
+        run: pip-audit -r requirements.txt --strict
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: npm audit
+        working-directory: frontend
+        # Bloquant a partir de "high". Les alertes moderate restantes
+        # concernent le serveur de developpement Vite, absent de l'image de
+        # production (qui ne contient que des fichiers statiques et Nginx).
+        run: npm audit --audit-level=high
+
+  frontend:
+    name: Build frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # `npm ci` echoue si package.json et le lockfile divergent : c'est ce
+      # qui garantit qu'un build est reproductible.
+      - name: npm ci
+        working-directory: frontend
+        run: npm ci
+
+      - name: npm run build
+        working-directory: frontend
+        run: npm run build
+
+      - name: Verifier que le build a produit des assets
+        working-directory: frontend
+        run: |
+          test -f dist/index.html
+          test -d dist/assets
+          echo "Taille du bundle :"
+          du -sh dist
+
+  docker:
+    name: Build des images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build de l'image API
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: vigie-api:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build de l'image frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile.prod
+          push: false
+          load: true
+          tags: vigie-frontend:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Verification du point D2 : sans .dockerignore, le COPY . . embarquait
+      # le .env reel — donc le SECRET_KEY — dans une couche d'image. Ce test
+      # empeche la regression, qui serait invisible autrement.
+      - name: L'image ne doit contenir ni secret ni environnement local
+        run: |
+          set -euo pipefail
+          for path in /app/.env /app/venv /app/.git /app/test.db; do
+            if docker run --rm --entrypoint sh vigie-api:ci -c "[ -e $path ]"; then
+              echo "::error::$path est present dans l'image"
+              exit 1
+            fi
+          done
+          echo "Aucun secret ni artefact local dans l'image."
+
+      - name: L'image doit tourner en utilisateur non privilegie
+        run: |
+          set -euo pipefail
+          uid=$(docker run --rm --entrypoint id vigie-api:ci -u)
+          if [ "$uid" = "0" ]; then
+            echo "::error::l'image tourne en root"
+            exit 1
+          fi
+          echo "UID d'execution : $uid"
+
+      - name: L'application doit demarrer et repondre
+        run: |
+          set -euo pipefail
+          docker network create vigie-ci
+          docker run -d --name pg --network vigie-ci \
+            -e POSTGRES_USER=vigie_ci -e POSTGRES_PASSWORD=vigie_ci -e POSTGRES_DB=vigie_ci \
+            postgres:15-alpine
+          docker run -d --name rd --network vigie-ci redis:7-alpine
+
+          # Attendre que Postgres accepte les connexions.
+          for _ in $(seq 1 30); do
+            docker exec pg pg_isready -U vigie_ci && break
+            sleep 2
+          done
+
+          docker run --rm --network vigie-ci \
+            -e SECRET_KEY=ci-secret-key-not-used-anywhere-0123456789abcdef \
+            -e DATABASE_URL=postgresql://vigie_ci:vigie_ci@pg:5432/vigie_ci \
+            vigie-api:ci alembic upgrade head
+
+          docker run -d --name api --network vigie-ci -p 8000:8000 \
+            -e SECRET_KEY=ci-secret-key-not-used-anywhere-0123456789abcdef \
+            -e DATABASE_URL=postgresql://vigie_ci:vigie_ci@pg:5432/vigie_ci \
+            -e REDIS_URL=redis://rd:6379/0 \
+            vigie-api:ci
+
+          # /ready couvre Postgres ET Redis : c'est la sonde qui prouve que le
+          # conteneur peut reellement servir, pas seulement qu'il a demarre.
+          ok=0
+          for _ in $(seq 1 30); do
+            if curl -fsS http://localhost:8000/ready; then ok=1; break; fi
+            sleep 2
+          done
+          if [ "$ok" != "1" ]; then
+            echo "::error::/ready n'a jamais repondu"
+            docker logs api
+            exit 1
+          fi
+          echo "L'API repond sur /ready."
+          docker logs api
+
+      - name: Le frontend doit servir le SPA et sa sonde
+        run: |
+          set -euo pipefail
+          docker run -d --name fe -p 8080:8080 vigie-frontend:ci
+          ok=0
+          for _ in $(seq 1 20); do
+            if curl -fsS http://localhost:8080/healthz; then ok=1; break; fi
+            sleep 2
+          done
+          if [ "$ok" != "1" ]; then
+            echo "::error::le frontend ne repond pas"
+            docker logs fe
+            exit 1
+          fi
+          # Une route cliente inconnue doit rendre index.html, sinon un
+          # rechargement sur /login renvoie un 404.
+          curl -fsS http://localhost:8080/login | grep -q "<div id=\"root\">"
+          echo "Le SPA est servi et le fallback de routage fonctionne."
+
+  compose:
+    name: Validation des fichiers compose
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compose de developpement
+        run: docker compose -f docker-compose.yml config --quiet
+        env:
+          SECRET_KEY: ci-secret-key-not-used-anywhere-0123456789abcdef
+
+      - name: Compose de production
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml config > /tmp/prod.yml
+        env:
+          SECRET_KEY: ci-secret-key-not-used-anywhere-0123456789abcdef
+          POSTGRES_USER: vigie
+          POSTGRES_PASSWORD: ci-password
+          POSTGRES_DB: vigie
+          REDIS_PASSWORD: ci-redis-password
+          BACKEND_CORS_ORIGINS: '["https://vigie.example.com"]'
+
+      # La surcouche de production doit reellement neutraliser les reglages de
+      # developpement. Sans cette verification, une erreur de fusion YAML
+      # relancerait --reload ou republierait Postgres sans que rien n'echoue.
+      - name: La production ne doit conserver aucun reglage de developpement
+        run: |
+          set -euo pipefail
+          if grep -q -- "--reload" /tmp/prod.yml; then
+            echo "::error::--reload est present dans la configuration de production"
+            exit 1
+          fi
+          if grep -qE "published: \"(5432|6379)\"" /tmp/prod.yml; then
+            echo "::error::PostgreSQL ou Redis est publie sur l'hote en production"
+            exit 1
+          fi
+          if grep -q "npm run dev" /tmp/prod.yml; then
+            echo "::error::le frontend tourne encore avec le serveur de developpement"
+            exit 1
+          fi
+          if grep -q "type: bind" /tmp/prod.yml; then
+            echo "::error::un bind mount subsiste en production"
+            exit 1
+          fi
+          # Verifications positives : l'absence d'un reglage de developpement ne
+          # prouve pas que le reglage de production a bien ete applique.
+          for expected in "ENVIRONMENT: production" "requirepass" "/ready"; do
+            if ! grep -q -- "$expected" /tmp/prod.yml; then
+              echo "::error::attendu mais absent de la configuration : $expected"
+              exit 1
+            fi
+          done
+          echo "La configuration de production est conforme."

@@ -34,10 +34,16 @@ class Asset(Base):
         nullable=False,
         index=True,
     )
-    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    created_at: Mapped[DateTime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[DateTime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
-    vulnerabilities = relationship("AssetVulnerability", back_populates="asset", cascade="all, delete-orphan")
+    vulnerabilities = relationship(
+        "AssetVulnerability", back_populates="asset", cascade="all, delete-orphan"
+    )
 
 
 Index("ix_assets_ip_hostname", Asset.ip_address, Asset.hostname)

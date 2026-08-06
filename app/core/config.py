@@ -74,7 +74,7 @@ class Settings(BaseSettings):
 
         message = (
             "SECRET_KEY is weak or is a known default value. Generate one with: "
-            "python -c \"import secrets; print(secrets.token_urlsafe(48))\""
+            'python -c "import secrets; print(secrets.token_urlsafe(48))"'
         )
         if self.is_production:
             raise ValueError(message)

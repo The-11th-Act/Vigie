@@ -125,9 +125,7 @@ def get_findings(
 
     total = query.count()
     items = (
-        query.order_by(
-            AssetVulnerability.risk_score.desc(), AssetVulnerability.id.desc()
-        )
+        query.order_by(AssetVulnerability.risk_score.desc(), AssetVulnerability.id.desc())
         .offset(skip)
         .limit(limit)
         .all()
@@ -156,9 +154,7 @@ def get_asset_vulnerabilities(
 
     total = query.count()
     items = (
-        query.order_by(
-            AssetVulnerability.risk_score.desc(), AssetVulnerability.id.desc()
-        )
+        query.order_by(AssetVulnerability.risk_score.desc(), AssetVulnerability.id.desc())
         .offset(skip)
         .limit(limit)
         .all()

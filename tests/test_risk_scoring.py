@@ -58,7 +58,13 @@ class TestRiskScoring:
 
     @pytest.mark.parametrize(
         "score,expected",
-        [(9.5, "Critical"), (9.0, "Critical"), (7.0, "High"), (4.0, "Medium"), (1.0, "Low")],
+        [
+            (9.5, "Critical"),
+            (9.0, "Critical"),
+            (7.0, "High"),
+            (4.0, "Medium"),
+            (1.0, "Low"),
+        ],
     )
     def test_risk_level_buckets(self, score, expected):
         assert risk_level(score) == expected

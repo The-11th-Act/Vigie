@@ -108,7 +108,7 @@ class TestIngestion:
         ingest_findings(db_session, [finding()], "nessus")
 
         asset = db_session.query(Asset).filter(Asset.ip_address == "10.0.0.1").one()
-        assert asset.hostname == "curated-name"       # not clobbered
+        assert asset.hostname == "curated-name"  # not clobbered
         assert asset.operating_system == "Ubuntu 22.04"  # filled in
 
     def test_deduplicates_within_a_single_batch(self, db_session):

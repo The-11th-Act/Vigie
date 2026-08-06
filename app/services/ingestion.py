@@ -3,6 +3,7 @@
 Kept deliberately free of Celery imports so it can be unit-tested against a
 plain SQLAlchemy session; the worker task is a thin wrapper around it.
 """
+
 import logging
 from collections.abc import Iterable
 from dataclasses import dataclass

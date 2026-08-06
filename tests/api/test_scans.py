@@ -3,6 +3,7 @@
 Regression: this endpoint previously had no authentication at all, letting
 anyone inject arbitrary assets and findings or saturate the worker pool.
 """
+
 import io
 
 import pytest
@@ -20,9 +21,7 @@ def no_broker(monkeypatch):
     def fake_delay(*args, **kwargs):
         return FakeTask()
 
-    monkeypatch.setattr(
-        "app.api.v1.scans.process_scan_file_task.delay", fake_delay
-    )
+    monkeypatch.setattr("app.api.v1.scans.process_scan_file_task.delay", fake_delay)
 
 
 def xml_file(content=b"<?xml version='1.0'?><report/>", name="scan.xml"):

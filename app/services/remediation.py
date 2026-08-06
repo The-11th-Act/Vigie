@@ -1,4 +1,5 @@
 """Remediation SLA policy."""
+
 from datetime import UTC, datetime, timedelta
 
 # Days allowed to remediate, by severity. Loosely aligned with common

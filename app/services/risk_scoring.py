@@ -6,6 +6,7 @@ on the production payment database. The score below contextualises CVSS with
 business criticality and finding age so the backlog can be ordered by what
 actually needs fixing first.
 """
+
 from datetime import UTC, datetime
 
 # How much the business criticality of the host amplifies or dampens CVSS.

@@ -19,10 +19,23 @@ from app.schemas.vulnerability import (
 )
 
 __all__ = [
-    "AssetBase", "AssetCreate", "AssetUpdate", "AssetResponse", "PaginatedAssetResponse",
-    "VulnerabilityBase", "VulnerabilityCreate", "VulnerabilityResponse",
-    "AssetVulnerabilityBase", "AssetVulnerabilityCreate", "AssetVulnerabilityResponse",
+    "AssetBase",
+    "AssetCreate",
+    "AssetUpdate",
+    "AssetResponse",
+    "PaginatedAssetResponse",
+    "VulnerabilityBase",
+    "VulnerabilityCreate",
+    "VulnerabilityResponse",
+    "AssetVulnerabilityBase",
+    "AssetVulnerabilityCreate",
+    "AssetVulnerabilityResponse",
     "AssetVulnerabilityUpdate",
-    "PaginatedVulnerabilityResponse", "PaginatedAssetVulnerabilityResponse",
-    "UserCreate", "UserLogin", "Token", "TokenPayload", "UserResponse",
+    "PaginatedVulnerabilityResponse",
+    "PaginatedAssetVulnerabilityResponse",
+    "UserCreate",
+    "UserLogin",
+    "Token",
+    "TokenPayload",
+    "UserResponse",
 ]

@@ -1,0 +1,45 @@
+# syntax=docker/dockerfile:1
+
+# --------------------------------------------------------------------------
+# Étage 1 — build du SPA
+# --------------------------------------------------------------------------
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# `npm ci` et non `npm install` : l'installation est déduite du lockfile, donc
+# reproductible. `npm install` peut réécrire le lockfile et tirer des versions
+# différentes d'un build à l'autre.
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY . .
+RUN npm run build
+
+
+# --------------------------------------------------------------------------
+# Étage 2 — service des fichiers statiques
+#
+# Le SPA est un ensemble de fichiers statiques ; le servir par `npm run dev`
+# (serveur de développement Vite) en production, c'est exposer un rechargeur
+# à chaud, sans compression, sans cache et mono-thread.
+# --------------------------------------------------------------------------
+FROM nginx:1.27-alpine AS runtime
+
+COPY --from=builder /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+# nginx:alpine tourne déjà en non-root pour les workers, mais le port 80
+# exigerait des privilèges : on écoute sur 8080 et le maître tourne en nginx.
+RUN sed -i 's/user  nginx;/# user directive removed: running unprivileged/' /etc/nginx/nginx.conf \
+    && sed -i 's|/var/run/nginx.pid|/tmp/nginx.pid|' /etc/nginx/nginx.conf \
+    && chown -R nginx:nginx /usr/share/nginx/html /var/cache/nginx
+
+USER nginx
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD wget -q --spider http://localhost:8080/healthz || exit 1
+
+CMD ["nginx", "-g", "daemon off;"]

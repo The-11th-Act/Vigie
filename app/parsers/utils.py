@@ -14,6 +14,7 @@ task can treat them uniformly:
         "severity": str,       # always a valid Severity enum value
     }
 """
+
 import re
 from typing import Any
 

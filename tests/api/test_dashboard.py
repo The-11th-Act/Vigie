@@ -9,7 +9,12 @@ class TestDashboard:
         data = response.json()
         assert data["total_assets"] == 0
         assert data["total_open_vulnerabilities"] == 0
-        assert data["severity_breakdown"] == {"Critical": 0, "High": 0, "Medium": 0, "Low": 0}
+        assert data["severity_breakdown"] == {
+            "Critical": 0,
+            "High": 0,
+            "Medium": 0,
+            "Low": 0,
+        }
         assert data["overdue_count"] == 0
 
     def test_stats_with_data(self, client, db_session):
@@ -17,15 +22,42 @@ class TestDashboard:
         db_session.add(asset)
         db_session.flush()
 
-        db_session.add(Vulnerability(cve_id="CVE-2024-D1", title="Critical vuln", cvss_score=9.5, severity="Critical"))
-        db_session.add(Vulnerability(cve_id="CVE-2024-D2", title="High vuln", cvss_score=7.5, severity="High"))
+        db_session.add(
+            Vulnerability(
+                cve_id="CVE-2024-D1",
+                title="Critical vuln",
+                cvss_score=9.5,
+                severity="Critical",
+            )
+        )
+        db_session.add(
+            Vulnerability(
+                cve_id="CVE-2024-D2", title="High vuln", cvss_score=7.5, severity="High"
+            )
+        )
         db_session.flush()
 
-        vuln1 = db_session.query(Vulnerability).filter(Vulnerability.cve_id == "CVE-2024-D1").first()
-        vuln2 = db_session.query(Vulnerability).filter(Vulnerability.cve_id == "CVE-2024-D2").first()
+        vuln1 = (
+            db_session.query(Vulnerability)
+            .filter(Vulnerability.cve_id == "CVE-2024-D1")
+            .first()
+        )
+        vuln2 = (
+            db_session.query(Vulnerability)
+            .filter(Vulnerability.cve_id == "CVE-2024-D2")
+            .first()
+        )
 
-        db_session.add(AssetVulnerability(asset_id=asset.id, vulnerability_id=vuln1.id, status="Open"))
-        db_session.add(AssetVulnerability(asset_id=asset.id, vulnerability_id=vuln2.id, status="Open"))
+        db_session.add(
+            AssetVulnerability(
+                asset_id=asset.id, vulnerability_id=vuln1.id, status="Open"
+            )
+        )
+        db_session.add(
+            AssetVulnerability(
+                asset_id=asset.id, vulnerability_id=vuln2.id, status="Open"
+            )
+        )
         db_session.commit()
 
         response = client.get("/api/v1/dashboard/stats")

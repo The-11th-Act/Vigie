@@ -31,7 +31,9 @@ class CrowdstrikeClient:
         return self._token
 
     def fetch_vulnerabilities(self) -> list[dict[str, Any]]:
-        logger.warning("CrowdStrike client is using mock data — API integration not yet implemented")
+        logger.warning(
+            "CrowdStrike client is using mock data — API integration not yet implemented"
+        )
         return [
             {
                 "ip_address": "10.0.2.15",

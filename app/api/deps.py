@@ -3,6 +3,7 @@
 These live in the API layer rather than in ``app.db`` so the persistence layer
 stays free of HTTP concerns.
 """
+
 from typing import TypeVar
 
 from fastapi import HTTPException, status
