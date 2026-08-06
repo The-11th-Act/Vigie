@@ -1,8 +1,11 @@
-from sqlalchemy import String, DateTime, Index, Enum as SAEnum
+from enum import Enum
+
+from sqlalchemy import DateTime, Index, String
+from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
+
 from app.db.database import Base
-from enum import Enum
 
 
 class Criticality(str, Enum):

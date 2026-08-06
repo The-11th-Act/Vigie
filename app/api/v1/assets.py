@@ -1,4 +1,3 @@
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import or_
@@ -26,8 +25,8 @@ MAX_LIMIT = 500
 def get_assets(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=MAX_LIMIT),
-    search: Optional[str] = None,
-    criticality: Optional[Criticality] = None,
+    search: str | None = None,
+    criticality: Criticality | None = None,
     db: Session = Depends(get_db),
     payload: dict = Depends(decode_token),
 ):

@@ -1,6 +1,7 @@
 import logging
+from typing import Any
+
 import requests
-from typing import List, Dict, Any
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,7 @@ class CrowdstrikeClient:
         self._token = resp.json()["access_token"]
         return self._token
 
-    def fetch_vulnerabilities(self) -> List[Dict[str, Any]]:
+    def fetch_vulnerabilities(self) -> list[dict[str, Any]]:
         logger.warning("CrowdStrike client is using mock data — API integration not yet implemented")
         return [
             {

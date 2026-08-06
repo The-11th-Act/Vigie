@@ -1,13 +1,14 @@
-from pydantic import BaseModel, field_validator
-from typing import Optional, List
 from datetime import datetime
+
+from pydantic import BaseModel
+
 from app.models.asset import Criticality
 
 
 class AssetBase(BaseModel):
-    hostname: Optional[str] = None
+    hostname: str | None = None
     ip_address: str
-    operating_system: Optional[str] = None
+    operating_system: str | None = None
     business_criticality: Criticality = Criticality.medium
 
 
@@ -16,9 +17,9 @@ class AssetCreate(AssetBase):
 
 
 class AssetUpdate(BaseModel):
-    hostname: Optional[str] = None
-    operating_system: Optional[str] = None
-    business_criticality: Optional[Criticality] = None
+    hostname: str | None = None
+    operating_system: str | None = None
+    business_criticality: Criticality | None = None
 
 
 class AssetResponse(AssetBase):
@@ -31,4 +32,4 @@ class AssetResponse(AssetBase):
 
 class PaginatedAssetResponse(BaseModel):
     total: int
-    items: List[AssetResponse]
+    items: list[AssetResponse]

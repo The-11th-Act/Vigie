@@ -1,4 +1,3 @@
-from typing import Optional
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
@@ -45,15 +44,16 @@ class UserLogin(BaseModel):
 
 class Token(BaseModel):
     access_token: str
-    token_type: str = "bearer"
+    # "bearer" is the OAuth2 scheme name, not a credential.
+    token_type: str = "bearer"  # noqa: S105
     role: str
     username: str
 
 
 class TokenPayload(BaseModel):
-    sub: Optional[str] = None
-    role: Optional[str] = None
-    exp: Optional[int] = None
+    sub: str | None = None
+    role: str | None = None
+    exp: int | None = None
 
 
 class UserResponse(BaseModel):

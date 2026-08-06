@@ -1,13 +1,15 @@
 from logging.config import fileConfig
 
-from sqlalchemy import pool, create_engine
-
 from alembic import context
+from sqlalchemy import create_engine, pool
 
 from app.core.config import settings
 from app.db.database import Base
 from app.models import (  # noqa: F401 — ensure all models are registered on Base.metadata
-    Asset, Vulnerability, AssetVulnerability, User,
+    Asset,
+    AssetVulnerability,
+    User,
+    Vulnerability,
 )
 
 config = context.config

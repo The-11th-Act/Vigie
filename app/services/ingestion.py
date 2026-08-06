@@ -4,9 +4,10 @@ Kept deliberately free of Celery imports so it can be unit-tested against a
 plain SQLAlchemy session; the worker task is a thin wrapper around it.
 """
 import logging
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Dict, Iterable, List, Tuple
+from collections.abc import Iterable
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -29,7 +30,7 @@ class IngestionResult:
     reopened: int = 0
     message: str = ""
 
-    def as_dict(self) -> Dict[str, Any]:
+    def as_dict(self) -> dict[str, Any]:
         data = {
             "processed_records": self.processed_records,
             "new_assets": self.new_assets,
@@ -43,7 +44,7 @@ class IngestionResult:
 
 
 def ingest_findings(
-    db: Session, findings: Iterable[Dict[str, Any]], scan_source: str
+    db: Session, findings: Iterable[dict[str, Any]], scan_source: str
 ) -> IngestionResult:
     """Upsert assets, vulnerabilities and their associations from findings.
 
@@ -55,7 +56,7 @@ def ingest_findings(
     if not findings:
         return IngestionResult(message="No findings in scan file")
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     asset_cache, new_assets = _upsert_assets(db, findings)
     vuln_cache, new_vulns = _upsert_vulnerabilities(db, findings)
@@ -87,11 +88,11 @@ def ingest_findings(
 
 
 def _upsert_assets(
-    db: Session, findings: List[Dict[str, Any]]
-) -> Tuple[Dict[str, Asset], int]:
+    db: Session, findings: list[dict[str, Any]]
+) -> tuple[dict[str, Asset], int]:
     unique_ips = {f["ip_address"] for f in findings}
     existing = db.query(Asset).filter(Asset.ip_address.in_(unique_ips)).all()
-    cache: Dict[str, Asset] = {a.ip_address: a for a in existing}
+    cache: dict[str, Asset] = {a.ip_address: a for a in existing}
     created = 0
 
     for finding in findings:
@@ -121,11 +122,11 @@ def _upsert_assets(
 
 
 def _upsert_vulnerabilities(
-    db: Session, findings: List[Dict[str, Any]]
-) -> Tuple[Dict[str, Vulnerability], int]:
+    db: Session, findings: list[dict[str, Any]]
+) -> tuple[dict[str, Vulnerability], int]:
     unique_cves = {f["cve_id"] for f in findings}
     existing = db.query(Vulnerability).filter(Vulnerability.cve_id.in_(unique_cves)).all()
-    cache: Dict[str, Vulnerability] = {v.cve_id: v for v in existing}
+    cache: dict[str, Vulnerability] = {v.cve_id: v for v in existing}
     created = 0
 
     for finding in findings:
@@ -148,12 +149,12 @@ def _upsert_vulnerabilities(
 
 def _upsert_associations(
     db: Session,
-    findings: List[Dict[str, Any]],
-    asset_cache: Dict[str, Asset],
-    vuln_cache: Dict[str, Vulnerability],
+    findings: list[dict[str, Any]],
+    asset_cache: dict[str, Asset],
+    vuln_cache: dict[str, Vulnerability],
     scan_source: str,
     now: datetime,
-) -> Tuple[int, int]:
+) -> tuple[int, int]:
     asset_ids = {a.id for a in asset_cache.values()}
     vuln_ids = {v.id for v in vuln_cache.values()}
 
@@ -165,11 +166,11 @@ def _upsert_associations(
         )
         .all()
     )
-    assoc_cache: Dict[Tuple[int, int], AssetVulnerability] = {
+    assoc_cache: dict[tuple[int, int], AssetVulnerability] = {
         (a.asset_id, a.vulnerability_id): a for a in existing
     }
 
-    new_assocs: List[AssetVulnerability] = []
+    new_assocs: list[AssetVulnerability] = []
     reopened = 0
 
     for finding in findings:

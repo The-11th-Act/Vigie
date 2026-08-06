@@ -15,7 +15,7 @@ task can treat them uniformly:
     }
 """
 import re
-from typing import Any, Optional
+from typing import Any
 
 from app.models.vulnerability import Severity
 
@@ -52,7 +52,7 @@ def severity_from_cvss(cvss_score: float) -> str:
     return Severity.low.value
 
 
-def normalize_severity(raw: Optional[str], cvss_score: float) -> str:
+def normalize_severity(raw: str | None, cvss_score: float) -> str:
     """Coerce a vendor severity label into a valid Severity enum value.
 
     Falls back to deriving the severity from the CVSS score when the vendor
@@ -66,11 +66,11 @@ def normalize_severity(raw: Optional[str], cvss_score: float) -> str:
     return severity_from_cvss(cvss_score)
 
 
-def is_valid_cve(cve_id: Optional[str]) -> bool:
+def is_valid_cve(cve_id: str | None) -> bool:
     return bool(cve_id and CVE_PATTERN.match(cve_id.strip()))
 
 
-def clean_text(value: Optional[str], max_length: Optional[int] = None) -> Optional[str]:
+def clean_text(value: str | None, max_length: int | None = None) -> str | None:
     """Strip whitespace, collapse empties to None, optionally truncate."""
     if value is None:
         return None

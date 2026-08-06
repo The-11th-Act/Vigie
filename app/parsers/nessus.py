@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, List
+from typing import Any
 
 from defusedxml import ElementTree as ET
 from defusedxml.common import DefusedXmlException
@@ -25,13 +25,13 @@ NESSUS_SEVERITY_MAP = {
 MAX_DESCRIPTION_LENGTH = 10_000
 
 
-def parse_nessus_report(xml_content: bytes) -> List[Dict[str, Any]]:
+def parse_nessus_report(xml_content: bytes) -> list[dict[str, Any]]:
     """Parse a .nessus report into normalised findings.
 
     Returns an empty list on malformed input — ingestion callers treat that as
     "nothing to import" rather than a hard failure.
     """
-    results: List[Dict[str, Any]] = []
+    results: list[dict[str, Any]] = []
 
     try:
         root = ET.fromstring(xml_content)

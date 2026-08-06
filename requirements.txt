@@ -1,21 +1,24 @@
-fastapi>=0.100.0
-uvicorn[standard]>=0.22.0
-sqlalchemy>=2.0.0
-alembic>=1.11.0
-psycopg2-binary>=2.9.0
-pydantic[email]>=2.0.0
-pydantic-settings>=2.0.0
-PyJWT>=2.7.0
-passlib[bcrypt]>=1.7.4
-bcrypt<4.1
-celery>=5.3.0
-redis>=4.6.0
-python-dotenv>=1.0.0
-python-multipart>=0.0.7
-defusedxml>=0.7.1
-requests>=2.31.0
-lxml>=4.9.0
+# Dependances directes de l'application. Les versions sont bornees par le haut
+# sur la majeure pour eviter qu'un build futur ne tire une rupture d'API
+# silencieusement. Le build reproductible passe par requirements.lock.txt.
 
-# Dev / test
-pytest>=7.3.0
-httpx>=0.24.0
+fastapi>=0.100.0,<1.0.0
+uvicorn[standard]>=0.22.0,<1.0.0
+sqlalchemy>=2.0.0,<3.0.0
+alembic>=1.11.0,<2.0.0
+psycopg2-binary>=2.9.0,<3.0.0
+pydantic[email]>=2.0.0,<3.0.0
+pydantic-settings>=2.0.0,<3.0.0
+PyJWT>=2.7.0,<3.0.0
+passlib[bcrypt]>=1.7.4,<2.0.0
+bcrypt<4.1
+celery>=5.3.0,<6.0.0
+redis>=4.6.0,<7.0.0
+python-dotenv>=1.0.0,<2.0.0
+python-multipart>=0.0.7,<1.0.0
+defusedxml>=0.7.1,<1.0.0
+
+# Utilise uniquement par app/parsers/crowdstrike.py, qui retourne encore des
+# donnees factices. A retirer en meme temps que ce module si l'integration
+# CrowdStrike est abandonnee (cf. point 5 de TODO.md).
+requests>=2.31.0,<3.0.0

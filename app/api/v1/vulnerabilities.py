@@ -1,7 +1,7 @@
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status as http_status
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import status as http_status
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
@@ -36,9 +36,9 @@ STATUSES_REQUIRING_NOTE = {Status.false_positive, Status.risk_accepted}
 def get_vulnerabilities(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=MAX_LIMIT),
-    search: Optional[str] = None,
-    severity: Optional[Severity] = None,
-    min_cvss: Optional[float] = Query(None, ge=0, le=10),
+    search: str | None = None,
+    severity: Severity | None = None,
+    min_cvss: float | None = Query(None, ge=0, le=10),
     db: Session = Depends(get_db),
     payload: dict = Depends(decode_token),
 ):
@@ -95,8 +95,8 @@ def create_vulnerability(
 def get_findings(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=MAX_LIMIT),
-    status_filter: Optional[Status] = None,
-    min_risk: Optional[float] = Query(None, ge=0, le=10),
+    status_filter: Status | None = None,
+    min_risk: float | None = Query(None, ge=0, le=10),
     overdue_only: bool = False,
     db: Session = Depends(get_db),
     payload: dict = Depends(decode_token),
@@ -120,7 +120,7 @@ def get_findings(
         query = query.filter(
             AssetVulnerability.status == Status.open,
             AssetVulnerability.remediation_deadline.isnot(None),
-            AssetVulnerability.remediation_deadline < datetime.now(timezone.utc),
+            AssetVulnerability.remediation_deadline < datetime.now(UTC),
         )
 
     total = query.count()
@@ -140,7 +140,7 @@ def get_asset_vulnerabilities(
     asset_id: int,
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=MAX_LIMIT),
-    status_filter: Optional[Status] = None,
+    status_filter: Status | None = None,
     db: Session = Depends(get_db),
     payload: dict = Depends(decode_token),
 ):
@@ -190,7 +190,7 @@ def update_finding_status(
         finding.status_note = update_in.status_note
 
     if update_in.status in CLOSED_STATUSES:
-        finding.fixed_at = finding.fixed_at or datetime.now(timezone.utc)
+        finding.fixed_at = finding.fixed_at or datetime.now(UTC)
     else:
         # Reopening clears the closure timestamp so SLA tracking resumes.
         finding.fixed_at = None

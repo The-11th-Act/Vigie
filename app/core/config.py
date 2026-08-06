@@ -78,7 +78,10 @@ class Settings(BaseSettings):
         )
         if self.is_production:
             raise ValueError(message)
-        warnings.warn(f"{message} (allowed because ENVIRONMENT is not 'production')")
+        warnings.warn(
+            f"{message} (allowed because ENVIRONMENT is not 'production')",
+            stacklevel=2,
+        )
         return self
 
 

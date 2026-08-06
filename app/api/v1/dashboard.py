@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func
@@ -17,7 +17,7 @@ router = APIRouter()
 def get_dashboard_stats(
     db: Session = Depends(get_db), payload: dict = Depends(decode_token)
 ):
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     total_assets = db.query(func.count(Asset.id)).scalar() or 0
 
@@ -107,7 +107,7 @@ def get_top_risks(
         .all()
     )
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return [
         {
             "finding_id": f.id,
@@ -139,5 +139,5 @@ def _is_past(deadline, now) -> bool:
     if deadline is None:
         return False
     if deadline.tzinfo is None:
-        deadline = deadline.replace(tzinfo=timezone.utc)
+        deadline = deadline.replace(tzinfo=UTC)
     return deadline < now

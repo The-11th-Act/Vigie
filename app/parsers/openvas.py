@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, List
+from typing import Any
 
 from defusedxml import ElementTree as ET
 from defusedxml.common import DefusedXmlException
@@ -16,13 +16,13 @@ logger = logging.getLogger(__name__)
 MAX_DESCRIPTION_LENGTH = 10_000
 
 
-def _extract_cve_ids(nvt_el) -> List[str]:
+def _extract_cve_ids(nvt_el) -> list[str]:
     """Collect CVE identifiers from an NVT node.
 
     OpenVAS exposes them either as a single <cve> element (sometimes holding a
     comma-separated list) or as <refs><ref type="cve" id="..."/></refs>.
     """
-    candidates: List[str] = []
+    candidates: list[str] = []
 
     cve_el = nvt_el.find("cve")
     if cve_el is not None and cve_el.text:
@@ -46,9 +46,9 @@ def _extract_cve_ids(nvt_el) -> List[str]:
     return valid
 
 
-def parse_openvas_report(xml_content: bytes) -> List[Dict[str, Any]]:
+def parse_openvas_report(xml_content: bytes) -> list[dict[str, Any]]:
     """Parse an OpenVAS/GVM XML report into normalised findings."""
-    results: List[Dict[str, Any]] = []
+    results: list[dict[str, Any]] = []
 
     try:
         root = ET.fromstring(xml_content)

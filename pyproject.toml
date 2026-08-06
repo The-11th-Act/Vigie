@@ -1,0 +1,78 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vigie"
+version = "1.0.0"
+description = "Vigie — Risk-Based Vulnerability Management (RBVM) platform"
+requires-python = ">=3.11"
+
+[tool.setuptools]
+packages = ["app"]
+
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-q --strict-markers --strict-config"
+filterwarnings = [
+    # A deprecation we introduce ourselves must fail the build, not scroll by.
+    "error::DeprecationWarning:app.*",
+]
+markers = [
+    "postgres: requires a real PostgreSQL instance (skipped on SQLite)",
+]
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["app/db/migrations/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]
+
+# ---------------------------------------------------------------------------
+# Lint / format
+# ---------------------------------------------------------------------------
+[tool.ruff]
+# Matches the style the codebase was already written in, so enabling the
+# formatter does not rewrite every file.
+line-length = 90
+target-version = "py311"
+exclude = ["venv", ".venv", "app/db/migrations/versions", "frontend"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "S",   # flake8-bandit — relevant for a security product
+    "C4",  # comprehensions
+]
+ignore = [
+    "E501",  # line length is handled by black
+    "B008",  # FastAPI's Depends() in defaults is the documented idiom
+    # StrEnum would change how members serialise, and the models rely on the
+    # current (str, Enum) behaviour together with values_callable. Migrating is
+    # a schema-visible change, not a lint fix.
+    "UP042",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests legitimately assert, hardcode credentials and bind to localhost.
+"tests/**" = ["S101", "S105", "S106", "S311"]
+# Alembic generates its own style.
+"app/db/migrations/**" = ["E402", "F401"]
+
+[tool.black]
+line-length = 90
+target-version = ["py311"]
+extend-exclude = "(venv|\\.venv|frontend|app/db/migrations/versions)"

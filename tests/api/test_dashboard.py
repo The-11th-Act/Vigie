@@ -1,5 +1,5 @@
 from app.models.asset import Asset
-from app.models.vulnerability import Vulnerability, AssetVulnerability
+from app.models.vulnerability import AssetVulnerability, Vulnerability
 
 
 class TestDashboard:

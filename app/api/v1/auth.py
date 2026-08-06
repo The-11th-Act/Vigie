@@ -74,10 +74,12 @@ def get_current_user_info(
     try:
         user_id = int(payload["sub"])
     except (KeyError, TypeError, ValueError):
+        # `from None` on purpose: the client must not learn how the subject was
+        # malformed, and the traceback of a rejected token is noise.
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token subject",
-        )
+        ) from None
 
     user = db.get(User, user_id)
     if not user:

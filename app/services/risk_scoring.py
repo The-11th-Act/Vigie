@@ -6,8 +6,7 @@ on the production payment database. The score below contextualises CVSS with
 business criticality and finding age so the backlog can be ordered by what
 actually needs fixing first.
 """
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 # How much the business criticality of the host amplifies or dampens CVSS.
 CRITICALITY_MULTIPLIERS = {
@@ -26,8 +25,8 @@ OVERDUE_PENALTY_PER_30_DAYS = 0.5
 def calculate_risk_score(
     cvss_score: float,
     business_criticality: str,
-    remediation_deadline: Optional[datetime] = None,
-    now: Optional[datetime] = None,
+    remediation_deadline: datetime | None = None,
+    now: datetime | None = None,
 ) -> float:
     """Return a contextual risk score in the range [0.0, 10.0].
 
@@ -52,18 +51,18 @@ def risk_level(risk_score: float) -> str:
 
 
 def _overdue_penalty(
-    remediation_deadline: Optional[datetime], now: Optional[datetime]
+    remediation_deadline: datetime | None, now: datetime | None
 ) -> float:
     if remediation_deadline is None:
         return 0.0
 
-    reference = now or datetime.now(timezone.utc)
+    reference = now or datetime.now(UTC)
     deadline = remediation_deadline
     # Tolerate naive datetimes, which is what SQLite hands back in tests.
     if deadline.tzinfo is None:
-        deadline = deadline.replace(tzinfo=timezone.utc)
+        deadline = deadline.replace(tzinfo=UTC)
     if reference.tzinfo is None:
-        reference = reference.replace(tzinfo=timezone.utc)
+        reference = reference.replace(tzinfo=UTC)
 
     days_overdue = (reference - deadline).days
     if days_overdue <= 0:

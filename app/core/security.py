@@ -1,9 +1,11 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
+
 import jwt
-from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
+from passlib.context import CryptContext
+
 from app.core.config import settings
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -15,7 +17,7 @@ def create_access_token(
     expires_delta: timedelta | None = None,
     extra_claims: dict | None = None,
 ) -> str:
-    expire = datetime.now(timezone.utc) + (
+    expire = datetime.now(UTC) + (
         expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     )
     to_encode = {"exp": expire, "sub": str(subject)}
@@ -46,7 +48,9 @@ def decode_token(token: str = Depends(oauth2_scheme)) -> dict:
             options={"require": ["exp", "sub"]},
         )
     except jwt.PyJWTError:
-        raise credentials_exception
+        # `from None`: never let the JWT library's reason (expired? bad
+        # signature? wrong algorithm?) reach the caller — that is an oracle.
+        raise credentials_exception from None
 
     if payload.get("sub") is None:
         raise credentials_exception

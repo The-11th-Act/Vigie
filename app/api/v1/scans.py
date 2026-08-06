@@ -67,10 +67,12 @@ async def upload_scan_file(
         # Typically the broker being unreachable — surface it as a 503 rather
         # than a generic 500, and never leak the raw exception to the client.
         logger.error("Failed to enqueue scan processing task: %s", exc, exc_info=True)
+        # `from None`: the broker error is already logged server-side and must
+        # not reach the client, which would leak infrastructure details.
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Scan processing queue is unavailable. Please retry shortly.",
-        )
+        ) from None
 
     logger.info(
         "Queued %s scan '%s' (%d bytes) as task %s by user %s",

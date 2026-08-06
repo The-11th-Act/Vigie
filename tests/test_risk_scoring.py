@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -37,7 +37,7 @@ class TestRiskScoring:
         assert calculate_risk_score(5.0, Criticality.critical) == 7.5
 
     def test_overdue_findings_score_higher(self):
-        now = datetime(2026, 7, 28, tzinfo=timezone.utc)
+        now = datetime(2026, 7, 28, tzinfo=UTC)
         on_time = now + timedelta(days=10)
         overdue = now - timedelta(days=60)
 
@@ -46,13 +46,13 @@ class TestRiskScoring:
         )
 
     def test_overdue_penalty_is_capped(self):
-        now = datetime(2026, 7, 28, tzinfo=timezone.utc)
+        now = datetime(2026, 7, 28, tzinfo=UTC)
         ancient = now - timedelta(days=3650)
         # 5.0 base + capped 1.5 penalty, never runaway.
         assert calculate_risk_score(5.0, "Medium", ancient, now) == 6.5
 
     def test_naive_deadline_is_treated_as_utc(self):
-        now = datetime(2026, 7, 28, tzinfo=timezone.utc)
+        now = datetime(2026, 7, 28, tzinfo=UTC)
         naive_overdue = datetime(2026, 6, 1)
         assert calculate_risk_score(5.0, "Medium", naive_overdue, now) > 5.0
 
@@ -70,13 +70,13 @@ class TestRemediationSLA:
         [("Critical", 14), ("High", 30), ("Medium", 90), ("Low", 180)],
     )
     def test_sla_windows(self, severity, days):
-        detected = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        detected = datetime(2026, 1, 1, tzinfo=UTC)
         assert calculate_remediation_deadline(severity, detected) == detected + timedelta(
             days=days
         )
 
     def test_unknown_severity_falls_back_to_default(self):
-        detected = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        detected = datetime(2026, 1, 1, tzinfo=UTC)
         assert calculate_remediation_deadline("Bogus", detected) == detected + timedelta(
             days=90
         )
@@ -85,7 +85,7 @@ class TestRemediationSLA:
         assert calculate_remediation_deadline("High").tzinfo is not None
 
     def test_is_overdue(self):
-        now = datetime(2026, 7, 28, tzinfo=timezone.utc)
+        now = datetime(2026, 7, 28, tzinfo=UTC)
         assert is_overdue(now - timedelta(days=1), now) is True
         assert is_overdue(now + timedelta(days=1), now) is False
         assert is_overdue(None, now) is False
