@@ -68,7 +68,10 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 # Tests legitimately assert, hardcode credentials and bind to localhost.
-"tests/**" = ["S101", "S105", "S106", "S311"]
+# S603/S607: the deployment tests shell out to `docker` by name, resolved via
+# PATH like any developer would. Hardcoding an absolute path would make the
+# test non-portable, and the argument list is fully static.
+"tests/**" = ["S101", "S105", "S106", "S311", "S603", "S607"]
 # Alembic generates its own style.
 "app/db/migrations/**" = ["E402", "F401"]
 

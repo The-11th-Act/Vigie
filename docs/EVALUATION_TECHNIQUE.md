@@ -5,9 +5,14 @@ Audit au 06/08/2026, sur le commit `29bd856`. Périmètre : **choix technologiqu
 le rejoue pas, il couvre ce que `TODO.md` n'adresse pas ou sous-estime.
 
 Verdict court : **la stack est bien choisie et le code applicatif est propre. Ce qui
-manque, c'est tout ce qui sépare un projet qui tourne en `docker-compose up` d'un
-produit déployable.** Aujourd'hui il n'existe aucun chemin vers la production : pas
-d'image de production, pas de CI, pas de gestion de secrets, pas d'observabilité.
+manquait, c'est tout ce qui sépare un projet qui tourne en `docker-compose up` d'un
+produit déployable.** À la date de l'audit il n'existait aucun chemin vers la production :
+pas d'image de production, pas de CI, pas de gestion de secrets, pas d'observabilité.
+
+> **État au 06/08/2026, après remédiation.** Les points marqués ✅ ci-dessous ont été
+> traités dans les commits `5cfdc93`, `be1f70a` et `4294601`. Le diagnostic est conservé
+> tel quel : il explique *pourquoi* chaque correction a été faite, et sert de référence si
+> l'un de ces choix est un jour remis en cause. `TODO.md` porte l'état courant.
 
 ---
 
@@ -37,7 +42,8 @@ cohérentes : rester full-sync et assumer (dimensionner par `--workers`), ou pas
 → *Recommandation : rester sync (moins de réécriture), mais documenter le modèle de
 concurrence et dimensionner `pool_size` en fonction de `workers × threads`.*
 
-**T2 — Dépendances mortes et non épinglées.**
+**T2 — Dépendances mortes et non épinglées.** ✅ *traité en partie (`be1f70a`) : `lxml`
+retiré, versions bornées, `lifespan` migré. Lockfile figé toujours à faire.*
 `lxml` n'est importé nulle part. `requests` ne sert qu'à `parsers/crowdstrike.py`, qui
 retourne des données factices. Toutes les versions sont en `>=`, sans lockfile : deux
 `docker build` à deux dates donnent deux images différentes. Un `pip install` aujourd'hui
@@ -46,7 +52,8 @@ et destiné à disparaître au profit du `lifespan`.
 → *`pip-tools` ou `uv` pour un `requirements.lock`, suppression de `lxml`, migration vers
 `lifespan`.*
 
-**T3 — Les tests tournent sur SQLite, la prod sur PostgreSQL.**
+**T3 — Les tests tournent sur SQLite, la prod sur PostgreSQL.** ✅ *traité (`4294601`) :
+`VIGIE_TEST_DATABASE_URL` + suite API rejouée sur PostgreSQL en CI.*
 `tests/conftest.py:17` force `sqlite:///./test.db`. Les 109 tests verts ne prouvent rien
 sur les types `ENUM` natifs Postgres, les contraintes `ON DELETE CASCADE`, le comportement
 transactionnel, ni les `ilike` (insensibles à la casse par accident en SQLite, dépendants
@@ -56,12 +63,15 @@ que la divergence coûte déjà.
 → *Faire tourner au moins la suite `tests/api/` sur un Postgres jetable (service CI ou
 `testcontainers`).*
 
-**T4 — Pas d'outillage qualité.**
+**T4 — Pas d'outillage qualité.** ✅ *traité (`be1f70a`) : `pyproject.toml`, ruff + black,
+branchés en CI. `mypy` reste à faire.*
 Pas de `pyproject.toml`, donc pas de `ruff`, pas de `black`, pas de `mypy`, pas de config
 `pytest` centralisée. Le style est homogène aujourd'hui parce qu'un seul auteur a écrit le
 code ; ça ne survit pas au deuxième contributeur.
 
-**T5 — Le frontend est un prototype outillé comme tel.**
+**T5 — Le frontend est un prototype outillé comme tel.** ✅ *traité en partie (`4294601`) :
+Vite 7, React Router 7, `npm ci`, bundle découpé. TanStack Query, ESLint et Vitest
+restent à faire.*
 Vite 4 et React 18 (deux majeures de retard chacun), zéro test, zéro lint, `npm install`
 au lieu de `npm ci` dans le Dockerfile, pas de gestion d'état serveur (chaque composant
 refetch via `useFetch`, pas de cache ni de déduplication). `useFetch` prend `deps` mais
@@ -102,22 +112,24 @@ de développement, et rien d'autre :
 - Les mots de passe Postgres ont des valeurs par défaut en clair dans le compose
   (`tvm_password`).
 
-**D1 — Aucune image de production.** Il faut un `docker-compose.prod.yml` (ou un overlay)
+**D1 — Aucune image de production.** ✅ *traité (`4294601`) : `docker-compose.prod.yml`.* Il faut un `docker-compose.prod.yml` (ou un overlay)
 avec : `uvicorn --workers N` sans `--reload`, pas de bind mount, frontend buildé et servi
 par Nginx, ports internes non publiés.
 
-**D2 — Pas de `.dockerignore`.** `COPY . .` embarque `venv/`, `.git/`, `.env`,
+**D2 — Pas de `.dockerignore`.** ✅ *traité (`5cfdc93`), non-régression vérifiée en CI.* `COPY . .` embarque `venv/`, `.git/`, `.env`,
 `__pycache__/`, `test.db`, `.pytest_cache/`, `code_complet.txt`, `node_modules/`.
 Conséquences : image de plusieurs centaines de Mo au lieu de ~200 Mo, cache de build
 invalidé à chaque fichier touché, et **le `.env` réel — donc le `SECRET_KEY` — copié dans
 une couche d'image**. C'est le défaut de déploiement le plus grave du dépôt, et il est
 trivial à corriger.
 
-**D3 — Build Docker non optimisé.** Pas de multi-stage, pas d'épinglage du tag de base
+**D3 — Build Docker non optimisé.** ✅ *traité (`4294601`) : multi-stage + `HEALTHCHECK`.
+Épinglage par digest toujours à faire.* Pas de multi-stage, pas d'épinglage du tag de base
 (`python:3.11-slim` est une cible mouvante), pas de `HEALTHCHECK` dans le Dockerfile (il
 n'existe que dans le compose, donc perdu sur toute autre plateforme).
 
-**D4 — Le frontend n'a pas de config d'exécution.** `VITE_API_TARGET` n'est utilisé que
+**D4 — Le frontend n'a pas de config d'exécution.** ✅ *traité (`4294601`) :
+`Dockerfile.prod` + `nginx.conf`.* `VITE_API_TARGET` n'est utilisé que
 par le proxy du serveur *de dev* (`vite.config.js:11`). En production, le SPA appellera
 `/api/v1` en relatif sur son propre domaine : sans reverse proxy Nginx en façade, rien ne
 route ces appels vers l'API. Ce reverse proxy n'existe pas.
@@ -127,7 +139,7 @@ lues d'un `.env` sur disque, sans rotation, sans coffre, avec des valeurs par d�
 faibles. `SECRET_KEY` n'a pas de mécanisme de rotation : la changer invalide tous les
 tokens émis d'un coup (pas de `kid`, pas de période de recouvrement).
 
-**D6 — Pas de CI/CD.** Aucun `.github/workflows/`. Les 109 tests, le build Docker et le
+**D6 — Pas de CI/CD.** ✅ *traité (`4294601`) : 6 jobs. Dependabot et Trivy à ajouter.* Aucun `.github/workflows/`. Les 109 tests, le build Docker et le
 build frontend ne sont jamais exécutés automatiquement. Aucune analyse de dépendances
 (`pip-audit`, Dependabot) ni de scan d'image (Trivy) — sur une plateforme de gestion de
 vulnérabilités, l'ironie est coûteuse en crédibilité.
@@ -142,13 +154,15 @@ table de version, donc pas de corruption, mais l'échec du perdant doit être g�
 de restauration documentée. Perdre le volume, c'est perdre l'historique complet des
 findings et des décisions d'acceptation de risque.
 
-**D9 — Observabilité au niveau zéro.** Logs texte non structurés sur stdout, aucun
+**D9 — Observabilité au niveau zéro.** ✅ *partiellement traité (`be1f70a`) : `/ready`
+sépare liveness et readiness. Logs structurés et métriques restent à faire.* Logs texte non structurés sur stdout, aucun
 identifiant de corrélation, aucune métrique, aucun tracing. `/health` ne teste que
 Postgres (déjà noté au point 11 de `TODO.md`) : une panne Redis laisse la sonde verte
 alors que toute l'ingestion est morte. Impossible de répondre à « pourquoi ce scan a mis
 40 minutes » en production.
 
-**D10 — Aucune limite de ressources.** Pas de `deploy.resources`, pas de `--max-memory-per-child`
+**D10 — Aucune limite de ressources.** ✅ *partiellement traité (`4294601`) : limites
+mémoire et `--max-memory-per-child`. Le contenu du scan transite toujours par Redis.* Pas de `deploy.resources`, pas de `--max-memory-per-child`
 Celery. Un scan Nessus de 50 Mo est aujourd'hui **décodé en chaîne et passé en argument de
 tâche via Redis** (`scans.py:63`, déjà noté au point 7 de `TODO.md`) : c'est aussi un
 problème de déploiement, parce que le pic mémoire du worker n'est ni borné ni mesuré.
@@ -169,27 +183,39 @@ ne matérialise un staging. Aucun chemin de promotion dev → staging → prod.
 
 ## 3. Plan d'amélioration priorisé
 
-Ordre recommandé. Les trois premiers items sont peu coûteux et débloquent tout le reste.
+### 3.1 Traité le 06/08/2026
+
+| # | Action | État |
+|---|---|---|
+| D2 | `.dockerignore` (stoppe la fuite du `.env` dans l'image) | ✅ `5cfdc93`, non-régression vérifiée en CI |
+| D6 | CI GitHub Actions | ✅ `4294601` — 6 jobs ; Dependabot et Trivy restent |
+| D1/D4 | Overlay de production + Nginx (SPA et reverse proxy) | ✅ `4294601` |
+| T2 | Suppression de `lxml`, migration `lifespan`, bornes de version | ✅ `be1f70a` — lockfile figé encore à faire |
+| D3 | Dockerfile multi-stage + `HEALTHCHECK` | ✅ `4294601` — épinglage par digest à faire |
+| T4 | `pyproject.toml` + `ruff` + `black`, branchés en CI | ✅ `be1f70a` — `mypy` à faire |
+| T3 | Suite API sur PostgreSQL en CI | ✅ `4294601` |
+| D7 | Aller-retour `upgrade`/`downgrade`/`upgrade` en CI | ✅ `4294601` |
+| D9a | `/health` (liveness) et `/ready` (readiness) séparés | ✅ `be1f70a` |
+| D10a | Limites mémoire, `--max-memory-per-child` | ✅ `4294601` |
+| T5a | Vite 7, React Router 7 (open redirect), `npm ci`, bundle découpé | ✅ `4294601` |
+
+### 3.2 Reste à faire
 
 | # | Action | Effort | Impact |
 |---|---|---|---|
-| D2 | `.dockerignore` (stoppe la fuite du `.env` dans l'image) | 10 min | Critique |
-| D6 | CI GitHub Actions : pytest + build Docker + build frontend | 2 h | Critique |
-| D1/D4 | Overlay de production + Nginx pour le SPA et le reverse proxy | 4 h | Critique |
-| T2 | Lockfile, suppression de `lxml`, migration `lifespan` | 2 h | Élevé |
-| D3 | Dockerfile multi-stage, tag de base épinglé, `HEALTHCHECK` | 2 h | Élevé |
-| T4 | `pyproject.toml` + `ruff` + `black`, branchés en CI | 1 h | Élevé |
-| D9 | Logs JSON + ID de corrélation + `/health` et `/ready` séparés | 4 h | Élevé |
-| T3 | Suite API sur Postgres jetable en CI | 3 h | Élevé |
-| D5 | Secrets hors fichier, procédure de rotation du `SECRET_KEY` (`kid`) | 4 h | Moyen |
-| D8 | `pg_dump` planifié + procédure de restauration testée | 3 h | Moyen |
-| T5 | TanStack Query, correction de `useFetch`, ESLint, Vitest | 6 h | Moyen |
+| D9b | Logs JSON + ID de corrélation propagé jusqu'à Celery | 3 h | Élevé |
+| D5 | Secrets hors fichier, rotation du `SECRET_KEY` (`kid`) | 4 h | Élevé |
+| D8 | `pg_dump` planifié + procédure de restauration testée | 3 h | Élevé |
+| D10b | Upload sur volume partagé au lieu du contenu via Redis | 3 h | Moyen |
+| T5b | TanStack Query, correction de `useFetch`, ESLint, Vitest | 6 h | Moyen |
 | T6 | Cookie `HttpOnly` + CSRF à la place de `localStorage` | 4 h | Moyen |
-| D9b | Métriques Prometheus (latence, backlog, débit d'ingestion) | 4 h | Moyen |
+| D9c | Métriques Prometheus (latence, backlog, débit d'ingestion) | 4 h | Moyen |
 | T1 | Décision assumée sur le modèle de concurrence, documentée | 1 h | Moyen |
 | T7 | Vérification du rôle en base + cloisonnement par périmètre | 8 h | Moyen |
-| D7 | Tests des `downgrade()` Alembic | 2 h | Faible |
+| T2b | Lockfile figé (`pip-tools` / `uv`) | 1 h | Moyen |
+| D3b | Épinglage de l'image de base par digest | 30 min | Faible |
+| D6b | Dependabot + scan d'image Trivy | 1 h | Faible |
 | D11 | Environnement de staging | 4 h | Faible |
 
 Les actions correspondantes sont reprises comme cases à cocher dans la section
-« P0-DEP / P1-DEP / P2-DEP » de `TODO.md`.
+« Technologie & déploiement » de `TODO.md`, qui porte l'état courant.
