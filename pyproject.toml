@@ -31,6 +31,12 @@ source = ["app"]
 omit = ["app/db/migrations/*"]
 
 [tool.coverage.report]
+# Seuil posé au niveau atteint, pas au niveau idéal : le but est d'interdire
+# la régression, pas de bloquer sur une cible arbitraire. À relever quand les
+# zones sous-couvertes (worker, parsers) seront traitées.
+fail_under = 90
+show_missing = true
+
 exclude_lines = [
     "pragma: no cover",
     "if TYPE_CHECKING:",

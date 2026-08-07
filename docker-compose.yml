@@ -1,24 +1,24 @@
 services:
   db:
     image: postgres:15-alpine
-    container_name: tvm_db
+    container_name: vigie_db
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-tvm_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tvm_password}
-      POSTGRES_DB: ${POSTGRES_DB:-tvm_platform}
+      POSTGRES_USER: ${POSTGRES_USER:-vigie_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vigie_password}
+      POSTGRES_DB: ${POSTGRES_DB:-vigie}
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tvm_user} -d ${POSTGRES_DB:-tvm_platform}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vigie_user} -d ${POSTGRES_DB:-vigie}"]
       interval: 5s
       timeout: 5s
       retries: 5
 
   redis:
     image: redis:7-alpine
-    container_name: tvm_redis
+    container_name: vigie_redis
     ports:
       - "6379:6379"
     healthcheck:
@@ -29,19 +29,19 @@ services:
 
   migrate:
     build: .
-    container_name: tvm_migrate
+    container_name: vigie_migrate
     command: alembic upgrade head
     environment:
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required - see .env.example}
       - ENVIRONMENT=${ENVIRONMENT:-development}
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-tvm_user}:${POSTGRES_PASSWORD:-tvm_password}@db:5432/${POSTGRES_DB:-tvm_platform}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-vigie_user}:${POSTGRES_PASSWORD:-vigie_password}@db:5432/${POSTGRES_DB:-vigie}
     depends_on:
       db:
         condition: service_healthy
 
   web:
     build: .
-    container_name: tvm_api
+    container_name: vigie_api
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     volumes:
       - .:/app
@@ -52,7 +52,7 @@ services:
       # missing rather than silently booting with a publicly known key.
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required - see .env.example}
       - ENVIRONMENT=${ENVIRONMENT:-development}
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-tvm_user}:${POSTGRES_PASSWORD:-tvm_password}@db:5432/${POSTGRES_DB:-tvm_platform}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-vigie_user}:${POSTGRES_PASSWORD:-vigie_password}@db:5432/${POSTGRES_DB:-vigie}
       - REDIS_URL=redis://redis:6379/0
       - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-60}
       - BACKEND_CORS_ORIGINS=["http://localhost:5173","http://localhost:3000","http://frontend:5173"]
@@ -77,14 +77,14 @@ services:
 
   worker:
     build: .
-    container_name: tvm_celery_worker
+    container_name: vigie_worker
     command: celery -A app.worker.celery_app worker --loglevel=info
     volumes:
       - .:/app
     environment:
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required - see .env.example}
       - ENVIRONMENT=${ENVIRONMENT:-development}
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-tvm_user}:${POSTGRES_PASSWORD:-tvm_password}@db:5432/${POSTGRES_DB:-tvm_platform}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-vigie_user}:${POSTGRES_PASSWORD:-vigie_password}@db:5432/${POSTGRES_DB:-vigie}
       - REDIS_URL=redis://redis:6379/0
     depends_on:
       db:
@@ -96,7 +96,7 @@ services:
 
   frontend:
     build: ./frontend
-    container_name: tvm_frontend
+    container_name: vigie_frontend
     volumes:
       - ./frontend:/app
       - /app/node_modules

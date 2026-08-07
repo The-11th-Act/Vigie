@@ -16,7 +16,7 @@ INSECURE_SECRET_KEYS = {
 
 
 class Settings(BaseSettings):
-    PROJECT_NAME: str = "TVM Platform"
+    PROJECT_NAME: str = "Vigie"
     API_V1_STR: str = "/api/v1"
     ENVIRONMENT: str = "development"  # development | staging | production
 
@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
-    DATABASE_URL: str = "postgresql://tvm_user:tvm_password@localhost:5432/tvm_platform"
+    DATABASE_URL: str = "postgresql://vigie_user:vigie_password@localhost:5432/vigie"
     REDIS_URL: str = "redis://localhost:6379/0"
     BACKEND_CORS_ORIGINS: list[str] = [
         "http://localhost:5173",
