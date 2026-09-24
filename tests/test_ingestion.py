@@ -224,6 +224,17 @@ class TestCriticalityRules:
         assert db_session.query(Asset).one().business_criticality == Criticality.medium
 
 
+def link_for(db_session, cve="CVE-2024-0001"):
+    """The finding for ``cve``, found by identity rather than by id: ids are
+    not predictable on PostgreSQL, whose sequences survive a rollback."""
+    return (
+        db_session.query(AssetVulnerability)
+        .join(Vulnerability)
+        .filter(Vulnerability.cve_id == cve)
+        .one()
+    )
+
+
 class TestAutomaticClosure:
     """A patched host used to leave its findings open forever, so the backlog
     drifted away from reality."""
@@ -243,7 +254,7 @@ class TestAutomaticClosure:
                 "nessus",
             )
 
-        closed = db_session.query(AssetVulnerability).filter_by(vulnerability_id=1).one()
+        closed = link_for(db_session)
         assert closed.status == Status.remediated
         assert closed.fixed_at is not None
 
@@ -256,9 +267,7 @@ class TestAutomaticClosure:
             "nessus",
         )
 
-        still_open = (
-            db_session.query(AssetVulnerability).filter_by(vulnerability_id=1).one()
-        )
+        still_open = link_for(db_session)
         assert still_open.status == Status.open
         assert still_open.missed_scans == 1
 
@@ -271,9 +280,7 @@ class TestAutomaticClosure:
         )
         ingest_findings(db_session, [finding()], "nessus")
 
-        refreshed = (
-            db_session.query(AssetVulnerability).filter_by(vulnerability_id=1).one()
-        )
+        refreshed = link_for(db_session)
         assert refreshed.missed_scans == 0
         assert refreshed.status == Status.open
 
@@ -288,9 +295,7 @@ class TestAutomaticClosure:
                 "openvas",
             )
 
-        untouched = (
-            db_session.query(AssetVulnerability).filter_by(vulnerability_id=1).one()
-        )
+        untouched = link_for(db_session)
         assert untouched.status == Status.open
         assert untouched.missed_scans == 0
 
@@ -305,13 +310,7 @@ class TestAutomaticClosure:
                 "nessus",
             )
 
-        assert (
-            db_session.query(AssetVulnerability)
-            .filter_by(vulnerability_id=1)
-            .one()
-            .status
-            == Status.open
-        )
+        assert link_for(db_session).status == Status.open
 
     def test_result_reports_what_was_closed(self, db_session):
         ingest_findings(db_session, [finding()], "nessus")

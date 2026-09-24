@@ -44,8 +44,8 @@ def worker_session(db_session, monkeypatch):
 
 
 @pytest.fixture
-def scan_job(worker_session):
-    job = ScanJob(scan_type="nessus", filename="report.nessus", uploaded_by=1)
+def scan_job(worker_session, admin_user):
+    job = ScanJob(scan_type="nessus", filename="report.nessus", uploaded_by=admin_user.id)
     worker_session.add(job)
     worker_session.commit()
     worker_session.refresh(job)

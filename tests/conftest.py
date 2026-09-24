@@ -22,7 +22,7 @@ os.environ.setdefault("ENVIRONMENT", "development")
 os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
 
 import pytest  # noqa: E402
-from sqlalchemy import create_engine  # noqa: E402
+from sqlalchemy import create_engine, event  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 from app.core.config import settings, sqlalchemy_url  # noqa: E402
@@ -61,6 +61,16 @@ def db_engine():
     connect_args = {"check_same_thread": False} if IS_SQLITE else {}
     engine = create_engine(sqlalchemy_url(TEST_DATABASE_URL), connect_args=connect_args)
 
+    if IS_SQLITE:
+        # SQLite ignore les clés étrangères par défaut, PostgreSQL non. Sans
+        # cette ligne, un test qui référence un utilisateur inexistant passe
+        # en local et n'échoue qu'en CI, sur la suite PostgreSQL.
+        @event.listens_for(engine, "connect")
+        def _enforce_foreign_keys(dbapi_connection, _record):
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
+
     # Repart d'un schéma vierge : un run précédent interrompu laisse sinon des
     # tables (et des types ENUM) qui font échouer la création.
     Base.metadata.drop_all(bind=engine)
@@ -83,8 +93,41 @@ def db_session(db_engine):
     connection.close()
 
 
+def _make_user(db_session, username, role):
+    from app.core.security import get_password_hash
+    from app.models.user import User
+
+    user = User(
+        email=f"{username}@test.com",
+        username=username,
+        hashed_password=get_password_hash(VALID_PASSWORD),
+        role=role,
+    )
+    db_session.add(user)
+    db_session.commit()
+    db_session.refresh(user)
+    return user
+
+
 @pytest.fixture(scope="function")
-def client(db_session):
+def admin_user(db_session):
+    """L'administrateur que le client de test incarne, réellement en base.
+
+    L'identité simulée doit désigner une ligne existante : sur PostgreSQL, les
+    clés étrangères (``scan_jobs.uploaded_by``…) sont appliquées, et les
+    séquences ne reculent pas avec le rollback, donc aucun id n'est prévisible.
+    """
+    return _make_user(db_session, "admin", "admin")
+
+
+@pytest.fixture(scope="function")
+def other_user(db_session):
+    """Un second compte, propriétaire de ressources que l'admin ne possède pas."""
+    return _make_user(db_session, "someone-else", "analyst")
+
+
+@pytest.fixture(scope="function")
+def client(db_session, admin_user):
     from fastapi.testclient import TestClient
 
     from app.core.security import decode_token, require_admin
@@ -95,8 +138,10 @@ def client(db_session):
         finally:
             pass
 
+    identity = {"sub": str(admin_user.id), "role": "admin", "username": "admin"}
+
     def override_auth():
-        return {"sub": "1", "role": "admin", "username": "admin"}
+        return identity
 
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[decode_token] = override_auth
@@ -122,19 +167,7 @@ def unauthenticated_client(db_session):
 
 
 @pytest.fixture(scope="function")
-def auth_token(client, db_session):
-    from app.core.security import get_password_hash
-    from app.models.user import User
-
-    user = User(
-        email="admin@test.com",
-        username="admin",
-        hashed_password=get_password_hash(VALID_PASSWORD),
-        role="admin",
-    )
-    db_session.add(user)
-    db_session.commit()
-
+def auth_token(client, admin_user):
     response = client.post(
         "/api/v1/auth/login",
         json={"username": "admin", "password": VALID_PASSWORD},

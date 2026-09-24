@@ -220,7 +220,9 @@ class TestScanHistory:
     def test_unknown_task_id_is_404(self, client):
         assert client.get("/api/v1/scans/status/nope").status_code == 404
 
-    def test_another_users_scan_is_not_readable(self, client, db_session, no_broker):
+    def test_another_users_scan_is_not_readable(
+        self, client, db_session, no_broker, other_user
+    ):
         """A task id belonging to someone else must not be readable.
 
         Regression: the endpoint used to return any task's result to any
@@ -231,7 +233,7 @@ class TestScanHistory:
                 task_id="someone-elses-task",
                 scan_type="nessus",
                 filename="theirs.nessus",
-                uploaded_by=999,
+                uploaded_by=other_user.id,
             )
         )
         db_session.commit()
@@ -241,11 +243,13 @@ class TestScanHistory:
         from app.core.security import decode_token
         from app.main import app as fastapi_app
 
-        fastapi_app.dependency_overrides[decode_token] = lambda: {
-            "sub": "1",
+        # Same account as the fixture, demoted: only the role must change.
+        identity = {
+            **fastapi_app.dependency_overrides[decode_token](),
             "role": "analyst",
             "username": "analyst",
         }
+        fastapi_app.dependency_overrides[decode_token] = lambda: identity
         try:
             response = client.get("/api/v1/scans/status/someone-elses-task")
             assert response.status_code == 404
@@ -255,13 +259,13 @@ class TestScanHistory:
         finally:
             fastapi_app.dependency_overrides.pop(decode_token, None)
 
-    def test_admin_can_read_any_scan(self, client, db_session):
+    def test_admin_can_read_any_scan(self, client, db_session, other_user):
         db_session.add(
             ScanJob(
                 task_id="other-task",
                 scan_type="openvas",
                 filename="theirs.xml",
-                uploaded_by=999,
+                uploaded_by=other_user.id,
             )
         )
         db_session.commit()
