@@ -53,7 +53,10 @@ WORKDIR /app
 
 # Créé avant le COPY pour que les fichiers appartiennent directement au bon
 # utilisateur, sans chown récursif (qui dupliquerait toute la couche).
-RUN useradd --create-home --uid 1000 appuser
+# Le répertoire d'upload est créé ici avec le bon propriétaire : un volume
+# nommé vide hérite du contenu et des droits de l'image au point de montage,
+# sinon il serait monté en root et l'API ne pourrait pas y déposer les scans.
+RUN useradd --create-home --uid 1000 appuser     && mkdir -p /var/lib/vigie/scans     && chown appuser:appuser /var/lib/vigie/scans
 
 COPY --chown=appuser:appuser . .
 

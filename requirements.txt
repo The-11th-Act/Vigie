@@ -17,8 +17,7 @@ redis>=4.6.0,<7.0.0
 python-dotenv>=1.0.0,<2.0.0
 python-multipart>=0.0.7,<1.0.0
 defusedxml>=0.7.1,<1.0.0
+prometheus-client>=0.19.0,<1.0.0
 
-# Utilise uniquement par app/parsers/crowdstrike.py, qui retourne encore des
-# donnees factices. A retirer en meme temps que ce module si l'integration
-# CrowdStrike est abandonnee (cf. point 5 de TODO.md).
+# Client HTTP de app/parsers/crowdstrike.py (synchro Falcon Spotlight).
 requests>=2.31.0,<3.0.0

@@ -77,7 +77,9 @@ ignore = [
 # S603/S607: the deployment tests shell out to `docker` by name, resolved via
 # PATH like any developer would. Hardcoding an absolute path would make the
 # test non-portable, and the argument list is fully static.
-"tests/**" = ["S101", "S105", "S106", "S311", "S603", "S607"]
+# E402: some test modules import inside the module on purpose, to control
+# import order.
+"tests/**" = ["E402", "S101", "S105", "S106", "S311", "S603", "S607"]
 # Alembic generates its own style.
 "app/db/migrations/**" = ["E402", "F401"]
 

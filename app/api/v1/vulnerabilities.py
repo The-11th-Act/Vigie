@@ -6,11 +6,12 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import get_or_404
-from app.core.security import decode_token
+from app.core.security import decode_token, require_admin
 from app.db.database import get_db
 from app.models.vulnerability import (
     CLOSED_STATUSES,
     AssetVulnerability,
+    FindingAuditLog,
     Severity,
     Status,
     Vulnerability,
@@ -18,11 +19,14 @@ from app.models.vulnerability import (
 from app.schemas.vulnerability import (
     AssetVulnerabilityResponse,
     AssetVulnerabilityUpdate,
+    FindingAuditLogResponse,
     PaginatedAssetVulnerabilityResponse,
     PaginatedVulnerabilityResponse,
     VulnerabilityCreate,
     VulnerabilityResponse,
+    VulnerabilityUpdate,
 )
+from app.services.risk_scoring import calculate_risk_score
 
 router = APIRouter()
 
@@ -89,6 +93,49 @@ def create_vulnerability(
     db.commit()
     db.refresh(db_vuln)
     return db_vuln
+
+
+@router.put("/{vulnerability_id}", response_model=VulnerabilityResponse)
+def update_vulnerability(
+    vulnerability_id: int,
+    vuln_in: VulnerabilityUpdate,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(decode_token),
+):
+    """Correct a vulnerability's metadata (a wrong score, a truncated title).
+
+    Changing the CVSS score re-scores every open finding for this CVE: risk is
+    derived from it, so leaving the old scores would silently misrank the
+    backlog.
+    """
+    vuln = get_or_404(db, Vulnerability, vulnerability_id)
+    changes = vuln_in.model_dump(exclude_unset=True)
+
+    for key, value in changes.items():
+        setattr(vuln, key, value)
+
+    if "cvss_score" in changes:
+        _rescore_open_findings(db, vuln)
+
+    db.commit()
+    db.refresh(vuln)
+    return vuln
+
+
+@router.delete("/{vulnerability_id}", status_code=http_status.HTTP_204_NO_CONTENT)
+def delete_vulnerability(
+    vulnerability_id: int,
+    db: Session = Depends(get_db),
+    admin: dict = Depends(require_admin),
+):
+    """Remove a vulnerability and, by cascade, every finding referencing it.
+
+    Admin-only, mirroring asset deletion: this discards triage history across
+    potentially many assets at once.
+    """
+    vuln = get_or_404(db, Vulnerability, vulnerability_id)
+    db.delete(vuln)
+    db.commit()
 
 
 @router.get("/findings", response_model=PaginatedAssetVulnerabilityResponse)
@@ -181,6 +228,8 @@ def update_finding_status(
             ),
         )
 
+    previous_status = _status_value(finding.status)
+
     finding.status = update_in.status
     if update_in.status_note is not None:
         finding.status_note = update_in.status_note
@@ -191,6 +240,70 @@ def update_finding_status(
         # Reopening clears the closure timestamp so SLA tracking resumes.
         finding.fixed_at = None
 
+    # Written before the commit so the decision and its trail land together:
+    # an audit entry that can be lost independently is worth little.
+    db.add(
+        FindingAuditLog(
+            finding_id=finding.id,
+            user_id=_user_id(payload),
+            username=payload.get("username"),
+            old_status=previous_status,
+            new_status=_status_value(update_in.status),
+            status_note=update_in.status_note,
+        )
+    )
+
     db.commit()
     db.refresh(finding)
     return finding
+
+
+@router.get(
+    "/findings/{finding_id}/history", response_model=list[FindingAuditLogResponse]
+)
+def get_finding_history(
+    finding_id: int,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(decode_token),
+):
+    """Who changed this finding's status, when, and with what justification."""
+    get_or_404(db, AssetVulnerability, finding_id)
+
+    return (
+        db.query(FindingAuditLog)
+        .filter(FindingAuditLog.finding_id == finding_id)
+        .order_by(FindingAuditLog.id.desc())
+        .all()
+    )
+
+
+def _rescore_open_findings(db: Session, vuln: Vulnerability) -> None:
+    """Recompute risk for every open finding of this CVE after a score change."""
+    findings = (
+        db.query(AssetVulnerability)
+        .options(joinedload(AssetVulnerability.asset))
+        .filter(
+            AssetVulnerability.vulnerability_id == vuln.id,
+            AssetVulnerability.status == Status.open,
+        )
+        .all()
+    )
+    for finding in findings:
+        if finding.asset is None:
+            continue
+        finding.risk_score = calculate_risk_score(
+            vuln.cvss_score,
+            finding.asset.business_criticality,
+            finding.remediation_deadline,
+        )
+
+
+def _status_value(status) -> str:
+    return getattr(status, "value", status)
+
+
+def _user_id(payload: dict) -> int | None:
+    try:
+        return int(payload["sub"])
+    except (KeyError, TypeError, ValueError):
+        return None

@@ -16,7 +16,7 @@ concurrency:
 
 env:
   PYTHON_VERSION: "3.11"
-  NODE_VERSION: "20"
+  NODE_VERSION: "22"
 
 jobs:
   lint:
@@ -147,7 +147,7 @@ jobs:
         run: npm audit --audit-level=high
 
   frontend:
-    name: Build frontend
+    name: Frontend (lint, tests, build)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -163,6 +163,14 @@ jobs:
       - name: npm ci
         working-directory: frontend
         run: npm ci
+
+      - name: npm run lint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: npm run test
+        working-directory: frontend
+        run: npm run test
 
       - name: npm run build
         working-directory: frontend
@@ -255,8 +263,17 @@ jobs:
             -e REDIS_URL=redis://rd:6379/0 \
             vigie-api:ci
 
-          # /ready couvre Postgres ET Redis : c'est la sonde qui prouve que le
-          # conteneur peut reellement servir, pas seulement qu'il a demarre.
+          # /ready exige aussi un worker Celery vivant : sans lui, les uploads
+          # s'empileraient dans la file sans jamais etre traites.
+          docker run -d --name worker --network vigie-ci \
+            -e SECRET_KEY=ci-secret-key-not-used-anywhere-0123456789abcdef \
+            -e DATABASE_URL=postgresql://vigie_ci:vigie_ci@pg:5432/vigie_ci \
+            -e REDIS_URL=redis://rd:6379/0 \
+            vigie-api:ci celery -A app.worker.celery_app worker --loglevel=info
+
+          # /ready couvre Postgres, Redis et les workers : c'est la sonde qui
+          # prouve que la plateforme peut reellement servir, pas seulement que
+          # le conteneur a demarre.
           ok=0
           for _ in $(seq 1 30); do
             if curl -fsS http://localhost:8000/ready; then ok=1; break; fi
@@ -265,6 +282,7 @@ jobs:
           if [ "$ok" != "1" ]; then
             echo "::error::/ready n'a jamais repondu"
             docker logs api
+            docker logs worker
             exit 1
           fi
           echo "L'API repond sur /ready."

@@ -45,6 +45,9 @@ services:
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     volumes:
       - .:/app
+      # Shared with the worker: the API stages the upload here and only hands
+      # the path to Celery, so both containers must see the same directory.
+      - scan_uploads:/var/lib/vigie/scans
     ports:
       - "8000:8000"
     environment:
@@ -81,14 +84,40 @@ services:
     command: celery -A app.worker.celery_app worker --loglevel=info
     volumes:
       - .:/app
+      - scan_uploads:/var/lib/vigie/scans
     environment:
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required - see .env.example}
       - ENVIRONMENT=${ENVIRONMENT:-development}
       - DATABASE_URL=postgresql://${POSTGRES_USER:-vigie_user}:${POSTGRES_PASSWORD:-vigie_password}@db:5432/${POSTGRES_DB:-vigie}
       - REDIS_URL=redis://redis:6379/0
+      - CROWDSTRIKE_CLIENT_ID=${CROWDSTRIKE_CLIENT_ID:-}
+      - CROWDSTRIKE_CLIENT_SECRET=${CROWDSTRIKE_CLIENT_SECRET:-}
+      - CROWDSTRIKE_BASE_URL=${CROWDSTRIKE_BASE_URL:-https://api.crowdstrike.com}
+      - CROWDSTRIKE_SYNC_ENABLED=${CROWDSTRIKE_SYNC_ENABLED:-false}
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  # Scheduler for the periodic CrowdStrike pull. Harmless when the sync is
+  # disabled: no beat entry is registered, so it simply idles.
+  beat:
+    build: .
+    container_name: vigie_beat
+    command: celery -A app.worker.celery_app beat --loglevel=info
+    volumes:
+      - .:/app
+    environment:
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required - see .env.example}
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-vigie_user}:${POSTGRES_PASSWORD:-vigie_password}@db:5432/${POSTGRES_DB:-vigie}
+      - REDIS_URL=redis://redis:6379/0
+      - CROWDSTRIKE_SYNC_ENABLED=${CROWDSTRIKE_SYNC_ENABLED:-false}
+      - CROWDSTRIKE_SYNC_INTERVAL_MINUTES=${CROWDSTRIKE_SYNC_INTERVAL_MINUTES:-360}
+    depends_on:
       redis:
         condition: service_healthy
       migrate:
@@ -109,3 +138,4 @@ services:
 
 volumes:
   pgdata:
+  scan_uploads:

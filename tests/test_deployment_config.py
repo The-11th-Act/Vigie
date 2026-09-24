@@ -9,6 +9,7 @@ Ignoré si le binaire `docker` n'est pas disponible : il n'est pas nécessaire
 que le démon tourne, `docker compose config` ne fait que fusionner du YAML.
 """
 
+import json
 import os
 import re
 import shutil
@@ -35,8 +36,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-@pytest.fixture(scope="module")
-def prod_config() -> str:
+def _merged_prod_config(*extra_args: str) -> str:
     env = dict(os.environ)
     env.update(FAKE_ENV)
 
@@ -49,6 +49,7 @@ def prod_config() -> str:
             "-f",
             "docker-compose.prod.yml",
             "config",
+            *extra_args,
         ],
         capture_output=True,
         text=True,
@@ -58,6 +59,20 @@ def prod_config() -> str:
     if result.returncode != 0:
         pytest.skip(f"docker compose config indisponible : {result.stderr[:200]}")
     return result.stdout
+
+
+@pytest.fixture(scope="module")
+def prod_config() -> str:
+    return _merged_prod_config()
+
+
+@pytest.fixture(scope="module")
+def prod_services() -> dict:
+    return json.loads(_merged_prod_config("--format", "json"))["services"]
+
+
+def _volume_targets(service: dict) -> dict[str, str]:
+    return {v["target"]: v.get("source", "") for v in service.get("volumes", [])}
 
 
 class TestProductionOverlay:
@@ -93,6 +108,23 @@ class TestProductionOverlay:
 
     def test_resource_limits_are_set(self, prod_config):
         assert "limits" in prod_config
+
+    def test_api_and_worker_share_the_upload_volume(self, prod_services):
+        """L'API dépose le scan sur disque et ne transmet que son chemin à
+        Celery : si le worker ne voit pas le même volume, chaque upload est
+        accepté puis échoue sur un fichier introuvable."""
+        target = "/var/lib/vigie/scans"
+        web = _volume_targets(prod_services["web"])
+        worker = _volume_targets(prod_services["worker"])
+        assert target in web and target in worker
+        assert web[target] == worker[target]
+
+    def test_every_service_that_needs_the_broker_has_its_password(self, prod_services):
+        """Redis exige un mot de passe en production : un service resté sur
+        l'URL de développement ne pourrait plus parler au broker."""
+        for name in ("web", "worker", "beat"):
+            redis_url = prod_services[name]["environment"]["REDIS_URL"]
+            assert redis_url.startswith("redis://:"), name
 
 
 class TestDevConfigStillValid:

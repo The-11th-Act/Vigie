@@ -1,100 +1,159 @@
-"""Tests des sondes de disponibilité.
-
-``/health`` (liveness) et ``/ready`` (readiness) doivent diverger : une panne
-Redis laisse la première verte et fait tomber la seconde. C'est précisément
-l'écart qui empêchait de détecter qu'une ingestion était morte alors que la
-plateforme se déclarait en bonne santé.
-"""
-
-from unittest.mock import patch
+"""Liveness, readiness, correlation ids and the error envelope."""
 
 import pytest
-from sqlalchemy.exc import SQLAlchemyError
+from fastapi import APIRouter
 
 
-class _FakeRedis:
-    def __init__(self, reachable=True):
-        self.reachable = reachable
-        self.closed = False
+class TestLiveness:
+    def test_health_does_not_touch_dependencies(self, client, monkeypatch):
+        """A liveness probe that fails on a database blip gets the container
+        killed and restarted, which does nothing to fix the database."""
 
-    def ping(self):
-        if not self.reachable:
-            raise ConnectionError("redis is down")
-        return True
+        def exploding_check(*args, **kwargs):
+            raise AssertionError("liveness must not query the database")
 
-    def close(self):
-        self.closed = True
+        monkeypatch.setattr("app.main._check_database", exploding_check)
 
-
-@pytest.fixture
-def redis_up():
-    fake = _FakeRedis(reachable=True)
-    with patch("app.main.redis.Redis.from_url", return_value=fake):
-        yield fake
-
-
-@pytest.fixture
-def redis_down():
-    fake = _FakeRedis(reachable=False)
-    with patch("app.main.redis.Redis.from_url", return_value=fake):
-        yield fake
-
-
-class TestHealth:
-    def test_health_is_green_when_the_database_answers(self, client):
-        response = client.get("/health")
-        assert response.status_code == 200
-        assert response.json() == {"status": "healthy", "database": "ok"}
-
-    def test_health_ignores_redis(self, client, redis_down):
-        """Liveness must not depend on the broker: a Redis outage is not a
-        reason to have the orchestrator restart the API process."""
         response = client.get("/health")
         assert response.status_code == 200
         assert response.json()["status"] == "healthy"
 
 
 class TestReadiness:
-    def test_ready_when_every_dependency_answers(self, client, redis_up):
+    def _stub(self, monkeypatch, database="ok", redis="ok", celery="ok"):
+        monkeypatch.setattr("app.main._check_database", lambda db: database)
+        monkeypatch.setattr("app.main._check_redis", lambda: redis)
+        monkeypatch.setattr("app.main._check_celery", lambda: celery)
+
+    def test_ready_when_every_dependency_answers(self, client, monkeypatch):
+        self._stub(monkeypatch)
         response = client.get("/ready")
         assert response.status_code == 200
-        body = response.json()
-        assert body == {"status": "ready", "database": "ok", "redis": "ok"}
-        assert redis_up.closed, "the probe must not leak a Redis connection"
+        assert response.json()["status"] == "ready"
 
-    def test_not_ready_when_redis_is_down(self, client, redis_down):
-        """The regression this endpoint exists for: uploads return 503 while
-        /health stays green."""
+    @pytest.mark.parametrize("failing", ["database", "redis", "celery"])
+    def test_degraded_when_a_dependency_is_down(self, client, monkeypatch, failing):
+        self._stub(monkeypatch, **{failing: "unreachable"})
+
         response = client.get("/ready")
         assert response.status_code == 503
-        body = response.json()
-        assert body["status"] == "not_ready"
-        assert body["database"] == "ok"
-        assert body["redis"] == "unreachable"
+        assert response.json()["status"] == "degraded"
 
-    def test_not_ready_when_the_database_is_down(self, client, redis_up):
-        from app.db.database import get_db
-        from app.main import app
+    def test_reports_which_dependency_failed(self, client, monkeypatch):
+        self._stub(monkeypatch, redis="unreachable")
 
-        class _BrokenSession:
-            def execute(self, *args, **kwargs):
-                raise SQLAlchemyError("database is down")
+        checks = client.get("/ready").json()["checks"]
+        assert checks["redis"] == "unreachable"
+        assert checks["database"] == "ok"
 
-        def _broken_db():
-            yield _BrokenSession()
+    def test_no_workers_is_not_ready(self, client, monkeypatch):
+        """A broker that answers but has no workers means uploads queue forever."""
+        self._stub(monkeypatch, celery="no workers")
+        assert client.get("/ready").status_code == 503
 
-        app.dependency_overrides[get_db] = _broken_db
-        try:
-            response = client.get("/ready")
-        finally:
-            app.dependency_overrides.pop(get_db, None)
 
-        assert response.status_code == 503
-        assert response.json()["database"] == "unreachable"
+class TestRedisProbe:
+    """The real ``_check_redis``, with only the client faked."""
 
-    def test_ready_does_not_leak_the_failure_reason(self, client, redis_down):
+    class _FakeRedis:
+        def __init__(self, reachable):
+            self.reachable = reachable
+            self.closed = False
+
+        def ping(self):
+            if not self.reachable:
+                raise ConnectionError("redis is down")
+            return True
+
+        def close(self):
+            self.closed = True
+
+    @pytest.mark.parametrize("reachable", [True, False])
+    def test_probe_closes_its_connection(self, monkeypatch, reachable):
+        from app.main import _check_redis
+
+        fake = self._FakeRedis(reachable)
+        monkeypatch.setattr("redis.Redis.from_url", lambda *a, **k: fake)
+
+        assert _check_redis() == ("ok" if reachable else "unreachable")
+        assert fake.closed, "the probe must not leak a Redis connection"
+
+    def test_ready_does_not_leak_the_failure_reason(self, client, monkeypatch):
         """The probe is often exposed unauthenticated; it must not describe the
         internals of the outage."""
+        fake = self._FakeRedis(reachable=False)
+        monkeypatch.setattr("redis.Redis.from_url", lambda *a, **k: fake)
+        monkeypatch.setattr("app.main._check_celery", lambda: "ok")
+
         body = client.get("/ready").json()
         assert "redis is down" not in str(body)
-        assert body["redis"] == "unreachable"
+        assert body["checks"]["redis"] == "unreachable"
+
+
+class TestRequestCorrelation:
+    def test_response_carries_a_request_id(self, client):
+        response = client.get("/health")
+        assert response.headers.get("X-Request-ID")
+
+    def test_inbound_request_id_is_reused(self, client):
+        """A trace started upstream must keep its id through this service."""
+        response = client.get("/health", headers={"X-Request-ID": "upstream-42"})
+        assert response.headers["X-Request-ID"] == "upstream-42"
+
+    def test_ids_differ_between_requests(self, client):
+        first = client.get("/health").headers["X-Request-ID"]
+        second = client.get("/health").headers["X-Request-ID"]
+        assert first != second
+
+
+class TestErrorEnvelope:
+    def test_unhandled_error_does_not_leak_internals(self, client):
+        """The traceback belongs in the log, not in the response body."""
+        from fastapi.testclient import TestClient
+
+        from app.main import app as fastapi_app
+
+        router = APIRouter()
+
+        @router.get("/boom")
+        def boom():
+            raise RuntimeError("SELECT * FROM users -- internal detail")
+
+        fastapi_app.include_router(router)
+        original_routes = list(fastapi_app.router.routes)
+        try:
+            # The default TestClient re-raises server exceptions, which would
+            # bypass the very handler under test.
+            with TestClient(fastapi_app, raise_server_exceptions=False) as raw:
+                response = raw.get("/boom")
+        finally:
+            fastapi_app.router.routes = original_routes
+
+        assert response.status_code == 500
+        body = response.json()
+        assert body["detail"] == "Internal server error"
+        assert "internal detail" not in response.text
+        # The id ties the sanitised response back to the logged traceback.
+        assert body["request_id"]
+
+
+class TestMetrics:
+    def test_exposes_prometheus_exposition(self, client):
+        response = client.get("/metrics")
+        assert response.status_code == 200
+        assert "vigie_http_requests_total" in response.text
+
+    def test_counts_requests_by_route_template(self, client, db_session):
+        """Labels must use the route template, not the resolved path, or every
+        asset id would mint its own time series."""
+        from app.models.asset import Asset
+
+        asset = Asset(ip_address="10.9.9.9")
+        db_session.add(asset)
+        db_session.commit()
+
+        client.get(f"/api/v1/assets/{asset.id}")
+
+        body = client.get("/metrics").text
+        assert 'route="/api/v1/assets/{asset_id}"' in body
+        assert f'route="/api/v1/assets/{asset.id}"' not in body

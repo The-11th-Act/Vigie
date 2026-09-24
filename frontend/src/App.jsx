@@ -8,15 +8,23 @@ import FindingsBacklog from './components/FindingsBacklog'
 import ScanUpload from './components/ScanUpload'
 import Login from './components/Login'
 import ProtectedRoute from './components/ProtectedRoute'
+import { authService } from './services'
+import { clearSession } from './services/api'
 
 function Sidebar() {
   const navigate = useNavigate()
   const username = localStorage.getItem('username')
 
-  const handleLogout = () => {
-    localStorage.removeItem('access_token')
-    localStorage.removeItem('role')
-    localStorage.removeItem('username')
+  const handleLogout = async () => {
+    // Revoke server-side first: clearing local storage alone would leave the
+    // token valid for the rest of its lifetime. A failure here (expired token,
+    // API down) must still log the user out locally.
+    try {
+      await authService.logout(localStorage.getItem('refresh_token'))
+    } catch {
+      /* revocation is best-effort */
+    }
+    clearSession()
     navigate('/login')
   }
 

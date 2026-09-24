@@ -43,10 +43,15 @@ class UserLogin(BaseModel):
 
 class Token(BaseModel):
     access_token: str
+    refresh_token: str | None = None
     # "bearer" is the OAuth2 scheme name, not a credential.
     token_type: str = "bearer"  # noqa: S105
     role: str
     username: str
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
 
 
 class TokenPayload(BaseModel):

@@ -9,6 +9,12 @@ export const authService = {
 
   getMe: () =>
     api.get('/auth/me'),
+
+  refresh: (refreshToken) =>
+    api.post('/auth/refresh', { refresh_token: refreshToken }),
+
+  logout: (refreshToken) =>
+    api.post('/auth/logout', { refresh_token: refreshToken }),
 }
 
 export const dashboardService = {

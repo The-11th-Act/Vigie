@@ -11,6 +11,16 @@ pour faire un changement, et qu'est-ce qui échoue bruyamment si on l'oublie ?*
 > couverture. Le diagnostic complet est conservé : il explique pourquoi chaque
 > correction a été faite. M1 et M3 restent ouverts et sont les prochains chantiers.
 > Couverture passée de 90 % à 94 %, worker de 37 % à 100 %, plus aucun module à 0 %.
+>
+> **Fusion du 24/09/2026 avec les items 5-18**, développés en parallèle :
+> - `crowdstrike.py` est désormais un vrai client Falcon Spotlight (item 5) ; le
+>   `NotImplementedError` décrit en M2 n'a plus lieu d'être.
+> - Le worker prend un chemin de fichier et gère un `ScanJob` : ses tests sont répartis
+>   entre `tests/test_worker_tasks.py` (cycle de vie du job, synchro CrowdStrike) et
+>   `tests/test_worker_failures.py` (rollback, reprises, fermeture de session). Avec
+>   la nouvelle tâche de synchro, `tasks.py` est à 88 % et le total à 92 %.
+> - M3 est partiellement traité : ESLint, Prettier et 10 tests Vitest (item 15). Le
+>   style inline reste en place.
 
 ---
 
