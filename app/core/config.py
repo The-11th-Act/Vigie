@@ -4,6 +4,24 @@ import warnings
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# SQLAlchemy 2.1 switched the driver behind a bare ``postgresql://`` URL from
+# psycopg2 to psycopg 3. Only psycopg2 is installed, so the driver is named
+# explicitly rather than left to whichever default the installed version picks.
+POSTGRES_DRIVER_PREFIX = "postgresql+psycopg2://"
+
+
+def sqlalchemy_url(url: str) -> str:
+    """Return ``url`` with the PostgreSQL driver made explicit.
+
+    An URL that already names a driver (``postgresql+...``) or targets another
+    database is returned unchanged.
+    """
+    for bare in ("postgresql://", "postgres://"):
+        if url.startswith(bare):
+            return POSTGRES_DRIVER_PREFIX + url[len(bare) :]
+    return url
+
+
 # Any SECRET_KEY at or below this length is trivially brute-forceable.
 MIN_SECRET_KEY_LENGTH = 32
 
@@ -85,6 +103,10 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.ENVIRONMENT.lower() == "production"
+
+    @property
+    def sqlalchemy_database_url(self) -> str:
+        return sqlalchemy_url(self.DATABASE_URL)
 
     @field_validator("BACKEND_CORS_ORIGINS")
     @classmethod

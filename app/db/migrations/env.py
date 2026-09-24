@@ -18,10 +18,7 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
-db_url = settings.DATABASE_URL
-if db_url.startswith("postgresql://"):
-    db_url = db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
-config.set_main_option("sqlalchemy.url", db_url)
+config.set_main_option("sqlalchemy.url", settings.sqlalchemy_database_url)
 
 
 def run_migrations_offline() -> None:

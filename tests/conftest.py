@@ -25,7 +25,7 @@ import pytest  # noqa: E402
 from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 
-from app.core.config import settings  # noqa: E402
+from app.core.config import settings, sqlalchemy_url  # noqa: E402
 from app.db.database import Base, get_db  # noqa: E402
 from app.main import app  # noqa: E402
 
@@ -59,7 +59,7 @@ def db_engine():
     # check_same_thread ne concerne que SQLite ; le passer à PostgreSQL lève
     # une erreur de connexion.
     connect_args = {"check_same_thread": False} if IS_SQLITE else {}
-    engine = create_engine(TEST_DATABASE_URL, connect_args=connect_args)
+    engine = create_engine(sqlalchemy_url(TEST_DATABASE_URL), connect_args=connect_args)
 
     # Repart d'un schéma vierge : un run précédent interrompu laisse sinon des
     # tables (et des types ENUM) qui font échouer la création.

@@ -14,7 +14,7 @@
 >   valeurs reportées dans `.env`.
 
 État des lieux initial au 29/07/2026. Base : FastAPI + SQLAlchemy + Celery + React.
-Suite de tests à l'époque : 109 tests. Aujourd'hui : **275 tests backend + 10 tests
+Suite de tests à l'époque : 109 tests. Aujourd'hui : **281 tests backend + 10 tests
 frontend, tous verts**.
 
 Priorités : **P0** = bloque un usage réel · **P1** = important · **P2** = confort / dette.
