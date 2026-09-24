@@ -116,7 +116,13 @@ def admin_user(db_session):
     L'identité simulée doit désigner une ligne existante : sur PostgreSQL, les
     clés étrangères (``scan_jobs.uploaded_by``…) sont appliquées, et les
     séquences ne reculent pas avec le rollback, donc aucun id n'est prévisible.
+
+    Un premier compte est créé avant lui : sur SQLite, l'admin aurait sinon
+    toujours l'id 1, et un test qui le suppose passerait en local pour
+    n'échouer que sur PostgreSQL. Il est conservé, car SQLite réattribuerait
+    l'id d'un compte supprimé.
     """
+    _make_user(db_session, "placeholder", "analyst")
     return _make_user(db_session, "admin", "admin")
 
 

@@ -165,7 +165,7 @@ class TestTriageAudit:
         assert history[0]["old_status"] == "Open"
         assert history[0]["new_status"] == "Remediated"
 
-    def test_records_who_made_the_decision(self, client, finding):
+    def test_records_who_made_the_decision(self, client, finding, admin_user):
         client.patch(
             f"/api/v1/vulnerabilities/findings/{finding.id}",
             json={
@@ -177,8 +177,7 @@ class TestTriageAudit:
         entry = client.get(
             f"/api/v1/vulnerabilities/findings/{finding.id}/history"
         ).json()[0]
-        # The `client` fixture authenticates as user 1 / "admin".
-        assert entry["user_id"] == 1
+        assert entry["user_id"] == admin_user.id
         assert entry["username"] == "admin"
         assert entry["status_note"] == "Mitigated by network segmentation."
 

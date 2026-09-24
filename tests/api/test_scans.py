@@ -179,7 +179,7 @@ class TestScanStaging:
 
 
 class TestScanHistory:
-    def test_upload_records_a_scan_job(self, client, no_broker, db_session):
+    def test_upload_records_a_scan_job(self, client, no_broker, db_session, admin_user):
         response = client.post(
             "/api/v1/scans/upload",
             data={"scan_type": "nessus"},
@@ -192,8 +192,7 @@ class TestScanHistory:
         assert job.scan_type == "nessus"
         assert job.task_id == "fake-task-id"
         assert job.status == ScanStatus.pending
-        # The `client` fixture authenticates as user 1.
-        assert job.uploaded_by == 1
+        assert job.uploaded_by == admin_user.id
 
     def test_history_lists_uploads(self, client, no_broker):
         client.post(
