@@ -364,3 +364,18 @@ jobs:
             fi
           done
           echo "La configuration de production est conforme."
+
+  stack:
+    # Les jobs precedents testent les images une par une et valident les
+    # fichiers compose sans les demarrer. Celui-ci lance la pile de production
+    # complete et la traverse de bout en bout : Nginx, API, Redis protege par
+    # mot de passe, worker et volume partage, PostgreSQL, beat, et le cablage
+    # des reglages du .env jusque dans chaque conteneur.
+    name: Pile de production de bout en bout
+    runs-on: ubuntu-latest
+    needs: [docker, compose]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Demarrer et traverser la pile de production
+        run: bash scripts/smoke_prod_stack.sh
