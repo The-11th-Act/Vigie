@@ -102,8 +102,8 @@ services:
       migrate:
         condition: service_completed_successfully
 
-  # Scheduler for the periodic CrowdStrike pull. Harmless when the sync is
-  # disabled: no beat entry is registered, so it simply idles.
+  # Scheduler for the daily rescoring of the open backlog, and for the
+  # periodic CrowdStrike pull when that sync is enabled.
   beat:
     build: .
     container_name: vigie_beat

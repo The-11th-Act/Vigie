@@ -2,15 +2,24 @@
 
 The API-level tests cover the upload; these cover what the worker does with it:
 the ScanJob state machine, cleanup of the staged file, and the guards on the
-CrowdStrike sync.
+CrowdStrike sync and the daily rescoring.
 """
+
+from datetime import UTC, datetime, timedelta
+from unittest.mock import MagicMock
 
 import pytest
 
 from app.core.config import settings
 from app.models.asset import Asset
 from app.models.scan import ScanJob, ScanStatus
-from app.worker.tasks import process_scan_file_task, sync_crowdstrike_task
+from app.models.vulnerability import AssetVulnerability, Status, Vulnerability
+from app.worker.celery_app import build_beat_schedule
+from app.worker.tasks import (
+    process_scan_file_task,
+    rescore_open_findings_task,
+    sync_crowdstrike_task,
+)
 
 NESSUS_REPORT = b"""<?xml version="1.0"?>
 <NessusClientData_v2>
@@ -205,3 +214,66 @@ class TestCrowdStrikeSync:
         # Polled findings go through the same pipeline as uploaded ones.
         asset = worker_session.query(Asset).filter_by(ip_address="10.8.0.1").one()
         assert asset.hostname == "cs-host"
+
+
+class TestDailyRescoring:
+    def test_commits_the_new_scores(self, worker_session):
+        asset = Asset(ip_address="10.9.0.1")
+        vuln = Vulnerability(
+            cve_id="CVE-2024-7070", title="Late", cvss_score=6.0, severity="Medium"
+        )
+        worker_session.add_all([asset, vuln])
+        worker_session.flush()
+        finding = AssetVulnerability(
+            asset_id=asset.id,
+            vulnerability_id=vuln.id,
+            status=Status.open,
+            risk_score=6.0,
+            remediation_deadline=datetime.now(UTC) - timedelta(days=90),
+        )
+        worker_session.add(finding)
+        worker_session.commit()
+
+        result = rescore_open_findings_task.apply().get()
+
+        assert result == {"status": "success", "rescored": 1}
+        worker_session.rollback()  # anything left uncommitted would vanish here
+        assert finding.risk_score == 7.5  # 6.0 + the 1.5 cap for 90 days late
+
+    def test_a_failure_rolls_back_and_surfaces(self, monkeypatch):
+        session = MagicMock()
+        monkeypatch.setattr("app.worker.tasks.SessionLocal", lambda: session)
+        monkeypatch.setattr(
+            "app.worker.tasks.rescore_open_findings",
+            MagicMock(side_effect=RuntimeError("database gone")),
+        )
+
+        with pytest.raises(RuntimeError):
+            rescore_open_findings_task.apply().get()
+
+        session.rollback.assert_called_once()
+        session.commit.assert_not_called()
+        session.close.assert_called_once()
+
+
+class TestBeatSchedule:
+    def test_rescoring_is_always_scheduled(self, monkeypatch):
+        """Regression: the schedule only existed when CrowdStrike was enabled,
+        so the daily rescoring task was defined but never run."""
+        monkeypatch.setattr(settings, "CROWDSTRIKE_SYNC_ENABLED", False)
+        monkeypatch.setattr(settings, "RESCORE_HOUR_UTC", 4)
+
+        schedule = build_beat_schedule()
+
+        entry = schedule["rescore-open-findings"]
+        assert entry["task"] == rescore_open_findings_task.name
+        assert entry["schedule"].hour == {4}
+        assert "crowdstrike-sync" not in schedule
+
+    def test_crowdstrike_is_added_when_enabled(self, monkeypatch):
+        monkeypatch.setattr(settings, "CROWDSTRIKE_SYNC_ENABLED", True)
+
+        schedule = build_beat_schedule()
+
+        assert schedule["crowdstrike-sync"]["task"] == sync_crowdstrike_task.name
+        assert "rescore-open-findings" in schedule

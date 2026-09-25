@@ -65,6 +65,12 @@ promesse d'un produit RBVM.
 > fonction, et l'autocomplétion de l'IDE remplace la lecture de la docstring.
 > Effort : 3 h. C'est le meilleur rapport valeur/coût du document.
 
+> **Mise à jour du 25/09/2026** : les parseurs de fichiers renvoient désormais un
+> `ParsedScan` (`app/parsers/utils.py`) : les findings plus les adresses couvertes par
+> le scan, dont dépend la clôture automatique. L'enveloppe est typée, mais les findings
+> restent des dictionnaires : M1 reste ouvert, et `ParsedScan` est l'endroit naturel où
+> accrocher `ParsedFinding`.
+
 ### M2 — Le worker Celery est le point le moins couvert, et le plus risqué ✅ *traité*
 
 `app/worker/tasks.py` : **37 % de couverture**, lignes 35-59 jamais exécutées. Or c'est

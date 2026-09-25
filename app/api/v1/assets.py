@@ -6,14 +6,14 @@ from app.api.deps import get_or_404
 from app.core.security import decode_token, require_admin
 from app.db.database import get_db
 from app.models.asset import Asset, Criticality
-from app.models.vulnerability import AssetVulnerability, Status
+from app.models.vulnerability import AssetVulnerability
 from app.schemas.asset import (
     AssetCreate,
     AssetResponse,
     AssetUpdate,
     PaginatedAssetResponse,
 )
-from app.services.risk_scoring import calculate_risk_score
+from app.services.rescoring import rescore_open_findings
 
 router = APIRouter()
 
@@ -90,7 +90,7 @@ def update_asset(
     # Risk is a function of business criticality, so a change here invalidates
     # every score already computed for this asset's open findings.
     if "business_criticality" in changes:
-        _rescore_open_findings(db, asset)
+        rescore_open_findings(db, AssetVulnerability.asset_id == asset.id)
 
     db.commit()
     db.refresh(asset)
@@ -106,22 +106,3 @@ def delete_asset(
     asset = get_or_404(db, Asset, asset_id)
     db.delete(asset)
     db.commit()
-
-
-def _rescore_open_findings(db: Session, asset: Asset) -> None:
-    findings = (
-        db.query(AssetVulnerability)
-        .filter(
-            AssetVulnerability.asset_id == asset.id,
-            AssetVulnerability.status == Status.open,
-        )
-        .all()
-    )
-    for finding in findings:
-        if finding.vulnerability is None:
-            continue
-        finding.risk_score = calculate_risk_score(
-            finding.vulnerability.cvss_score,
-            asset.business_criticality,
-            finding.remediation_deadline,
-        )

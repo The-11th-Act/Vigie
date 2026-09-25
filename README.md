@@ -8,7 +8,7 @@ ordered by what actually needs fixing first.
 - **Backend**: FastAPI (Python)
 - **Frontend**: React + Vite
 - **Database**: PostgreSQL with SQLAlchemy ORM
-- **Task Queue**: Celery with Redis broker (plus Celery beat for scheduled pulls)
+- **Task Queue**: Celery with Redis broker (plus Celery beat for scheduled jobs)
 - **Migrations**: Alembic
 - **Testing**: Pytest (backend), Vitest + Testing Library (frontend)
 - **Quality**: ruff + black (configured in `pyproject.toml`), ESLint + Prettier (frontend)
@@ -63,7 +63,8 @@ ordered by what actually needs fixing first.
    ```bash
    celery -A app.worker.celery_app worker --loglevel=info
    ```
-5. Run the scheduler, only needed for the periodic CrowdStrike sync:
+5. Run the scheduler — it rescores the open backlog daily (`RESCORE_HOUR_UTC`)
+   and runs the periodic CrowdStrike sync when enabled:
    ```bash
    celery -A app.worker.celery_app beat --loglevel=info
    ```
@@ -155,6 +156,9 @@ means *here*. `app/services/risk_scoring.py` multiplies CVSS by the affected
 asset's business criticality (Critical ×1.5 … Low ×0.7) and adds a capped
 penalty once a finding is past the remediation deadline set by
 `app/services/remediation.py` (14 days for Critical, up to 180 for Low).
+Scores are stored so the backlog sorts in SQL; `app/services/rescoring.py`
+recomputes them whenever an input changes (CVSS, criticality) and once a day for
+the whole open backlog, since the overdue penalty grows with time alone.
 
 The resulting backlog, worst first, is served by
 `GET /api/v1/vulnerabilities/findings` and shown on the **Risk Backlog** page,
@@ -174,7 +178,10 @@ recorded as a `ScanJob` — author, date, outcome and counters — listed by
 
 A finding that a source stops reporting is closed automatically after
 `AUTO_REMEDIATE_AFTER_MISSES` consecutive scans without it, so a single partial
-scan cannot wrongly clear the backlog.
+scan cannot wrongly clear the backlog. For file uploads, a miss only counts on a
+host the file actually covered — including hosts that came back clean — so a
+scan of one subnet never closes another subnet's findings. The CrowdStrike sync
+reports the whole inventory each time, so its sweep spans the source.
 
 ### CrowdStrike Falcon Spotlight
 Set `CROWDSTRIKE_CLIENT_ID` / `CROWDSTRIKE_CLIENT_SECRET`, adjust

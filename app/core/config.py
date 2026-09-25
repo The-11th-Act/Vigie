@@ -1,7 +1,7 @@
 import secrets
 import warnings
 
-from pydantic import field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # SQLAlchemy 2.1 switched the driver behind a bare ``postgresql://`` URL from
@@ -74,6 +74,10 @@ class Settings(BaseSettings):
     # Consecutive scans of a source in which a finding may go unseen before it
     # is closed as remediated. 0 disables automatic closure entirely.
     AUTO_REMEDIATE_AFTER_MISSES: int = 3
+
+    # Hour (UTC) of the daily rescoring of the open backlog. The overdue
+    # penalty grows with time, so scores must move even when no scan comes in.
+    RESCORE_HOUR_UTC: int = Field(default=2, ge=0, le=23)
 
     LOG_LEVEL: str = "INFO"
 

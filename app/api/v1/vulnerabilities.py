@@ -26,7 +26,7 @@ from app.schemas.vulnerability import (
     VulnerabilityResponse,
     VulnerabilityUpdate,
 )
-from app.services.risk_scoring import calculate_risk_score
+from app.services.rescoring import rescore_open_findings
 
 router = APIRouter()
 
@@ -115,7 +115,7 @@ def update_vulnerability(
         setattr(vuln, key, value)
 
     if "cvss_score" in changes:
-        _rescore_open_findings(db, vuln)
+        rescore_open_findings(db, AssetVulnerability.vulnerability_id == vuln.id)
 
     db.commit()
     db.refresh(vuln)
@@ -275,27 +275,6 @@ def get_finding_history(
         .order_by(FindingAuditLog.id.desc())
         .all()
     )
-
-
-def _rescore_open_findings(db: Session, vuln: Vulnerability) -> None:
-    """Recompute risk for every open finding of this CVE after a score change."""
-    findings = (
-        db.query(AssetVulnerability)
-        .options(joinedload(AssetVulnerability.asset))
-        .filter(
-            AssetVulnerability.vulnerability_id == vuln.id,
-            AssetVulnerability.status == Status.open,
-        )
-        .all()
-    )
-    for finding in findings:
-        if finding.asset is None:
-            continue
-        finding.risk_score = calculate_risk_score(
-            vuln.cvss_score,
-            finding.asset.business_criticality,
-            finding.remediation_deadline,
-        )
 
 
 def _status_value(status) -> str:

@@ -9,6 +9,7 @@ from app.models.scan import ScanJob, ScanStatus
 from app.parsers.nessus import parse_nessus_scan
 from app.parsers.openvas import parse_openvas_scan
 from app.services.ingestion import ingest_findings
+from app.services.rescoring import rescore_open_findings
 from app.worker.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -142,6 +143,32 @@ def sync_crowdstrike_task(self):
         )
         if self.request.retries >= self.max_retries:
             return {"status": "error", "message": str(exc)}
+        raise
+    finally:
+        db.close()
+
+
+@celery_app.task(
+    name="app.worker.tasks.rescore_open_findings_task",
+    soft_time_limit=1800,
+    time_limit=2100,
+)
+def rescore_open_findings_task():
+    """Recompute the risk of the whole open backlog.
+
+    The overdue penalty grows with time, but scores used to move only when a
+    scan came in: a finding past its deadline on a host nobody rescans stayed
+    frozen at its original rank. Run daily by beat.
+    """
+    db = SessionLocal()
+    try:
+        changed = rescore_open_findings(db)
+        db.commit()
+        logger.info("Daily rescoring updated %d open finding(s)", changed)
+        return {"status": "success", "rescored": changed}
+    except Exception:
+        db.rollback()
+        logger.exception("Daily rescoring failed")
         raise
     finally:
         db.close()

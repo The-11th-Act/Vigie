@@ -142,8 +142,9 @@ services:
           memory: 2g
 
   beat:
-    # Planificateur de la synchro CrowdStrike. Un seul exemplaire : deux beat
-    # programmeraient chaque synchro deux fois.
+    # Planificateur du recalcul quotidien des scores et de la synchro
+    # CrowdStrike. Un seul exemplaire : deux beat programmeraient chaque tache
+    # deux fois.
     volumes: !override []
     environment:
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required}

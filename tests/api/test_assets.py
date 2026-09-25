@@ -1,4 +1,5 @@
 from app.models.asset import Asset
+from app.models.vulnerability import AssetVulnerability, Status, Vulnerability
 
 
 class TestAssets:
@@ -64,6 +65,30 @@ class TestAssets:
         data = response.json()
         assert data["business_criticality"] == "Critical"
         assert data["operating_system"] == "Windows"
+
+    def test_criticality_change_rescores_open_findings(self, client, db_session):
+        """Risk derives from criticality; stale scores would misrank the backlog."""
+        asset = Asset(ip_address="10.0.0.11")
+        vuln = Vulnerability(
+            cve_id="CVE-2024-6001", title="Rescore me", cvss_score=6.0, severity="Medium"
+        )
+        db_session.add_all([asset, vuln])
+        db_session.flush()
+        link = AssetVulnerability(
+            asset_id=asset.id,
+            vulnerability_id=vuln.id,
+            status=Status.open,
+            risk_score=6.0,
+        )
+        db_session.add(link)
+        db_session.commit()
+
+        client.put(
+            f"/api/v1/assets/{asset.id}", json={"business_criticality": "Critical"}
+        )
+
+        db_session.refresh(link)
+        assert link.risk_score == 9.0  # 6.0 * 1.5
 
     def test_delete_asset(self, client, db_session):
         db_session.add(Asset(ip_address="10.0.0.20", hostname="srv-20"))

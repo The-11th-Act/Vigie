@@ -1,6 +1,7 @@
 from datetime import timedelta
 
 from celery import Celery
+from celery.schedules import crontab
 
 from app.core.config import settings
 
@@ -14,15 +15,28 @@ celery_app.conf.update(
     enable_utc=True,
 )
 
-# The periodic pull is only scheduled when the integration is actually turned
-# on, so a deployment without CrowdStrike credentials does not accumulate a
-# failing beat entry.
-if settings.CROWDSTRIKE_SYNC_ENABLED:
-    celery_app.conf.beat_schedule = {
-        "crowdstrike-sync": {
+
+def build_beat_schedule() -> dict:
+    """Periodic jobs, rebuilt from the settings so tests can check each toggle."""
+    schedule = {
+        # The overdue penalty grows every day, but stored scores only moved when
+        # a scan came in: a late finding on a host nobody rescans kept its rank.
+        "rescore-open-findings": {
+            "task": "app.worker.tasks.rescore_open_findings_task",
+            "schedule": crontab(hour=settings.RESCORE_HOUR_UTC, minute=0),
+        },
+    }
+    # The periodic pull is only scheduled when the integration is actually
+    # turned on, so a deployment without CrowdStrike credentials does not
+    # accumulate a failing beat entry.
+    if settings.CROWDSTRIKE_SYNC_ENABLED:
+        schedule["crowdstrike-sync"] = {
             "task": "app.worker.tasks.sync_crowdstrike_task",
             "schedule": timedelta(minutes=settings.CROWDSTRIKE_SYNC_INTERVAL_MINUTES),
         }
-    }
+    return schedule
+
+
+celery_app.conf.beat_schedule = build_beat_schedule()
 
 celery_app.autodiscover_tasks(["app.worker"])
