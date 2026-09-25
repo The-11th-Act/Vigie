@@ -19,7 +19,15 @@ import pytest
 from app.models.vulnerability import Severity
 from app.parsers.utils import severity_from_cvss
 from app.services.remediation import DEFAULT_SLA_DAYS, SLA_DAYS
-from app.services.risk_scoring import CRITICALITY_MULTIPLIERS, risk_level
+from app.services.risk_scoring import (
+    CRITICALITY_MULTIPLIERS,
+    EPSS_BANDS,
+    INTERNET_FACING_MULTIPLIER,
+    KEV_MULTIPLIER,
+    KEV_RISK_FLOOR,
+    MAX_CONTEXT_MULTIPLIER,
+    risk_level,
+)
 
 
 class TestThresholdConsistency:
@@ -90,3 +98,35 @@ class TestPolicyCompleteness:
         # Medium est le point neutre : c'est la valeur attribuée par défaut à
         # tout asset créé par ingestion, elle ne doit pas biaiser le score.
         assert CRITICALITY_MULTIPLIERS["Medium"] == 1.0
+
+
+class TestThreatContextPolicy:
+    """Le contexte de menace doit rester cohérent avec les niveaux de risque."""
+
+    def test_the_kev_floor_is_the_start_of_high(self):
+        """Le plancher KEV promet « au moins High » : s'il glisse sous le seuil,
+        un CVE activement exploité peut retomber en « Medium » sans bruit."""
+        assert risk_level(KEV_RISK_FLOOR) == "High"
+        assert risk_level(KEV_RISK_FLOOR - 0.01) == "Medium"
+
+    def test_epss_bands_rise_with_the_probability(self):
+        thresholds = [threshold for threshold, _ in EPSS_BANDS]
+        multipliers = [multiplier for _, multiplier in EPSS_BANDS]
+        assert thresholds == sorted(thresholds, reverse=True)
+        assert multipliers == sorted(multipliers, reverse=True)
+        assert (
+            thresholds[-1] == 0.0
+        ), "une probabilité doit toujours tomber dans un palier"
+
+    def test_the_middle_epss_band_is_neutral(self):
+        """Entre 1 % et 10 %, EPSS ne dit rien de plus que CVSS."""
+        assert (0.01, 1.00) in EPSS_BANDS
+
+    def test_observed_exploitation_weighs_at_least_as_much_as_a_prediction(self):
+        assert KEV_MULTIPLIER >= max(multiplier for _, multiplier in EPSS_BANDS)
+
+    def test_the_cap_does_not_hide_a_single_factor(self):
+        """Le plafond borne l'empilement ; il ne doit pas amputer un facteur seul."""
+        for multiplier in (KEV_MULTIPLIER, INTERNET_FACING_MULTIPLIER):
+            assert multiplier <= MAX_CONTEXT_MULTIPLIER
+        assert max(m for _, m in EPSS_BANDS) <= MAX_CONTEXT_MULTIPLIER

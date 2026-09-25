@@ -27,6 +27,24 @@ def finding(db_session):
     return link
 
 
+class TestRiskFactors:
+    def test_a_plain_finding_has_no_factor(self, client, finding):
+        items = client.get("/api/v1/vulnerabilities/findings").json()["items"]
+        assert items[0]["risk_factors"] == []
+
+    def test_threat_context_is_explained(self, client, db_session, finding):
+        finding.asset.internet_facing = True
+        finding.vulnerability.in_kev = True
+        db_session.commit()
+
+        item = client.get("/api/v1/vulnerabilities/findings").json()["items"][0]
+
+        codes = {factor["code"] for factor in item["risk_factors"]}
+        assert codes == {"kev", "internet_facing", "context_cap"}
+        assert item["vulnerability"]["in_kev"] is True
+        assert item["asset"]["internet_facing"] is True
+
+
 class TestFindingLifecycle:
     def test_mark_remediated_sets_fixed_at(self, client, finding):
         response = client.patch(
