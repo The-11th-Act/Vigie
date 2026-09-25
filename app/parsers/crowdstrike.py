@@ -18,6 +18,7 @@ from typing import Any
 
 import requests
 
+from app.core.http_retry import backoff_seconds, retry_after_seconds
 from app.parsers.utils import clean_text, is_valid_cve, normalize_severity, safe_float
 
 logger = logging.getLogger(__name__)
@@ -30,8 +31,6 @@ ENTITY_BATCH_SIZE = 100
 QUERY_PAGE_SIZE = 400
 
 MAX_ATTEMPTS = 5
-BACKOFF_BASE_SECONDS = 1.0
-BACKOFF_MAX_SECONDS = 30.0
 REQUEST_TIMEOUT = 30
 
 # Refresh slightly before the token actually lapses, so a long sync does not
@@ -138,7 +137,7 @@ class CrowdstrikeClient:
                 continue
 
             if response.status_code == 429:
-                delay = _retry_after_seconds(response, attempt)
+                delay = retry_after_seconds(response, attempt)
                 logger.warning(
                     "CrowdStrike rate limit on %s; waiting %.1fs (attempt %d/%d)",
                     path,
@@ -150,7 +149,7 @@ class CrowdstrikeClient:
                 continue
 
             if response.status_code >= 500:
-                delay = _backoff_seconds(attempt)
+                delay = backoff_seconds(attempt)
                 logger.warning(
                     "CrowdStrike returned HTTP %d on %s; retrying in %.1fs "
                     "(attempt %d/%d)",
@@ -272,30 +271,6 @@ def _title_for(cve_id: str, description: str | None) -> str:
         return cve_id
     first_sentence = description.split(". ")[0].strip()
     return f"{cve_id}: {first_sentence[:400]}"
-
-
-def _retry_after_seconds(response: requests.Response, attempt: int) -> float:
-    """Honour the server's own pacing whenever it states one."""
-    retry_after = response.headers.get("Retry-After")
-    if retry_after:
-        try:
-            return min(BACKOFF_MAX_SECONDS, max(0.0, float(retry_after)))
-        except ValueError:
-            pass
-
-    # Falcon's own variant carries an absolute epoch rather than a delay.
-    epoch = response.headers.get("X-RateLimit-RetryAfter")
-    if epoch:
-        try:
-            return min(BACKOFF_MAX_SECONDS, max(0.0, float(epoch) - time.time()))
-        except ValueError:
-            pass
-
-    return _backoff_seconds(attempt)
-
-
-def _backoff_seconds(attempt: int) -> float:
-    return min(BACKOFF_MAX_SECONDS, BACKOFF_BASE_SECONDS * (2 ** (attempt - 1)))
 
 
 def fetch_vulnerabilities_from_settings() -> list[dict[str, Any]]:
