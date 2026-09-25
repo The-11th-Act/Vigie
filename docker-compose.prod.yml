@@ -198,3 +198,42 @@ services:
       resources:
         limits:
           memory: 256m
+
+  backup:
+    # Sauvegarde chiffree de la base (point D8) : une au demarrage, puis toutes
+    # les BACKUP_INTERVAL_HOURS heures, avec retention. Procedure de
+    # restauration : docs/SAUVEGARDE.md. Une sauvegarde qui reste sur le meme
+    # disque que la base n'en est pas une : BACKUP_VOLUME peut designer un
+    # chemin monte depuis un autre stockage.
+    build:
+      context: ./deploy/backup
+    container_name: vigie_backup
+    environment:
+      PGHOST: db
+      PGUSER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      PGDATABASE: ${POSTGRES_DB:?POSTGRES_DB is required}
+      # Cle publique age : le serveur chiffre, seule la cle privee, gardee
+      # hors de la plateforme, dechiffre.
+      BACKUP_AGE_RECIPIENT: ${BACKUP_AGE_RECIPIENT:-}
+      BACKUP_ALLOW_UNENCRYPTED: ${BACKUP_ALLOW_UNENCRYPTED:-false}
+      BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-24}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+    volumes:
+      - ${BACKUP_VOLUME:-backups}:/backups
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+volumes:
+  backups:

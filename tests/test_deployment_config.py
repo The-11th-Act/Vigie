@@ -132,6 +132,28 @@ class TestProductionOverlay:
         pas : le conteneur était marqué « unhealthy » en permanence."""
         assert prod_services["beat"]["healthcheck"]["disable"] is True
 
+    def test_the_database_is_backed_up(self, prod_services):
+        backup = prod_services["backup"]
+        assert backup["read_only"] is True
+        assert "ports" not in backup
+        assert "/backups" in _volume_targets(backup)
+        # Clé publique transmise ; jamais de clé privée dans l'environnement.
+        assert "BACKUP_AGE_RECIPIENT" in backup["environment"]
+        assert not any("IDENTITY" in name for name in backup["environment"])
+
+    def test_pg_dump_matches_the_server_version(self, prod_services):
+        """pg_dump refuse de sauvegarder un serveur d'une version majeure plus
+        récente que lui : l'image de sauvegarde doit suivre celle de la base."""
+        dockerfile = (REPO_ROOT / "deploy" / "backup" / "Dockerfile").read_text(
+            encoding="utf-8"
+        )
+        base = next(
+            line.split()[1]
+            for line in dockerfile.splitlines()
+            if line.startswith("FROM ")
+        )
+        assert base == prod_services["db"]["image"]
+
 
 # Réglages que le déploiement n'a pas à exposer : des constantes de l'API, ou
 # un chemin figé par l'image et ses volumes.

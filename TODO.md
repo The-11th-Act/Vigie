@@ -270,8 +270,14 @@ Le volume `pgdata` n'a ni politique de sauvegarde ni procédure de restauration.
 c'est perdre l'historique des findings et des acceptations de risque — inacceptable pour
 un usage réglementaire.
 
-- [ ] `pg_dump` planifié, chiffré, avec rétention définie
-- [ ] Restauration testée et documentée (une sauvegarde jamais restaurée n'existe pas)
+- [x] `pg_dump` planifié, chiffré, avec rétention définie : service `backup`
+      (`deploy/backup/`), chiffrement asymétrique age, healthcheck sur la
+      fraîcheur de la dernière sauvegarde *(25/09/2026)*
+- [x] Restauration testée et documentée : `docs/SAUVEGARDE.md`, rejouée à chaque
+      commit par le job CI de bout en bout (sauvegarde, base détruite,
+      restauration, vérification par l'API)
+- [ ] Copie hors site : le service écrit sur un volume local ou un chemin
+      monté (`BACKUP_VOLUME`) ; l'envoi vers un stockage objet reste à faire
 
 ### D9 (suite). Observabilité
 - [x] `X-Request-ID` lu par l'API et propagé jusqu'aux tâches Celery *(items 5-18)*

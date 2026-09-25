@@ -1,0 +1,7 @@
+# Les scripts exécutés dans les conteneurs ou par la CI doivent garder des fins
+# de ligne LF : sous Windows, core.autocrlf les convertirait en CRLF à
+# l'extraction, et une image construite depuis ce poste casserait sur
+# "bash\r: No such file or directory".
+*.sh text eol=lf
+deploy/backup/vigie-* text eol=lf
+deploy/backup/Dockerfile text eol=lf

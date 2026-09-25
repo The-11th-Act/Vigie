@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# Sauvegarde ponctuelle de la base Vigie.
+#
+# pg_dump au format custom (compressé, restaurable table par table), chiffré
+# avec age pour la clé publique BACKUP_AGE_RECIPIENT : le serveur peut chiffrer
+# mais pas déchiffrer, donc un vol du volume de sauvegarde ne livre rien. La
+# clé privée reste hors de la plateforme et ne sert qu'à la restauration.
+#
+# Écrit dans un fichier .partial puis renomme : une sauvegarde interrompue ne
+# ressemble jamais à une sauvegarde valide. La rétention ne s'applique qu'après
+# un succès, et ne peut donc pas supprimer la dernière sauvegarde restante.
+#
+# Connexion : variables libpq standard (PGHOST, PGUSER, PGPASSWORD, PGDATABASE).
+# Sortie standard : le chemin du fichier écrit, et rien d'autre.
+
+set -euo pipefail
+
+BACKUP_DIR="${BACKUP_DIR:-/backups}"
+RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-14}"
+
+log() { echo "[vigie-backup] $*" >&2; }
+
+stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+name="vigie-${stamp}.dump"
+
+if [ -n "${BACKUP_AGE_RECIPIENT:-}" ]; then
+  target="${BACKUP_DIR}/${name}.age"
+  encrypt=(age --encrypt --recipient "${BACKUP_AGE_RECIPIENT}")
+elif [ "${BACKUP_ALLOW_UNENCRYPTED:-false}" = "true" ]; then
+  target="${BACKUP_DIR}/${name}"
+  encrypt=(cat)
+  log "ATTENTION : sauvegarde NON chiffrée (BACKUP_ALLOW_UNENCRYPTED=true)."
+else
+  log "BACKUP_AGE_RECIPIENT est vide : refus d'écrire une sauvegarde en clair."
+  log "Générer une paire de clés avec age-keygen (voir docs/SAUVEGARDE.md), ou"
+  log "poser BACKUP_ALLOW_UNENCRYPTED=true en connaissance de cause."
+  exit 2
+fi
+
+partial="${target}.partial"
+trap 'rm -f "${partial}"' EXIT
+
+pg_dump --format=custom --no-owner --no-privileges | "${encrypt[@]}" > "${partial}"
+
+if [ ! -s "${partial}" ]; then
+  log "la sauvegarde est vide"
+  exit 1
+fi
+
+mv "${partial}" "${target}"
+trap - EXIT
+log "sauvegarde écrite : ${target} ($(du -h "${target}" | cut -f1))"
+
+if [ "${RETENTION_DAYS}" -gt 0 ]; then
+  find "${BACKUP_DIR}" -maxdepth 1 -name 'vigie-*.dump*' ! -name '*.partial' \
+    -mtime +"${RETENTION_DAYS}" -print -delete | while read -r removed; do
+    log "rétention : ${removed} supprimé"
+  done
+fi
+
+echo "${target}"

@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# Restauration d'une sauvegarde Vigie.
+#
+# Usage :
+#   vigie-restore FICHIER --yes
+#
+# Un fichier .age est déchiffré avec la clé privée désignée par
+# BACKUP_AGE_IDENTITY (chemin d'un fichier produit par age-keygen, monté en
+# lecture seule le temps de la restauration). La restauration se fait en une
+# seule transaction : elle réussit entièrement ou ne change rien.
+#
+# Les objets présents dans la sauvegarde sont supprimés puis recréés
+# (--clean) : arrêter l'API, le worker et le beat avant, les relancer après.
+# La procédure complète est dans docs/SAUVEGARDE.md.
+
+set -euo pipefail
+
+log() { echo "[vigie-restore] $*" >&2; }
+
+file="${1:-}"
+confirm="${2:-}"
+
+if [ -z "${file}" ] || [ "${confirm}" != "--yes" ]; then
+  log "usage : vigie-restore FICHIER --yes"
+  log "La base ${PGDATABASE:-?} sur ${PGHOST:-?} sera remplacée par le contenu du fichier."
+  exit 2
+fi
+if [ ! -r "${file}" ]; then
+  log "fichier illisible : ${file}"
+  exit 2
+fi
+
+if [[ "${file}" == *.age ]]; then
+  identity="${BACKUP_AGE_IDENTITY:-}"
+  if [ -z "${identity}" ] || [ ! -r "${identity}" ]; then
+    log "sauvegarde chiffrée : BACKUP_AGE_IDENTITY doit désigner la clé privée age."
+    exit 2
+  fi
+  read_backup=(age --decrypt --identity "${identity}" "${file}")
+else
+  read_backup=(cat "${file}")
+fi
+
+log "restauration de ${file} dans ${PGDATABASE:-?}..."
+"${read_backup[@]}" | pg_restore --clean --if-exists --no-owner --no-privileges \
+  --exit-on-error --single-transaction --dbname "${PGDATABASE}"
+log "restauration terminée."

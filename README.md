@@ -123,6 +123,14 @@ The frontend container also acts as the reverse proxy: it serves the static SPA 
 forwards `/api` to the API (`frontend/nginx.conf`). It binds to `127.0.0.1:8080` by
 default — put a TLS terminator in front of it.
 
+**Backups**: the `backup` service dumps the database at start-up and every
+`BACKUP_INTERVAL_HOURS`, encrypted with [age](https://age-encryption.org) for
+the public key `BACKUP_AGE_RECIPIENT` (the server cannot decrypt its own
+backups), and prunes them after `BACKUP_RETENTION_DAYS`. It turns unhealthy when
+no recent backup exists. Set-up, on-demand backups and the restore procedure are
+in [`docs/SAUVEGARDE.md`](docs/SAUVEGARDE.md); CI restores a real backup into a
+wiped database on every commit.
+
 **First admin in production**: rather than leaving `ADMIN_PASSWORD` in a long-running
 container's environment, run the one-off script. It prompts for the password instead of
 taking it as an argument, which would land in the shell history and the process table:

@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Boucle du service de sauvegarde : une sauvegarde au démarrage, qui prouve
+# tout de suite que la configuration (base, clé age, volume) est bonne, puis
+# une toutes les BACKUP_INTERVAL_HOURS heures.
+#
+# Un échec est journalisé et n'arrête pas la boucle : la suivante sera tentée.
+# C'est le healthcheck de l'image, qui exige une sauvegarde récente, qui rend
+# un échec persistant visible.
+
+set -uo pipefail
+
+interval_hours="${BACKUP_INTERVAL_HOURS:-24}"
+
+while true; do
+  if ! vigie-backup >/dev/null; then
+    echo "[vigie-backup] ÉCHEC de la sauvegarde ; nouvel essai dans ${interval_hours} h" >&2
+  fi
+  sleep "$((interval_hours * 3600))"
+done

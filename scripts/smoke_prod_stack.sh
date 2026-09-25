@@ -61,20 +61,39 @@ KEV_SLA_DAYS=7
 THREAT_INTEL_ENABLED=true
 EOF
 
+# --- Clé de sauvegarde -----------------------------------------------------
+# Générée avec l'outil de l'image, comme le ferait un administrateur ; seule la
+# clé publique va dans le .env, la clé privée ne sert qu'à la restauration.
+"${COMPOSE[@]}" build backup
+"${COMPOSE[@]}" run --rm --no-deps -T backup age-keygen > "$WORK/age.key" 2>/dev/null
+RECIPIENT=$(sed -n 's/^# public key: //p' "$WORK/age.key")
+[ -n "$RECIPIENT" ] || fail "age-keygen n'a pas produit de clé"
+echo "BACKUP_AGE_RECIPIENT=$RECIPIENT" >> .env
+# Lisible par l'uid postgres du conteneur de restauration (clé jetable).
+chmod 644 "$WORK/age.key"
+
 # --- Démarrage -------------------------------------------------------------
+# /healthz est servi par Nginx lui-même ; le 401 d'une route protégée prouve
+# qu'il joint bien l'API (après un redémarrage, l'adresse de l'API change).
+wait_for_api() {
+  local ready=""
+  for _ in $(seq 1 90); do
+    if curl -fsS "$BASE/healthz" >/dev/null 2>&1 \
+      && [ "$("${COMPOSE[@]}" ps --format '{{.Health}}' web)" = "healthy" ] \
+      && [ "$(curl -s -o /dev/null -w '%{http_code}' "$API/threat-intel/status")" = 401 ]; then
+      ready=1
+      break
+    fi
+    sleep 2
+  done
+  [ "$ready" = 1 ] || fail "l'API n'est jamais devenue saine derrière Nginx"
+}
+
 echo "Construction et démarrage de la pile de production..."
 "${COMPOSE[@]}" up -d --build
 
 echo "Attente de l'API derrière Nginx..."
-for _ in $(seq 1 90); do
-  if curl -fsS "$BASE/healthz" >/dev/null 2>&1 \
-    && [ "$("${COMPOSE[@]}" ps --format '{{.Health}}' web)" = "healthy" ]; then
-    ready=1
-    break
-  fi
-  sleep 2
-done
-[ "${ready:-}" = 1 ] || fail "l'API n'est jamais devenue saine derrière Nginx"
+wait_for_api
 echo "API saine (/ready, donc PostgreSQL, Redis et un worker)."
 
 # --- Premier administrateur, par le chemin documenté ------------------------
@@ -149,5 +168,40 @@ echo "Calendrier du beat : $SCHEDULE"
 [[ "$SCHEDULE" == *threat-intel-refresh* ]] || fail "THREAT_INTEL_ENABLED n'atteint pas le beat"
 [[ "$SCHEDULE" == *rescore-open-findings* ]] || fail "le recalcul quotidien n'est pas planifié"
 echo "ok - le beat planifie le recalcul et le rafraîchissement des flux"
+
+# --- Sauvegarde, perte de la base, restauration ----------------------------
+# Une sauvegarde jamais restaurée n'existe pas : on la restaure pour de vrai,
+# en suivant la procédure de docs/SAUVEGARDE.md.
+BACKUP_FILE=$("${COMPOSE[@]}" exec -T backup vigie-backup | tail -n 1)
+[[ "$BACKUP_FILE" == /backups/vigie-*.dump.age ]] \
+  || fail "sauvegarde à la demande : chemin inattendu « $BACKUP_FILE »"
+echo "ok - sauvegarde chiffrée écrite : $BACKUP_FILE"
+
+STARTUP_BACKUPS=$("${COMPOSE[@]}" exec -T backup sh -c 'ls /backups/*.dump.age | wc -l')
+[ "$STARTUP_BACKUPS" -ge 2 ] || fail "le service n'a pas fait de sauvegarde au démarrage"
+echo "ok - le service a sauvegardé dès son démarrage"
+
+"${COMPOSE[@]}" stop frontend web worker beat
+"${COMPOSE[@]}" exec -T db psql -U vigie -d vigie -v ON_ERROR_STOP=1 -q \
+  -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
+TABLES=$("${COMPOSE[@]}" exec -T db psql -U vigie -d vigie -tAc \
+  "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'")
+[ "$TABLES" = 0 ] || fail "la base n'a pas été vidée ($TABLES tables)"
+echo "ok - base détruite"
+
+"${COMPOSE[@]}" run --rm -T \
+  -v "$WORK/age.key:/run/age.key:ro" -e BACKUP_AGE_IDENTITY=/run/age.key \
+  backup vigie-restore "$BACKUP_FILE" --yes || fail "restauration impossible"
+
+"${COMPOSE[@]}" up -d
+wait_for_api
+
+TOKEN=$(curl -fsS -X POST "$API/auth/login" -H 'Content-Type: application/json' \
+  -d "{\"username\":\"admin\",\"password\":\"$ADMIN_PASSWORD\"}" | jq -r .access_token) \
+  || fail "après restauration, l'administrateur ne peut plus se connecter"
+RESTORED=$(curl -fsS -H "Authorization: Bearer $TOKEN" \
+  "$API/vulnerabilities/findings?kev_only=true" | jq -r '.items[0].vulnerability.cve_id')
+[ "$RESTORED" = "CVE-2024-3400" ] || fail "après restauration, le finding KEV a disparu ($RESTORED)"
+echo "ok - restauration : comptes, findings et contexte de menace sont revenus"
 
 echo "La pile de production fonctionne de bout en bout."
