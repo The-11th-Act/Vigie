@@ -1,3 +1,5 @@
+from datetime import UTC, date, timedelta
+
 import pytest
 
 from app.core.config import settings
@@ -382,3 +384,63 @@ class TestScopedClosure:
 
         assert result.auto_remediated == 0
         assert link_for(db_session).missed_scans == 0
+
+
+class TestThreatContextAtIngestion:
+    def kev_vulnerability(self, db_session, cve="CVE-2024-0001", cvss=5.0):
+        vuln = Vulnerability(
+            cve_id=cve,
+            title="Exploited",
+            cvss_score=cvss,
+            severity="Medium",
+            in_kev=True,
+            kev_date_added=date(2024, 1, 10),
+        )
+        db_session.add(vuln)
+        db_session.commit()
+        return vuln
+
+    def test_a_kev_finding_gets_the_floor_and_the_short_window(self, db_session):
+        self.kev_vulnerability(db_session)
+        db_session.add(Asset(ip_address="10.0.0.1", business_criticality=Criticality.low))
+        db_session.commit()
+
+        ingest_findings(db_session, [finding(cvss=5.0, severity="Medium")], "nessus")
+
+        link = link_for(db_session)
+        assert link.risk_score == 7.0  # 5.0 x 0.7 x 1.3 = 4.55, raised to the floor
+        window = _aware(link.remediation_deadline) - _aware(link.last_seen_at)
+        assert window <= timedelta(days=14)
+
+    def test_an_open_finding_is_tightened_once_its_cve_enters_kev(self, db_session):
+        ingest_findings(db_session, [finding(severity="Medium")], "nessus")
+        before = _aware(link_for(db_session).remediation_deadline)
+
+        vuln = db_session.query(Vulnerability).one()
+        vuln.in_kev = True
+        db_session.commit()
+        ingest_findings(db_session, [finding(severity="Medium")], "nessus")
+
+        after = _aware(link_for(db_session).remediation_deadline)
+        assert after < before
+        assert after - _aware(link_for(db_session).detected_at) <= timedelta(days=14)
+
+    def test_an_internet_facing_asset_raises_the_score(self, db_session):
+        db_session.add(Asset(ip_address="10.0.0.1", internet_facing=True))
+        db_session.commit()
+
+        ingest_findings(db_session, [finding(cvss=5.0)], "nessus")
+
+        assert link_for(db_session).risk_score == 6.0  # 5.0 x 1.2
+
+    def test_scores_from_the_stored_cvss(self, db_session):
+        """Two scanners can disagree on a CVE's CVSS; the stored one is the one
+        the daily rescoring uses, so ingestion must agree with it."""
+        ingest_findings(db_session, [finding(cvss=6.0)], "nessus")
+        ingest_findings(db_session, [finding(cvss=9.0)], "openvas")
+
+        assert link_for(db_session).risk_score == 6.0
+
+
+def _aware(value):
+    return value if value.tzinfo else value.replace(tzinfo=UTC)

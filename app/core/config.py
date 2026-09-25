@@ -79,6 +79,10 @@ class Settings(BaseSettings):
     # penalty grows with time, so scores must move even when no scan comes in.
     RESCORE_HOUR_UTC: int = Field(default=2, ge=0, le=23)
 
+    # Days to fix a CVE listed in CISA KEV, counted from its detection or its
+    # listing, whichever is later. Only ever shortens a deadline. 0 disables it.
+    KEV_SLA_DAYS: int = Field(default=14, ge=0)
+
     LOG_LEVEL: str = "INFO"
 
     # All three required together: bootstraps (or promotes) the first admin

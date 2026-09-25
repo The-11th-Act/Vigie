@@ -17,8 +17,8 @@ from app.core.config import settings
 from app.models.asset import Asset
 from app.models.vulnerability import AssetVulnerability, Status, Vulnerability
 from app.services.asset_policy import criticality_for
-from app.services.remediation import calculate_remediation_deadline
-from app.services.risk_scoring import calculate_risk_score
+from app.services.remediation import apply_kev_sla, calculate_remediation_deadline
+from app.services.risk_scoring import RiskInputs, compute_risk
 
 logger = logging.getLogger(__name__)
 
@@ -341,6 +341,8 @@ def _upsert_associations(
         key = (asset.id, vuln.id)
 
         deadline = calculate_remediation_deadline(finding["severity"], now)
+        if vuln.in_kev:
+            deadline = apply_kev_sla(deadline, now, vuln.kev_date_added)
         assoc = assoc_cache.get(key)
 
         if assoc is None:
@@ -350,9 +352,7 @@ def _upsert_associations(
                 status=Status.open,
                 scan_source=scan_source,
                 remediation_deadline=deadline,
-                risk_score=calculate_risk_score(
-                    finding["cvss_score"], asset.business_criticality, deadline, now
-                ),
+                risk_score=_score(asset, vuln, deadline, now),
                 last_seen_at=now,
             )
             new_assocs.append(assoc)
@@ -371,12 +371,15 @@ def _upsert_associations(
             assoc.fixed_at = None
             assoc.remediation_deadline = deadline
             reopened += 1
+        elif assoc.status == Status.open and vuln.in_kev:
+            # Listed in KEV since it was first detected: the shorter window now
+            # applies to the finding already in the backlog.
+            assoc.remediation_deadline = apply_kev_sla(
+                assoc.remediation_deadline, assoc.detected_at, vuln.kev_date_added
+            )
 
-        assoc.risk_score = calculate_risk_score(
-            finding["cvss_score"],
-            asset.business_criticality,
-            assoc.remediation_deadline or deadline,
-            now,
+        assoc.risk_score = _score(
+            asset, vuln, assoc.remediation_deadline or deadline, now
         )
 
     for i in range(0, len(new_assocs), CHUNK_SIZE):
@@ -388,3 +391,13 @@ def _upsert_associations(
     seen_ids = {assoc.id for assoc in assoc_cache.values() if assoc.id is not None}
 
     return len(new_assocs), reopened, seen_ids
+
+
+def _score(asset: Asset, vuln: Vulnerability, deadline, now: datetime) -> float:
+    """Score from the stored vulnerability, not the scanner's copy of it.
+
+    Two scanners can report different CVSS values for one CVE; the stored one is
+    what the daily rescoring uses, so scoring from anything else here would only
+    last until the next night.
+    """
+    return compute_risk(RiskInputs.of(asset, vuln, deadline), now).score

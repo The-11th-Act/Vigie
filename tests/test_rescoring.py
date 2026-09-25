@@ -105,3 +105,12 @@ class TestRescoreOpenFindings:
         )
 
         assert rescore_open_findings(db_session, now=NOW) == 1
+
+    def test_the_threat_context_is_taken_into_account(self, db_session, make_finding):
+        finding = make_finding(cvss=6.0, risk_score=6.0)
+        finding.vulnerability.epss_score = 0.7
+        finding.asset.internet_facing = True
+        db_session.commit()
+
+        assert rescore_open_findings(db_session, now=NOW) == 1
+        assert finding.risk_score == 9.0  # 6.0 x min(1.5, 1.3 x 1.2)

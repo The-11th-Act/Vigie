@@ -1,9 +1,9 @@
 """Recompute stored risk scores.
 
 ``risk_score`` is persisted so the backlog can be sorted in SQL, which means
-every input it depends on — CVSS, asset criticality, and time through the
-overdue penalty — must trigger a recomputation when it changes. This is the
-single place that does it.
+every input it depends on — CVSS, asset criticality and exposure, the threat
+context of the CVE, and time through the overdue penalty — must trigger a
+recomputation when it changes. This is the single place that does it.
 """
 
 from datetime import datetime
@@ -11,7 +11,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session, joinedload
 
 from app.models.vulnerability import AssetVulnerability, Status
-from app.services.risk_scoring import calculate_risk_score
+from app.services.risk_scoring import RiskInputs, compute_risk
 
 BATCH_SIZE = 1_000
 
@@ -36,12 +36,10 @@ def rescore_open_findings(db: Session, *criteria, now: datetime | None = None) -
     for finding in query.yield_per(BATCH_SIZE):
         if finding.asset is None or finding.vulnerability is None:
             continue
-        score = calculate_risk_score(
-            finding.vulnerability.cvss_score,
-            finding.asset.business_criticality,
-            finding.remediation_deadline,
-            now,
+        inputs = RiskInputs.of(
+            finding.asset, finding.vulnerability, finding.remediation_deadline
         )
+        score = compute_risk(inputs, now).score
         if score != finding.risk_score:
             finding.risk_score = score
             changed += 1

@@ -72,6 +72,27 @@ class RiskInputs:
     kev_date_added: date | None = None
     kev_ransomware: bool = False
 
+    @classmethod
+    def of(cls, asset, vulnerability, remediation_deadline=None) -> "RiskInputs":
+        """Inputs for one asset/vulnerability pair.
+
+        Duck-typed on purpose: ORM rows (ingestion, rescoring) and API response
+        models (the ``risk_factors`` explanation) go through this one mapping,
+        so the score and its explanation cannot read different fields. CVSS is
+        the stored value of the vulnerability, not a scanner's copy of it.
+        """
+        return cls(
+            cvss_score=vulnerability.cvss_score,
+            business_criticality=asset.business_criticality,
+            remediation_deadline=remediation_deadline,
+            # A row not yet flushed has no column defaults applied: None is False.
+            in_kev=bool(getattr(vulnerability, "in_kev", False)),
+            epss_score=getattr(vulnerability, "epss_score", None),
+            internet_facing=bool(getattr(asset, "internet_facing", False)),
+            kev_date_added=getattr(vulnerability, "kev_date_added", None),
+            kev_ransomware=bool(getattr(vulnerability, "kev_ransomware", False)),
+        )
+
 
 @dataclass(frozen=True)
 class RiskFactor:

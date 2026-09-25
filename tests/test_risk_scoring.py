@@ -2,7 +2,11 @@ from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
-from app.services.remediation import calculate_remediation_deadline, is_overdue
+from app.services.remediation import (
+    apply_kev_sla,
+    calculate_remediation_deadline,
+    is_overdue,
+)
 from app.services.risk_scoring import (
     RiskInputs,
     calculate_risk_score,
@@ -242,3 +246,39 @@ class TestRemediationSLA:
         assert is_overdue(now - timedelta(days=1), now) is True
         assert is_overdue(now + timedelta(days=1), now) is False
         assert is_overdue(None, now) is False
+
+
+class TestKevSLA:
+    """A CVE exploited in the wild gets KEV_SLA_DAYS, never more than its window."""
+
+    DETECTED = datetime(2026, 1, 1, tzinfo=UTC)
+
+    def test_shortens_a_long_severity_window(self):
+        medium = calculate_remediation_deadline("Medium", self.DETECTED)  # 90 days
+
+        tightened = apply_kev_sla(medium, self.DETECTED, date(2025, 6, 1))
+
+        assert tightened == self.DETECTED + timedelta(days=14)
+
+    def test_never_extends_a_deadline(self):
+        already_short = self.DETECTED + timedelta(days=3)
+        assert apply_kev_sla(already_short, self.DETECTED, None) == already_short
+
+    def test_counts_from_the_listing_when_it_came_after_detection(self):
+        """Listed months after detection: 14 days from the listing, not an
+        instant breach."""
+        listed = date(2026, 5, 1)
+        deadline = apply_kev_sla(None, self.DETECTED, listed)
+        assert deadline == datetime(2026, 5, 15, tzinfo=UTC)
+
+    def test_tolerates_naive_datetimes(self):
+        naive = datetime(2026, 1, 1)
+        deadline = apply_kev_sla(naive + timedelta(days=90), naive, None)
+        assert deadline == self.DETECTED + timedelta(days=14)
+
+    def test_can_be_disabled(self, monkeypatch):
+        from app.core.config import settings
+
+        monkeypatch.setattr(settings, "KEV_SLA_DAYS", 0)
+        medium = calculate_remediation_deadline("Medium", self.DETECTED)
+        assert apply_kev_sla(medium, self.DETECTED, None) == medium

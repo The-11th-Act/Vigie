@@ -130,3 +130,9 @@ class TestThreatContextPolicy:
         for multiplier in (KEV_MULTIPLIER, INTERNET_FACING_MULTIPLIER):
             assert multiplier <= MAX_CONTEXT_MULTIPLIER
         assert max(m for _, m in EPSS_BANDS) <= MAX_CONTEXT_MULTIPLIER
+
+    def test_the_kev_window_is_no_longer_than_the_critical_one(self):
+        """Un CVE exploité ne doit jamais avoir plus de temps qu'un critique."""
+        from app.core.config import settings
+
+        assert 0 < settings.KEV_SLA_DAYS <= SLA_DAYS["Critical"]
