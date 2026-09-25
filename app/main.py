@@ -11,7 +11,15 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from starlette.responses import JSONResponse, Response
 
-from app.api.v1 import assets, auth, dashboard, scans, users, vulnerabilities
+from app.api.v1 import (
+    assets,
+    auth,
+    dashboard,
+    scans,
+    threat_intel,
+    users,
+    vulnerabilities,
+)
 from app.core import metrics
 from app.core.bootstrap import bootstrap_admin_user
 from app.core.config import settings
@@ -127,6 +135,11 @@ app.include_router(
     tags=["Vulnerabilities"],
 )
 app.include_router(scans.router, prefix=f"{settings.API_V1_STR}/scans", tags=["Scans"])
+app.include_router(
+    threat_intel.router,
+    prefix=f"{settings.API_V1_STR}/threat-intel",
+    tags=["Threat intelligence"],
+)
 
 
 @app.get("/", tags=["Health"])

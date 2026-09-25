@@ -16,12 +16,12 @@ entered or left KEV, and CVEs whose EPSS value crossed a band.
 import logging
 from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.models.threat_intel import FEED_EPSS, FEED_KEV, ThreatFeedStatus
+from app.models.threat_intel import FEED_EPSS, FEED_KEV, FEEDS, ThreatFeedStatus
 from app.models.vulnerability import AssetVulnerability, Status, Vulnerability
 from app.parsers.threat_feeds import (
     EpssSnapshot,
@@ -370,3 +370,39 @@ def _record_success(
     status.source_date = snapshot_date
     status.records = records
     status.changed = changed
+
+
+def feed_freshness(db: Session, now: datetime | None = None) -> list[dict]:
+    """State of each feed, for the API, the dashboard and the metrics.
+
+    A feed never applied, or not applied for ``THREAT_INTEL_STALE_AFTER_HOURS``,
+    is stale: its values still count in the score, but they may be outdated.
+    """
+    now = now or datetime.now(UTC)
+    max_age = timedelta(hours=settings.THREAT_INTEL_STALE_AFTER_HOURS)
+    rows = {row.feed: row for row in db.query(ThreatFeedStatus).all()}
+
+    feeds = []
+    for feed in FEEDS:
+        row = rows.get(feed)
+        last_success = (
+            _aware(row.last_success_at) if row and row.last_success_at else None
+        )
+        feeds.append(
+            {
+                "feed": feed,
+                "last_attempt_at": row.last_attempt_at if row else None,
+                "last_success_at": last_success,
+                "last_error": row.last_error if row else None,
+                "source": row.source if row else None,
+                "source_version": row.source_version if row else None,
+                "source_date": row.source_date if row else None,
+                "records": row.records if row else 0,
+                "stale": last_success is None or now - last_success > max_age,
+            }
+        )
+    return feeds
+
+
+def _aware(value: datetime) -> datetime:
+    return value if value.tzinfo else value.replace(tzinfo=UTC)
