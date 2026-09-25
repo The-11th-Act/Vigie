@@ -371,6 +371,22 @@ Choix produit pris par défaut, tous réglables par une constante de
 - plancher 7.0 pour un KEV même sur un asset `Low` ;
 - l'usage par rançongiciel est affiché, sans effet sur le score.
 
+## ✅ Déploiement vérifié de bout en bout (25/09/2026)
+
+Le démarrage complet de la pile de production n'avait jamais été testé : la CI
+lançait les images une par une. Le faire a révélé trois défauts, corrigés :
+
+- [x] Réglages absents des conteneurs : `.env` n'est lu que par compose, et
+      `CRITICALITY_RULES`, `AUTO_REMEDIATE_AFTER_MISSES` et tout le contexte de
+      menace n'étaient pas transmis. Bloc `x-app-settings` + `env_ignore_empty`,
+      et un test qui échoue si un réglage de `Settings` n'est pas câblé
+- [x] Frontend de production en redémarrage permanent : tmpfs `/var/cache/nginx`
+      appartenant à root, Nginx tournant en `nginx`
+- [x] Beat marqué « unhealthy » en permanence (healthcheck de l'API hérité)
+- [x] Job CI « Pile de production de bout en bout » (`scripts/smoke_prod_stack.sh`) :
+      Nginx → API → Redis → worker → PostgreSQL, admin, upload, import KEV,
+      effet de chaque réglage dans le conteneur qui le lit, calendrier du beat
+
 ## Plus tard
 
 - [ ] Un CVE vu pour la première fois attend jusqu'au prochain rafraîchissement
