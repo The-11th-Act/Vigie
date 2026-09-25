@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { scanService } from '../services';
+import ScanHistory from './ScanHistory';
 import { UploadCloud, FileText, CheckCircle, Loader, AlertCircle } from 'lucide-react';
 
 const SCAN_TYPES = [
@@ -14,6 +15,7 @@ export default function ScanUpload() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [polling, setPolling] = useState(false);
+  const [historyToken, setHistoryToken] = useState(0);
 
   const handleFileChange = (e) => {
     setFile(e.target.files[0]);
@@ -29,17 +31,21 @@ export default function ScanUpload() {
     const interval = setInterval(async () => {
       attempts++;
       try {
+        // The endpoint returns the stored ScanJob: its status and counters,
+        // not Celery's raw `state` / `result`.
         const res = await scanService.getStatus(taskId);
-        const { state, result: taskResult } = res.data;
+        const job = res.data;
 
-        if (state === 'SUCCESS') {
+        if (job.status === 'Success') {
           clearInterval(interval);
           setPolling(false);
-          setResult({ state: 'SUCCESS', data: taskResult });
-        } else if (state === 'FAILURE') {
+          setResult({ state: 'SUCCESS', data: job });
+          setHistoryToken((token) => token + 1);
+        } else if (job.status === 'Failed') {
           clearInterval(interval);
           setPolling(false);
-          setResult({ state: 'FAILURE', data: taskResult });
+          setResult({ state: 'FAILURE', data: job });
+          setHistoryToken((token) => token + 1);
         } else if (attempts >= maxAttempts) {
           clearInterval(interval);
           setPolling(false);
@@ -167,6 +173,10 @@ export default function ScanUpload() {
                     {result.data.new_assets != null && <div>New assets: {result.data.new_assets}</div>}
                     {result.data.new_vulnerabilities != null && <div>New vulnerabilities: {result.data.new_vulnerabilities}</div>}
                     {result.data.new_associations != null && <div>New associations: {result.data.new_associations}</div>}
+                    {result.data.reopened > 0 && <div>Reopened: {result.data.reopened}</div>}
+                    {result.data.auto_remediated > 0 && (
+                      <div>Closed automatically (no longer detected): {result.data.auto_remediated}</div>
+                    )}
                   </div>
                 )}
               </div>
@@ -186,6 +196,8 @@ export default function ScanUpload() {
           </div>
         )}
       </div>
+
+      <ScanHistory refreshToken={historyToken} />
     </div>
   );
 }

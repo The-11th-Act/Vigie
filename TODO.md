@@ -14,7 +14,7 @@
 >   valeurs reportées dans `.env`.
 
 État des lieux initial au 29/07/2026. Base : FastAPI + SQLAlchemy + Celery + React.
-Suite de tests à l'époque : 109 tests. Aujourd'hui : **281 tests backend + 10 tests
+Suite de tests à l'époque : 109 tests. Aujourd'hui : **303 tests backend + 15 tests
 frontend, tous verts**.
 
 Priorités : **P0** = bloque un usage réel · **P1** = important · **P2** = confort / dette.
@@ -324,3 +324,45 @@ un admin ne prend effet qu'à l'expiration. Aucun cloisonnement par périmètre.
 - [x] Harmoniser le nom du produit : `PROJECT_NAME`, conteneurs `vigie_*`,
       `frontend/package.json`, identifiants Postgres par défaut `vigie_user` / `vigie`
 - [x] Ajouter une `LICENSE` (AGPL v3) *(items 5-18, point 14)*
+
+---
+
+# Suite du produit (25/09/2026)
+
+Les sections précédentes rendaient la plateforme utilisable et déployable. Celle-ci
+reprend la valeur RBVM elle-même.
+
+## ✅ Clôture bornée et recalcul quotidien
+
+- [x] La clôture automatique ne compte un manque que sur les hôtes couverts par le
+      fichier (`ParsedScan.scanned_addresses`), hôtes revenus propres compris : un scan
+      d'un sous-réseau ne ferme plus les findings d'un autre
+- [x] `ScanJob.auto_remediated` persisté (migration 0006) et affiché
+- [x] Recalcul quotidien du backlog ouvert (`RESCORE_HOUR_UTC`) : la pénalité de retard
+      n'était appliquée qu'à l'arrivée d'un scan
+- [x] Un seul point de recalcul des scores stockés (`app/services/rescoring.py`)
+- [x] Historique des scans dans l'UI (`GET /scans/` n'avait aucun écran)
+- [x] Correctif : l'écran d'upload attendait un `state` Celery que `/scans/status` ne
+      renvoie plus depuis le point 6 ; il finissait toujours en « taking too long »
+
+## Contexte de menace — P1
+
+Le score ne voit que CVSS × criticité + retard : rien sur l'exploitation réelle.
+
+- [ ] CISA KEV et FIRST EPSS stockés par CVE (migration 0007, table `threat_feed_status`)
+- [ ] Exposition Internet des assets (champ + règles par sous-réseau)
+- [ ] Formule : multiplicateur EPSS par paliers, ×1.3 KEV, ×1.2 exposé, plafond ×1.5,
+      plancher 7.0 pour un KEV ; score inchangé sans renseignement
+- [ ] SLA raccourci à 14 jours pour un CVE KEV (jamais rallongé)
+- [ ] Rafraîchissement quotidien avec garde-fous (échec sans effacement, catalogue
+      rétréci refusé), import hors ligne (CLI + endpoint admin)
+- [ ] `risk_factors` dans les réponses, filtres `kev_only` / `min_epss`, KPI et métriques
+- [ ] UI : badges KEV / EPSS, filtres, case « Exposé à Internet »
+
+## Plus tard
+
+- [ ] Détections par source (aujourd'hui `scan_source` est écrasé par le dernier scanner)
+- [ ] Acceptation de risque avec expiration, revue quand un CVE accepté entre dans KEV
+- [ ] Export CSV du backlog, webhooks
+- [ ] `.gitattributes` pour fixer les fins de ligne (le dépôt mélange CRLF et LF dans
+      l'arbre de travail ; à faire avec un `git add --renormalize` dédié)

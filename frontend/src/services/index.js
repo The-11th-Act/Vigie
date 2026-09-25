@@ -71,4 +71,7 @@ export const scanService = {
 
   getStatus: (taskId) =>
     api.get(`/scans/status/${taskId}`),
+
+  list: (params = {}) =>
+    api.get('/scans/', { params }),
 }
