@@ -14,7 +14,7 @@
 >   valeurs reportées dans `.env`.
 
 État des lieux initial au 29/07/2026. Base : FastAPI + SQLAlchemy + Celery + React.
-Suite de tests à l'époque : 109 tests. Aujourd'hui : **303 tests backend + 15 tests
+Suite de tests à l'époque : 109 tests. Aujourd'hui : **536 tests backend + 24 tests
 frontend, tous verts**.
 
 Priorités : **P0** = bloque un usage réel · **P1** = important · **P2** = confort / dette.
@@ -345,22 +345,40 @@ reprend la valeur RBVM elle-même.
 - [x] Correctif : l'écran d'upload attendait un `state` Celery que `/scans/status` ne
       renvoie plus depuis le point 6 ; il finissait toujours en « taking too long »
 
-## Contexte de menace — P1
+## ✅ Contexte de menace
 
-Le score ne voit que CVSS × criticité + retard : rien sur l'exploitation réelle.
+Le score ne voyait que CVSS × criticité + retard : rien sur l'exploitation réelle.
 
-- [ ] CISA KEV et FIRST EPSS stockés par CVE (migration 0007, table `threat_feed_status`)
-- [ ] Exposition Internet des assets (champ + règles par sous-réseau)
-- [ ] Formule : multiplicateur EPSS par paliers, ×1.3 KEV, ×1.2 exposé, plafond ×1.5,
+- [x] CISA KEV et FIRST EPSS stockés par CVE (migration 0007, table `threat_feed_status`)
+- [x] Exposition Internet des assets (champ + `INTERNET_FACING_SUBNETS`)
+- [x] Formule : multiplicateur EPSS par paliers, ×1.3 KEV, ×1.2 exposé, plafond ×1.5,
       plancher 7.0 pour un KEV ; score inchangé sans renseignement
-- [ ] SLA raccourci à 14 jours pour un CVE KEV (jamais rallongé)
-- [ ] Rafraîchissement quotidien avec garde-fous (échec sans effacement, catalogue
-      rétréci refusé), import hors ligne (CLI + endpoint admin)
-- [ ] `risk_factors` dans les réponses, filtres `kev_only` / `min_epss`, KPI et métriques
-- [ ] UI : badges KEV / EPSS, filtres, case « Exposé à Internet »
+- [x] SLA raccourci à `KEV_SLA_DAYS` (14 j) pour un CVE KEV (jamais rallongé)
+- [x] Rafraîchissement quotidien avec garde-fous (échec sans effacement, catalogue
+      rétréci ou instantané plus ancien refusés), import hors ligne (CLI + endpoint admin)
+- [x] `risk_factors` dans les réponses, filtres `kev_only` / `min_epss` /
+      `internet_facing_only`, KPI et métriques
+- [x] UI : badges KEV / EPSS, filtres, case « Exposé à Internet »
+- [x] `alembic check` en CI : un modèle modifié sans migration fait échouer le build
+
+Contrairement au client CrowdStrike, les parseurs KEV et EPSS ont été vérifiés
+sur les fichiers réels du 25/09/2026 (1 725 entrées KEV, 379 145 lignes EPSS).
+
+Choix produit pris par défaut, tous réglables par une constante de
+`risk_scoring.py` — à revoir à l'usage :
+- réduction ×0.9 sous 1 % d'EPSS : une fois les flux activés, une partie du
+  backlog descend d'un niveau (voulu : c'est la réduction du bruit) ;
+- plancher 7.0 pour un KEV même sur un asset `Low` ;
+- l'usage par rançongiciel est affiché, sans effet sur le score.
 
 ## Plus tard
 
+- [ ] Un CVE vu pour la première fois attend jusqu'au prochain rafraîchissement
+      (24 h) pour recevoir KEV / EPSS : l'enrichir dès l'ingestion depuis le
+      dernier instantané
+- [ ] Saturation à 10 : entre findings plafonnés, le départage (KEV, puis EPSS) ignore
+      l'exposition et la criticité — vu sur données réelles, Log4Shell sur un hôte
+      interne passe devant PAN-OS exposé. Piste : trier sur le score non plafonné
 - [ ] Détections par source (aujourd'hui `scan_source` est écrasé par le dernier scanner)
 - [ ] Acceptation de risque avec expiration, revue quand un CVE accepté entre dans KEV
 - [ ] Export CSV du backlog, webhooks

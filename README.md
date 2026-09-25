@@ -24,10 +24,11 @@ ordered by what actually needs fixing first.
   `vulnerabilities`, `scans`, `dashboard`).
 - `app/services/`: business logic — risk scoring, remediation SLA, ingestion,
   asset policy.
-- `app/parsers/`: ingestors for Nessus, OpenVAS and CrowdStrike Spotlight.
+- `app/parsers/`: ingestors for Nessus, OpenVAS and CrowdStrike Spotlight, and
+  the CISA KEV / FIRST EPSS feed readers.
 - `app/worker/`: Celery worker and scheduled tasks.
 - `frontend/`: React SPA (dashboard, assets, vulnerabilities, risk backlog,
-  scan upload).
+  scan upload and history).
 
 ## Getting Started
 
@@ -152,13 +153,31 @@ VIGIE_TEST_DATABASE_URL=postgresql://user:pass@localhost:5432/vigie_test pytest 
 ## Risk Scoring
 
 A raw CVSS score describes a vulnerability in the abstract; risk is what it
-means *here*. `app/services/risk_scoring.py` multiplies CVSS by the affected
-asset's business criticality (Critical ×1.5 … Low ×0.7) and adds a capped
-penalty once a finding is past the remediation deadline set by
-`app/services/remediation.py` (14 days for Critical, up to 180 for Low).
-Scores are stored so the backlog sorts in SQL; `app/services/rescoring.py`
-recomputes them whenever an input changes (CVSS, criticality) and once a day for
-the whole open backlog, since the overdue penalty grows with time alone.
+means *here*, and how likely it is to be exploited. `app/services/risk_scoring.py`
+computes:
+
+```
+base    = CVSS × business criticality        (Critical ×1.5, High ×1.2, Medium ×1, Low ×0.7)
+threat  = ×1.3 if the CVE is in CISA KEV, otherwise its EPSS band:
+          ≥ 50 % ×1.3 · ≥ 10 % ×1.15 · ≥ 1 % ×1 · < 1 % ×0.9 · unknown ×1
+expo    = ×1.2 if the asset is Internet-facing
+score   = base × min(1.5, threat × expo) + overdue penalty (up to +1.5)
+          raised to 7.0 ("High") for a KEV entry, clamped to [0, 10]
+```
+
+Without any threat context the score is exactly CVSS × criticality plus the
+overdue penalty. EPSS counts by band rather than continuously, so a score moves
+when a CVE changes band, not with every daily drift. Every finding returned by
+the API carries `risk_factors`, the non-neutral factors behind its score,
+computed by the same function that scored it.
+
+The remediation deadline comes from `app/services/remediation.py` (14 days for
+Critical, up to 180 for Low). A CVE listed in KEV gets `KEV_SLA_DAYS` (14)
+instead, counted from its detection or its listing, whichever is later; the
+window only ever shortens. Scores are stored so the backlog sorts in SQL;
+`app/services/rescoring.py` recomputes them whenever an input changes (CVSS,
+criticality, exposure, threat context) and once a day for the whole open backlog,
+since the overdue penalty grows with time alone.
 
 The resulting backlog, worst first, is served by
 `GET /api/v1/vulnerabilities/findings` and shown on the **Risk Backlog** page,
@@ -167,7 +186,35 @@ The last two require a justification, and every transition is recorded in an
 append-only audit log (`GET /api/v1/vulnerabilities/findings/{id}/history`).
 
 New assets get their criticality from `CRITICALITY_RULES`, a subnet-to-level
-map where the most specific prefix wins.
+map where the most specific prefix wins, and their exposure from
+`INTERNET_FACING_SUBNETS`. Both only seed new assets: a value set by hand is
+never overwritten by a later scan.
+
+### Threat intelligence (CISA KEV, FIRST EPSS)
+
+With `THREAT_INTEL_ENABLED=true`, the beat scheduler pulls both feeds daily at
+`THREAT_INTEL_REFRESH_HOUR_UTC` and rescores only the findings whose score can
+move (CVE entering or leaving KEV, EPSS changing band). The refresh never erases
+good data: a feed that fails or does not parse changes nothing and its error is
+recorded; an older snapshot, or a KEV catalogue under 90 % of the previous one
+(what a truncated download looks like), is refused unless forced. Proxies and
+internal CAs go through `HTTPS_PROXY` / `NO_PROXY` / `REQUESTS_CA_BUNDLE`.
+
+Without outbound Internet access, leave it disabled and import the files:
+
+```bash
+# Download elsewhere:
+#   https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json
+#   https://epss.empiricalsecurity.com/epss_scores-current.csv.gz
+python -m scripts.import_threat_intel --kev kev.json --epss epss_scores-current.csv.gz
+```
+
+or upload them as an admin through `POST /api/v1/threat-intel/import`.
+`GET /api/v1/threat-intel/status` reports when each feed was last applied and
+whether it is stale (`THREAT_INTEL_STALE_AFTER_HOURS`).
+
+The KEV catalogue is published by CISA; EPSS scores are published by
+[FIRST](https://www.first.org/epss/). Check their terms of use for your context.
 
 ## Scan Ingestion
 
@@ -199,7 +246,9 @@ the beat scheduler then pulls open findings every
 - `GET /ready` — readiness: PostgreSQL, Redis and the presence of Celery
   workers, reported one by one; 503 if any is unusable.
 - `GET /metrics` — Prometheus exposition: HTTP volume and latency by route,
-  findings ingested by source, and the size of the open/overdue backlog.
+  findings ingested by source, the size of the open/overdue backlog, open and
+  overdue KEV findings, and `vigie_threat_feed_last_success_timestamp_seconds`
+  per feed (0 until first applied — alert on `time() - value > 2 * 86400`).
 - Every response carries an `X-Request-ID`; an inbound one is reused, and the
   id is propagated to Celery tasks and stamped on every log line.
 - Failed logins are throttled per IP and per account (`LOGIN_MAX_ATTEMPTS`,
