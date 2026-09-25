@@ -36,9 +36,10 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def _merged_prod_config(*extra_args: str) -> str:
+def _merged_prod_config(*extra_args: str, extra_env: dict | None = None) -> str:
     env = dict(os.environ)
     env.update(FAKE_ENV)
+    env.update(extra_env or {})
 
     result = subprocess.run(
         [
@@ -125,6 +126,82 @@ class TestProductionOverlay:
         for name in ("web", "worker", "beat"):
             redis_url = prod_services[name]["environment"]["REDIS_URL"]
             assert redis_url.startswith("redis://:"), name
+
+
+# Réglages que le déploiement n'a pas à exposer : des constantes de l'API, ou
+# un chemin figé par l'image et ses volumes.
+NOT_DEPLOYMENT_SETTINGS = {"PROJECT_NAME", "API_V1_STR", "ALGORITHM", "SCAN_UPLOAD_DIR"}
+
+# Réglages volontairement limités au seul service qui s'en sert : un secret ou
+# un identifiant administrateur n'a rien à faire dans l'environnement des autres.
+ONLY_ON = {
+    "web": {
+        "BACKEND_CORS_ORIGINS",
+        "RATE_LIMIT_ENABLED",
+        "LOGIN_MAX_ATTEMPTS",
+        "LOGIN_WINDOW_SECONDS",
+        "LOGIN_LOCKOUT_SECONDS",
+        "ADMIN_USERNAME",
+        "ADMIN_EMAIL",
+        "ADMIN_PASSWORD",
+    },
+    "worker": {"CROWDSTRIKE_CLIENT_ID", "CROWDSTRIKE_CLIENT_SECRET"},
+}
+
+
+class TestSettingsReachTheContainers:
+    """En production, un conteneur ne lit pas le .env : il est exclu de l'image
+    et aucun code source n'est monté. Un réglage n'arrive que s'il est câblé
+    dans docker-compose.yml. CRITICALITY_RULES et tout le contexte de menace ne
+    l'étaient pas : THREAT_INTEL_ENABLED=true dans .env restait sans effet. En
+    développement, le .env monté avec le code masquait le trou."""
+
+    @pytest.mark.parametrize("service", ["web", "worker", "beat"])
+    def test_every_setting_is_wired(self, prod_services, service):
+        from app.core.config import Settings
+
+        expected = set(Settings.model_fields) - NOT_DEPLOYMENT_SETTINGS
+        for owner, scoped in ONLY_ON.items():
+            if owner != service:
+                expected -= scoped
+
+        missing = expected - set(prod_services[service]["environment"])
+        assert not missing, (
+            f"{sorted(missing)} n'atteint pas le service {service} : ajouter la "
+            "variable à x-app-settings (ou au service) dans docker-compose.yml."
+        )
+
+    @pytest.mark.parametrize("service", ["web", "beat"])
+    def test_secrets_stay_where_they_are_used(self, prod_services, service):
+        assert "CROWDSTRIKE_CLIENT_SECRET" not in prod_services[service]["environment"]
+
+    def test_a_value_from_the_host_reaches_the_application(self):
+        services = json.loads(
+            _merged_prod_config(
+                "--format",
+                "json",
+                extra_env={"THREAT_INTEL_ENABLED": "true", "KEV_SLA_DAYS": "7"},
+            )
+        )["services"]
+
+        for name in ("web", "worker", "beat"):
+            env = services[name]["environment"]
+            assert env["THREAT_INTEL_ENABLED"] == "true", name
+            assert env["KEV_SLA_DAYS"] == "7", name
+
+    def test_an_unset_setting_keeps_the_code_default(self, monkeypatch):
+        """Une variable non définie arrive vide : l'application doit l'ignorer,
+        pas échouer à lire "" comme un entier, une liste ou un booléen."""
+        from app.core.config import Settings
+
+        for name in ("KEV_SLA_DAYS", "CRITICALITY_RULES", "THREAT_INTEL_ENABLED"):
+            monkeypatch.setenv(name, "")
+
+        settings = Settings(_env_file=None)
+
+        assert settings.KEV_SLA_DAYS == 14
+        assert settings.CRITICALITY_RULES == {}
+        assert settings.THREAT_INTEL_ENABLED is False
 
 
 class TestDevConfigStillValid:

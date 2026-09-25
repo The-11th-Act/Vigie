@@ -1,3 +1,41 @@
+# Application settings shared by the API, the worker and the scheduler.
+#
+# Containers never read .env themselves: it is kept out of the image, and the
+# production overlay mounts no source tree. A setting reaches the application
+# only if it is listed here (or on a service) and interpolated from the host's
+# .env by compose. An unset variable arrives empty, and the application then
+# ignores it and keeps its own default (env_ignore_empty in app/core/config.py),
+# so defaults live in one place: the code.
+#
+# tests/test_deployment_config.py fails when a setting added to the code is not
+# wired here, which is how CRITICALITY_RULES and the threat-intel settings went
+# unnoticed: in development, the bind-mounted .env hid the gap.
+x-app-settings: &app-settings
+  LOG_LEVEL: ${LOG_LEVEL:-}
+  ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-}
+  REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-}
+  MAX_SCAN_UPLOAD_BYTES: ${MAX_SCAN_UPLOAD_BYTES:-}
+  CRITICALITY_RULES: ${CRITICALITY_RULES:-}
+  INTERNET_FACING_SUBNETS: ${INTERNET_FACING_SUBNETS:-}
+  AUTO_REMEDIATE_AFTER_MISSES: ${AUTO_REMEDIATE_AFTER_MISSES:-}
+  RESCORE_HOUR_UTC: ${RESCORE_HOUR_UTC:-}
+  KEV_SLA_DAYS: ${KEV_SLA_DAYS:-}
+  THREAT_INTEL_ENABLED: ${THREAT_INTEL_ENABLED:-}
+  THREAT_INTEL_KEV_URL: ${THREAT_INTEL_KEV_URL:-}
+  THREAT_INTEL_EPSS_URL: ${THREAT_INTEL_EPSS_URL:-}
+  THREAT_INTEL_REFRESH_HOUR_UTC: ${THREAT_INTEL_REFRESH_HOUR_UTC:-}
+  THREAT_INTEL_TIMEOUT_SECONDS: ${THREAT_INTEL_TIMEOUT_SECONDS:-}
+  THREAT_INTEL_MAX_FEED_BYTES: ${THREAT_INTEL_MAX_FEED_BYTES:-}
+  THREAT_INTEL_STALE_AFTER_HOURS: ${THREAT_INTEL_STALE_AFTER_HOURS:-}
+  CROWDSTRIKE_BASE_URL: ${CROWDSTRIKE_BASE_URL:-}
+  CROWDSTRIKE_SYNC_ENABLED: ${CROWDSTRIKE_SYNC_ENABLED:-}
+  CROWDSTRIKE_SYNC_INTERVAL_MINUTES: ${CROWDSTRIKE_SYNC_INTERVAL_MINUTES:-}
+  # Outbound access for the KEV / EPSS / CrowdStrike clients (read by requests).
+  HTTPS_PROXY: ${HTTPS_PROXY:-}
+  HTTP_PROXY: ${HTTP_PROXY:-}
+  NO_PROXY: ${NO_PROXY:-}
+  REQUESTS_CA_BUNDLE: ${REQUESTS_CA_BUNDLE:-}
+
 services:
   db:
     image: postgres:15-alpine
@@ -51,19 +89,24 @@ services:
     ports:
       - "8000:8000"
     environment:
+      <<: *app-settings
       # SECRET_KEY has no default on purpose: compose fails fast if .env is
       # missing rather than silently booting with a publicly known key.
-      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required - see .env.example}
-      - ENVIRONMENT=${ENVIRONMENT:-development}
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-vigie_user}:${POSTGRES_PASSWORD:-vigie_password}@db:5432/${POSTGRES_DB:-vigie}
-      - REDIS_URL=redis://redis:6379/0
-      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-60}
-      - BACKEND_CORS_ORIGINS=["http://localhost:5173","http://localhost:3000","http://frontend:5173"]
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required - see .env.example}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-vigie_user}:${POSTGRES_PASSWORD:-vigie_password}@db:5432/${POSTGRES_DB:-vigie}
+      REDIS_URL: redis://redis:6379/0
+      BACKEND_CORS_ORIGINS: '["http://localhost:5173","http://localhost:3000","http://frontend:5173"]'
+      # Login throttling only concerns the API.
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-}
+      LOGIN_MAX_ATTEMPTS: ${LOGIN_MAX_ATTEMPTS:-}
+      LOGIN_WINDOW_SECONDS: ${LOGIN_WINDOW_SECONDS:-}
+      LOGIN_LOCKOUT_SECONDS: ${LOGIN_LOCKOUT_SECONDS:-}
       # Optional: auto-creates (or promotes) the first admin account on
       # startup when all three are set. Leave unset to skip bootstrap.
-      - ADMIN_USERNAME=${ADMIN_USERNAME:-}
-      - ADMIN_EMAIL=${ADMIN_EMAIL:-}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)\""]
       interval: 15s
@@ -86,14 +129,14 @@ services:
       - .:/app
       - scan_uploads:/var/lib/vigie/scans
     environment:
-      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required - see .env.example}
-      - ENVIRONMENT=${ENVIRONMENT:-development}
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-vigie_user}:${POSTGRES_PASSWORD:-vigie_password}@db:5432/${POSTGRES_DB:-vigie}
-      - REDIS_URL=redis://redis:6379/0
-      - CROWDSTRIKE_CLIENT_ID=${CROWDSTRIKE_CLIENT_ID:-}
-      - CROWDSTRIKE_CLIENT_SECRET=${CROWDSTRIKE_CLIENT_SECRET:-}
-      - CROWDSTRIKE_BASE_URL=${CROWDSTRIKE_BASE_URL:-https://api.crowdstrike.com}
-      - CROWDSTRIKE_SYNC_ENABLED=${CROWDSTRIKE_SYNC_ENABLED:-false}
+      <<: *app-settings
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required - see .env.example}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-vigie_user}:${POSTGRES_PASSWORD:-vigie_password}@db:5432/${POSTGRES_DB:-vigie}
+      REDIS_URL: redis://redis:6379/0
+      # Credentials only where the Spotlight client runs.
+      CROWDSTRIKE_CLIENT_ID: ${CROWDSTRIKE_CLIENT_ID:-}
+      CROWDSTRIKE_CLIENT_SECRET: ${CROWDSTRIKE_CLIENT_SECRET:-}
     depends_on:
       db:
         condition: service_healthy
@@ -111,12 +154,13 @@ services:
     volumes:
       - .:/app
     environment:
-      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required - see .env.example}
-      - ENVIRONMENT=${ENVIRONMENT:-development}
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-vigie_user}:${POSTGRES_PASSWORD:-vigie_password}@db:5432/${POSTGRES_DB:-vigie}
-      - REDIS_URL=redis://redis:6379/0
-      - CROWDSTRIKE_SYNC_ENABLED=${CROWDSTRIKE_SYNC_ENABLED:-false}
-      - CROWDSTRIKE_SYNC_INTERVAL_MINUTES=${CROWDSTRIKE_SYNC_INTERVAL_MINUTES:-360}
+      # The schedule itself is built from these settings (which jobs, at what
+      # hour), so the scheduler needs them as much as the worker does.
+      <<: *app-settings
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required - see .env.example}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-vigie_user}:${POSTGRES_PASSWORD:-vigie_password}@db:5432/${POSTGRES_DB:-vigie}
+      REDIS_URL: redis://redis:6379/0
     depends_on:
       redis:
         condition: service_healthy

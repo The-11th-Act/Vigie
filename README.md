@@ -101,6 +101,12 @@ PostgreSQL and Redis on the host. See below for production.
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 ```
 
+The containers never read `.env` themselves (it is kept out of the image): compose
+interpolates each setting from it and passes it on, through the `x-app-settings`
+block of `docker-compose.yml`. A variable left unset arrives empty and the
+application keeps its own default. `tests/test_deployment_config.py` fails if a
+setting defined in `app/core/config.py` is not wired there.
+
 What the overlay changes, and why:
 
 | Development | Production | Reason |

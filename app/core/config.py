@@ -135,8 +135,11 @@ class Settings(BaseSettings):
     def crowdstrike_configured(self) -> bool:
         return bool(self.CROWDSTRIKE_CLIENT_ID and self.CROWDSTRIKE_CLIENT_SECRET)
 
+    # env_ignore_empty: docker compose passes every wired setting, and an unset
+    # one arrives as an empty string. Ignoring it keeps the default defined
+    # here instead of failing to parse "" as a list, a number or a boolean.
     model_config = SettingsConfigDict(
-        case_sensitive=True, env_file=".env", extra="ignore"
+        case_sensitive=True, env_file=".env", extra="ignore", env_ignore_empty=True
     )
 
     @property
