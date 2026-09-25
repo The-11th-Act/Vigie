@@ -105,6 +105,32 @@ class Settings(BaseSettings):
     # Minutes between scheduled pulls, when the sync is enabled.
     CROWDSTRIKE_SYNC_INTERVAL_MINUTES: int = 360
 
+    # Threat intelligence: CISA KEV and FIRST EPSS. Off by default, like the
+    # CrowdStrike sync, so a deployment without outbound Internet access does not
+    # accumulate a failing daily job; such a deployment imports the files instead
+    # (scripts/import_threat_intel.py). Stored values are always used for scoring,
+    # whichever way they arrived.
+    THREAT_INTEL_ENABLED: bool = False
+    THREAT_INTEL_KEV_URL: str = (
+        "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
+    )
+    THREAT_INTEL_EPSS_URL: str = (
+        "https://epss.empiricalsecurity.com/epss_scores-current.csv.gz"
+    )
+    THREAT_INTEL_REFRESH_HOUR_UTC: int = Field(default=6, ge=0, le=23)
+    THREAT_INTEL_TIMEOUT_SECONDS: int = Field(default=60, gt=0)
+    # Applies before and after decompression. The EPSS file inflates to ~15 MB.
+    THREAT_INTEL_MAX_FEED_BYTES: int = Field(default=64 * 1024 * 1024, gt=0)
+    # A feed not refreshed for this long is reported as stale.
+    THREAT_INTEL_STALE_AFTER_HOURS: int = Field(default=72, gt=0)
+
+    @field_validator("THREAT_INTEL_KEV_URL", "THREAT_INTEL_EPSS_URL")
+    @classmethod
+    def validate_feed_url(cls, value: str) -> str:
+        if not value.startswith(("https://", "http://")):
+            raise ValueError("feed URLs must use http or https")
+        return value
+
     @property
     def crowdstrike_configured(self) -> bool:
         return bool(self.CROWDSTRIKE_CLIENT_ID and self.CROWDSTRIKE_CLIENT_SECRET)

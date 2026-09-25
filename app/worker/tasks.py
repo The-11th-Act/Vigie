@@ -2,6 +2,7 @@ import logging
 import os
 from datetime import UTC, datetime
 
+from app.core.config import settings
 from app.core.logging import set_request_id
 from app.core.metrics import observe_ingestion
 from app.db.database import SessionLocal
@@ -10,6 +11,7 @@ from app.parsers.nessus import parse_nessus_scan
 from app.parsers.openvas import parse_openvas_scan
 from app.services.ingestion import ingest_findings
 from app.services.rescoring import rescore_open_findings
+from app.services.threat_intel import refresh_threat_intel
 from app.worker.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -169,6 +171,33 @@ def rescore_open_findings_task():
     except Exception:
         db.rollback()
         logger.exception("Daily rescoring failed")
+        raise
+    finally:
+        db.close()
+
+
+@celery_app.task(
+    name="app.worker.tasks.refresh_threat_intel_task",
+    soft_time_limit=1800,
+    time_limit=2100,
+)
+def refresh_threat_intel_task():
+    """Pull the KEV and EPSS feeds and rescore what they changed. Daily, by beat.
+
+    No Celery-level retry: the feed client already retries transient errors,
+    and a feed that stays down is simply tried again the next day, its failure
+    recorded in threat_feed_status meanwhile.
+    """
+    if not settings.THREAT_INTEL_ENABLED:
+        return {"status": "skipped", "message": "Threat intelligence refresh is disabled"}
+
+    db = SessionLocal()
+    try:
+        result = refresh_threat_intel(db)
+        return {"status": "success" if result.ok else "partial", **result.as_dict()}
+    except Exception:
+        db.rollback()
+        logger.exception("Threat intelligence refresh failed")
         raise
     finally:
         db.close()

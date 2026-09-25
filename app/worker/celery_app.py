@@ -29,6 +29,11 @@ def build_beat_schedule() -> dict:
     # The periodic pull is only scheduled when the integration is actually
     # turned on, so a deployment without CrowdStrike credentials does not
     # accumulate a failing beat entry.
+    if settings.THREAT_INTEL_ENABLED:
+        schedule["threat-intel-refresh"] = {
+            "task": "app.worker.tasks.refresh_threat_intel_task",
+            "schedule": crontab(hour=settings.THREAT_INTEL_REFRESH_HOUR_UTC, minute=15),
+        }
     if settings.CROWDSTRIKE_SYNC_ENABLED:
         schedule["crowdstrike-sync"] = {
             "task": "app.worker.tasks.sync_crowdstrike_task",

@@ -17,6 +17,7 @@ from app.models.vulnerability import AssetVulnerability, Status, Vulnerability
 from app.worker.celery_app import build_beat_schedule
 from app.worker.tasks import (
     process_scan_file_task,
+    refresh_threat_intel_task,
     rescore_open_findings_task,
     sync_crowdstrike_task,
 )
@@ -277,3 +278,56 @@ class TestBeatSchedule:
 
         assert schedule["crowdstrike-sync"]["task"] == sync_crowdstrike_task.name
         assert "rescore-open-findings" in schedule
+
+
+class TestThreatIntelRefreshTask:
+    def test_is_skipped_when_disabled(self, monkeypatch):
+        monkeypatch.setattr(settings, "THREAT_INTEL_ENABLED", False)
+
+        result = refresh_threat_intel_task.apply().get()
+
+        assert result["status"] == "skipped"
+
+    def test_reports_a_partial_refresh(self, worker_session, monkeypatch):
+        from app.services.threat_intel import FeedResult, RefreshResult
+
+        monkeypatch.setattr(settings, "THREAT_INTEL_ENABLED", True)
+        monkeypatch.setattr(
+            "app.worker.tasks.refresh_threat_intel",
+            lambda db: RefreshResult(
+                [
+                    FeedResult("kev", "failed", error="HTTP 503"),
+                    FeedResult("epss", "applied"),
+                ]
+            ),
+        )
+
+        result = refresh_threat_intel_task.apply().get()
+
+        assert result["status"] == "partial"
+        assert result["kev"]["error"] == "HTTP 503"
+
+    def test_an_unexpected_error_rolls_back_and_surfaces(self, monkeypatch):
+        session = MagicMock()
+        monkeypatch.setattr(settings, "THREAT_INTEL_ENABLED", True)
+        monkeypatch.setattr("app.worker.tasks.SessionLocal", lambda: session)
+        monkeypatch.setattr(
+            "app.worker.tasks.refresh_threat_intel",
+            MagicMock(side_effect=RuntimeError("database gone")),
+        )
+
+        with pytest.raises(RuntimeError):
+            refresh_threat_intel_task.apply().get()
+
+        session.rollback.assert_called_once()
+        session.close.assert_called_once()
+
+    def test_is_scheduled_only_when_enabled(self, monkeypatch):
+        monkeypatch.setattr(settings, "THREAT_INTEL_ENABLED", False)
+        assert "threat-intel-refresh" not in build_beat_schedule()
+
+        monkeypatch.setattr(settings, "THREAT_INTEL_ENABLED", True)
+        monkeypatch.setattr(settings, "THREAT_INTEL_REFRESH_HOUR_UTC", 5)
+        entry = build_beat_schedule()["threat-intel-refresh"]
+        assert entry["task"] == refresh_threat_intel_task.name
+        assert entry["schedule"].hour == {5}
