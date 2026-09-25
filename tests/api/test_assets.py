@@ -1,3 +1,5 @@
+import pytest
+
 from app.models.asset import Asset
 from app.models.vulnerability import AssetVulnerability, Status, Vulnerability
 
@@ -122,3 +124,33 @@ class TestAssets:
     def test_limit_at_maximum_is_accepted(self, client):
         response = client.get("/api/v1/assets/?limit=500")
         assert response.status_code == 200
+
+
+class TestInternetExposure:
+    def test_defaults_to_internal(self, client):
+        response = client.post("/api/v1/assets/", json={"ip_address": "10.30.0.1"})
+        assert response.status_code == 201
+        assert response.json()["internet_facing"] is False
+
+    def test_can_be_set_on_creation_and_update(self, client):
+        created = client.post(
+            "/api/v1/assets/", json={"ip_address": "10.30.0.2", "internet_facing": True}
+        ).json()
+        assert created["internet_facing"] is True
+
+        updated = client.put(
+            f"/api/v1/assets/{created['id']}", json={"internet_facing": False}
+        )
+        assert updated.status_code == 200
+        assert updated.json()["internet_facing"] is False
+
+    @pytest.mark.parametrize("field", ["internet_facing", "business_criticality"])
+    def test_explicit_null_is_rejected(self, client, db_session, field):
+        """Regression: a null criticality reached a NOT NULL column as a 500."""
+        asset = Asset(ip_address="10.30.0.3")
+        db_session.add(asset)
+        db_session.commit()
+
+        response = client.put(f"/api/v1/assets/{asset.id}", json={field: None})
+
+        assert response.status_code == 422

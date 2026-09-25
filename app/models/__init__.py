@@ -1,7 +1,8 @@
 from app.models.asset import Asset
 from app.models.scan import ScanJob, ScanStatus
+from app.models.threat_intel import ThreatFeedStatus
 from app.models.user import User
-from app.models.vulnerability import AssetVulnerability, Vulnerability
+from app.models.vulnerability import AssetVulnerability, FindingAuditLog, Vulnerability
 
 __all__ = [
     "Asset",
@@ -11,4 +12,5 @@ __all__ = [
     "User",
     "ScanJob",
     "ScanStatus",
+    "ThreatFeedStatus",
 ]

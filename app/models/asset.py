@@ -1,9 +1,9 @@
 from enum import Enum
 
-from sqlalchemy import DateTime, Index, String
+from sqlalchemy import Boolean, DateTime, Index, String
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.sql import func
+from sqlalchemy.sql import false, func
 
 from app.db.database import Base
 
@@ -33,6 +33,11 @@ class Asset(Base):
         server_default=Criticality.medium.value,
         nullable=False,
         index=True,
+    )
+    # Reachable from the Internet. Multiplies risk: the same CVE is far more
+    # likely to be exploited on an exposed host than on an internal one.
+    internet_facing: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false(), nullable=False
     )
     created_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

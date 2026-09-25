@@ -8,6 +8,7 @@ from app.db.database import Base
 from app.models import (  # noqa: F401 — ensure all models are registered on Base.metadata
     Asset,
     AssetVulnerability,
+    ThreatFeedStatus,
     User,
     Vulnerability,
 )
