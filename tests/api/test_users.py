@@ -53,3 +53,54 @@ class TestUserRoleUpdate:
             f"/api/v1/users/{analyst.id}/role", json={"role": "superuser"}
         )
         assert response.status_code == 422
+
+
+class TestAdminRightsFollowTheDatabase:
+    """The role in the token is what the user was at login. Admin rights must
+    follow the database, or a demoted administrator keeps them until the token
+    expires."""
+
+    def login(self, client, username):
+        response = client.post(
+            "/api/v1/auth/login", json={"username": username, "password": VALID_PASSWORD}
+        )
+        return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+    def test_an_admin_token_works_while_the_user_is_admin(
+        self, unauthenticated_client, admin_user, other_user
+    ):
+        headers = self.login(unauthenticated_client, "admin")
+
+        response = unauthenticated_client.patch(
+            f"/api/v1/users/{other_user.id}/role",
+            json={"role": "analyst"},
+            headers=headers,
+        )
+
+        assert response.status_code == 200
+
+    def test_demotion_takes_effect_at_once(
+        self, unauthenticated_client, db_session, admin_user, other_user
+    ):
+        headers = self.login(unauthenticated_client, "admin")
+        admin_user.role = "analyst"
+        db_session.commit()
+
+        response = unauthenticated_client.patch(
+            f"/api/v1/users/{other_user.id}/role", json={"role": "admin"}, headers=headers
+        )
+
+        assert response.status_code == 403
+
+    def test_a_deleted_admin_loses_the_rights_at_once(
+        self, unauthenticated_client, db_session, admin_user
+    ):
+        headers = self.login(unauthenticated_client, "admin")
+        db_session.delete(admin_user)
+        db_session.commit()
+
+        response = unauthenticated_client.post(
+            "/api/v1/threat-intel/refresh", headers=headers
+        )
+
+        assert response.status_code == 403

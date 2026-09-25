@@ -219,7 +219,7 @@ class TestVulnerabilityDelete:
         assert client.delete(f"/api/v1/vulnerabilities/{vuln.id}").status_code == 204
         assert db_session.get(Vulnerability, vuln.id) is None
 
-    def test_analyst_cannot_delete(self, client, db_session):
+    def test_analyst_cannot_delete(self, client, db_session, other_user):
         """Deletion discards triage history across potentially many assets."""
         vuln = self._make(db_session, cve="CVE-2024-6001")
 
@@ -227,14 +227,13 @@ class TestVulnerabilityDelete:
         from app.main import app as fastapi_app
 
         admin_override = fastapi_app.dependency_overrides[require_admin]
-        # require_admin must run for real, reading an analyst identity: simply
-        # dropping its override would still see the admin that decode_token is
-        # stubbed to return.
+        # require_admin must run for real, for a user who is an analyst in the
+        # database: it checks the role there, not in the token.
         fastapi_app.dependency_overrides.pop(require_admin, None)
         fastapi_app.dependency_overrides[decode_token] = lambda: {
-            "sub": "2",
+            "sub": str(other_user.id),
             "role": "analyst",
-            "username": "analyst",
+            "username": other_user.username,
         }
         try:
             response = client.delete(f"/api/v1/vulnerabilities/{vuln.id}")

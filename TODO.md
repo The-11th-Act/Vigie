@@ -319,7 +319,8 @@ expose `UVICORN_WORKERS`, mais le lien avec `pool_size` n'est pas documenté.
 `require_admin` (`security.py:70`) lit le rôle **dans le token**, pas en base : rétrograder
 un admin ne prend effet qu'à l'expiration. Aucun cloisonnement par périmètre.
 
-- [ ] Vérifier le rôle en base à chaque requête sensible
+- [x] Vérifier le rôle en base à chaque requête sensible : `require_admin` relit
+      l'utilisateur ; une rétrogradation ou une suppression vaut immédiatement *(25/09/2026)*
 - [ ] Modèle de périmètres / groupes d'assets, filtrage des listings
 
 ### D11. Un seul environnement

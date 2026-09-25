@@ -6,9 +6,12 @@ import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from passlib.context import CryptContext
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.tokens import is_revoked
+from app.db.database import get_db
+from app.models.user import User
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/login")
@@ -129,10 +132,27 @@ def verify_password_constant_time(
     return pwd_context.verify(plain_password, hashed_password)
 
 
-def require_admin(token_data: dict = Depends(decode_token)) -> dict:
-    if token_data.get("role") != "admin":
+def require_admin(
+    token_data: dict = Depends(decode_token), db: Session = Depends(get_db)
+) -> dict:
+    """Admit only a user who is an administrator *now*, according to the database.
+
+    The role claim in the token is what the user was at login: trusting it
+    meant a demoted or deleted administrator kept every admin right until the
+    token expired. One primary-key lookup per admin request closes that window.
+    """
+    user_id = _user_id(token_data)
+    user = db.get(User, user_id) if user_id is not None else None
+    if user is None or user.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions",
         )
     return token_data
+
+
+def _user_id(token_data: dict) -> int | None:
+    try:
+        return int(token_data["sub"])
+    except (KeyError, TypeError, ValueError):
+        return None
