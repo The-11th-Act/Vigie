@@ -104,3 +104,63 @@ describe('FindingsBacklog', () => {
     expect(await screen.findByText(/a status_note is required/i)).toBeInTheDocument()
   })
 })
+
+describe('FindingsBacklog — threat context', () => {
+  const THREAT_FINDING = {
+    ...FINDING,
+    asset: { ...FINDING.asset, internet_facing: true },
+    vulnerability: {
+      ...FINDING.vulnerability,
+      in_kev: true,
+      kev_date_added: '2024-04-12',
+      kev_ransomware: true,
+      epss_score: 0.9432,
+    },
+    risk_factors: [
+      { code: 'kev', label: 'Known exploited (CISA KEV)', multiplier: 1.3, points: null },
+      { code: 'overdue', label: 'Past its remediation deadline', multiplier: null, points: 1.5 },
+    ],
+  }
+
+  it('flags known exploitation, the EPSS probability and exposure', async () => {
+    vulnerabilityService.getFindings.mockResolvedValue({
+      data: { total: 1, items: [THREAT_FINDING] },
+    })
+    render(<FindingsBacklog />)
+
+    const kev = await screen.findByText('KEV')
+    expect(kev).toHaveAttribute('title', expect.stringContaining('ransomware'))
+    expect(screen.getByText('EPSS 94%')).toBeInTheDocument()
+    expect(screen.getByText('Exposed')).toBeInTheDocument()
+    expect(screen.getByText('9.90')).toHaveAttribute(
+      'title',
+      'Known exploited (CISA KEV) (×1.3)\nPast its remediation deadline (+1.50)',
+    )
+  })
+
+  it('shows nothing extra for a finding without threat context', async () => {
+    mockOneFinding()
+    render(<FindingsBacklog />)
+
+    await screen.findByText('web-prod-01')
+    expect(screen.queryByText('KEV')).not.toBeInTheDocument()
+    // The EPSS filter options ("EPSS ≥ 10%") are not badges: a badge has a number.
+    expect(screen.queryByText(/^EPSS \d/)).not.toBeInTheDocument()
+  })
+
+  it('filters on KEV and on the EPSS band', async () => {
+    mockOneFinding()
+    const user = userEvent.setup()
+    render(<FindingsBacklog />)
+    await screen.findByText('web-prod-01')
+
+    await user.click(screen.getByLabelText(/known exploited/i))
+    await user.selectOptions(screen.getByLabelText(/exploitation likelihood/i), '0.1')
+
+    await waitFor(() => {
+      expect(vulnerabilityService.getFindings).toHaveBeenLastCalledWith(
+        expect.objectContaining({ kev_only: true, min_epss: '0.1' }),
+      )
+    })
+  })
+})

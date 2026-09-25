@@ -2,7 +2,16 @@ import React from 'react';
 import { useFetch } from '../hooks/useFetch';
 import { dashboardService } from '../services';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, CartesianGrid } from 'recharts';
-import { AlertTriangle, Server, ShieldAlert, Activity, Clock } from 'lucide-react';
+import { AlertTriangle, Server, ShieldAlert, Activity, Clock, Flame } from 'lucide-react';
+
+const FEED_LABELS = { kev: 'CISA KEV', epss: 'FIRST EPSS' };
+
+function describeFeed(feed) {
+  const label = FEED_LABELS[feed.feed] || feed.feed;
+  if (!feed.last_success_at) return `${label}: never loaded`;
+  const when = new Date(feed.last_success_at).toLocaleDateString();
+  return `${label}: ${when}${feed.stale ? ' (stale)' : ''}`;
+}
 
 export default function Dashboard() {
   const { data: stats, loading, error } = useFetch(() => dashboardService.getStats().then(r => r.data));
@@ -43,7 +52,20 @@ export default function Dashboard() {
           <div className="kpi-label"><AlertTriangle size={14} style={{marginRight: 6}} />Average CVSS</div>
           <div className="kpi-value">{(stats.average_cvss || 0).toFixed(2)}</div>
         </div>
+        <div className="glass-panel kpi-card" title="Open findings on a CVE exploited in the wild (CISA KEV)">
+          <div className="kpi-label"><Flame size={14} style={{marginRight: 6}} />Known Exploited (KEV)</div>
+          <div className="kpi-value" style={{color: 'var(--critical)'}}>{(stats.kev_open_count || 0).toLocaleString()}</div>
+          {stats.kev_overdue_count > 0 && (
+            <div style={{fontSize: '0.8rem', color: 'var(--high)'}}>{stats.kev_overdue_count.toLocaleString()} overdue</div>
+          )}
+        </div>
       </div>
+
+      {stats.threat_intel && (
+        <div style={{marginTop: '0.75rem', fontSize: '0.8rem', color: 'var(--text-muted)'}}>
+          Threat intelligence — {stats.threat_intel.feeds.map(describeFeed).join(' · ')}
+        </div>
+      )}
 
       <div className="glass-panel" style={{height: '400px', marginTop: '2rem'}}>
         <h3 style={{marginBottom: '1.5rem', color: 'var(--text-muted)'}}>Vulnerabilities by Severity</h3>
@@ -84,7 +106,10 @@ export default function Dashboard() {
                   <tr key={risk.finding_id}>
                     <td>{risk.hostname || risk.ip_address || `Asset #${risk.asset_id}`}</td>
                     <td>
-                      <div style={{fontWeight: 600, color: 'var(--accent)', fontFamily: 'monospace'}}>{risk.cve_id}</div>
+                      <div style={{fontWeight: 600, color: 'var(--accent)', fontFamily: 'monospace'}}>
+                        {risk.cve_id}
+                        {risk.in_kev && <span className="badge badge-critical" style={{marginLeft: 6}}>KEV</span>}
+                      </div>
                       <div style={{fontSize: '0.8rem', color: 'var(--text-muted)', maxWidth: 320, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>{risk.title}</div>
                     </td>
                     <td>

@@ -11,6 +11,7 @@ const EMPTY_FORM = {
   hostname: '',
   operating_system: '',
   business_criticality: 'Medium',
+  internet_facing: false,
 };
 
 const inputStyle = {
@@ -74,6 +75,7 @@ export default function AssetsList() {
       hostname: asset.hostname || '',
       operating_system: asset.operating_system || '',
       business_criticality: asset.business_criticality,
+      internet_facing: Boolean(asset.internet_facing),
     });
     setFormError(null);
   };
@@ -101,6 +103,7 @@ export default function AssetsList() {
           hostname: form.hostname || null,
           operating_system: form.operating_system || null,
           business_criticality: form.business_criticality,
+          internet_facing: form.internet_facing,
         });
       }
       closeForm();
@@ -196,6 +199,17 @@ export default function AssetsList() {
                 {CRITICALITIES.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </label>
+            <label
+              title="Raises the risk of every finding on this asset (×1.2)"
+              style={{display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--text-muted)'}}
+            >
+              <input
+                type="checkbox"
+                checked={form.internet_facing}
+                onChange={(e) => setForm({...form, internet_facing: e.target.checked})}
+              />
+              Exposed to the Internet
+            </label>
           </div>
 
           <div style={{display: 'flex', gap: '0.5rem'}}>
@@ -244,6 +258,11 @@ export default function AssetsList() {
                         <span className={`badge badge-${asset.business_criticality.toLowerCase()}`}>
                           {asset.business_criticality}
                         </span>
+                        {asset.internet_facing && (
+                          <span className="badge badge-medium" style={{marginLeft: 6}} title="Reachable from the Internet">
+                            Exposed
+                          </span>
+                        )}
                       </td>
                       <td>
                         <div style={{display: 'flex', gap: '0.5rem'}}>

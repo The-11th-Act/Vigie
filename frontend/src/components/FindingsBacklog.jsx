@@ -7,6 +7,32 @@ const PAGE_SIZE = 20;
 const STATUSES = ['Open', 'False Positive', 'Risk Accepted', 'Remediated'];
 const STATUSES_REQUIRING_NOTE = new Set(['False Positive', 'Risk Accepted']);
 
+// Mirrors the EPSS bands of the risk model (app/services/risk_scoring.py).
+const EPSS_THRESHOLDS = [
+  { value: '0.5', label: 'EPSS ≥ 50%' },
+  { value: '0.1', label: 'EPSS ≥ 10%' },
+  { value: '0.01', label: 'EPSS ≥ 1%' },
+];
+
+function formatEpss(score) {
+  const percent = score * 100;
+  return `EPSS ${percent < 10 ? percent.toFixed(1) : Math.round(percent)}%`;
+}
+
+function describeFactor(factor) {
+  if (factor.multiplier != null) return `${factor.label} (×${factor.multiplier})`;
+  if (factor.points != null) return `${factor.label} (+${factor.points.toFixed(2)})`;
+  return factor.label;
+}
+
+function kevTitle(vuln) {
+  const parts = ['Known exploited in the wild (CISA KEV)'];
+  if (vuln.kev_date_added) parts.push(`listed ${formatDate(vuln.kev_date_added)}`);
+  if (vuln.kev_due_date) parts.push(`CISA due date ${formatDate(vuln.kev_due_date)}`);
+  if (vuln.kev_ransomware) parts.push('used in ransomware campaigns');
+  return parts.join(' · ');
+}
+
 function formatDate(value) {
   if (!value) return '-';
   return new Date(value).toLocaleDateString();
@@ -17,6 +43,8 @@ export default function FindingsBacklog() {
   const [statusFilter, setStatusFilter] = useState('');
   const [minRisk, setMinRisk] = useState('');
   const [overdueOnly, setOverdueOnly] = useState(false);
+  const [kevOnly, setKevOnly] = useState(false);
+  const [minEpss, setMinEpss] = useState('');
   const [rowState, setRowState] = useState({});
 
   const fetchFindings = useCallback(async () => {
@@ -26,15 +54,19 @@ export default function FindingsBacklog() {
       status_filter: statusFilter || undefined,
       min_risk: minRisk || undefined,
       overdue_only: overdueOnly || undefined,
+      kev_only: kevOnly || undefined,
+      min_epss: minEpss || undefined,
     });
     return res.data;
-  }, [page, statusFilter, minRisk, overdueOnly]);
+  }, [page, statusFilter, minRisk, overdueOnly, kevOnly, minEpss]);
 
   const { data, loading, error, refetch } = useFetch(fetchFindings, [
     page,
     statusFilter,
     minRisk,
     overdueOnly,
+    kevOnly,
+    minEpss,
   ]);
 
   const totalPages = data ? Math.ceil(data.total / PAGE_SIZE) : 0;
@@ -122,6 +154,35 @@ export default function FindingsBacklog() {
           />
           Overdue only
         </label>
+
+        <select
+          aria-label="Exploitation likelihood"
+          value={minEpss}
+          onChange={(e) => {
+            setMinEpss(e.target.value);
+            setPage(0);
+          }}
+          style={{
+            padding: '0.6rem 0.75rem', background: 'rgba(255,255,255,0.05)',
+            border: '1px solid var(--border)', borderRadius: '8px',
+            color: 'var(--text-main)', fontSize: '0.875rem', outline: 'none', cursor: 'pointer',
+          }}
+        >
+          <option value="">Any EPSS</option>
+          {EPSS_THRESHOLDS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+        </select>
+
+        <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.875rem', color: 'var(--text-muted)' }}>
+          <input
+            type="checkbox"
+            checked={kevOnly}
+            onChange={(e) => {
+              setKevOnly(e.target.checked);
+              setPage(0);
+            }}
+          />
+          Known exploited (KEV) only
+        </label>
       </div>
 
       {loading && <div className="loading">Loading backlog...</div>}
@@ -159,17 +220,42 @@ export default function FindingsBacklog() {
                       <tr key={finding.id}>
                         <td>
                           {finding.asset?.hostname || finding.asset?.ip_address || `Asset #${finding.asset_id}`}
+                          {finding.asset?.internet_facing && (
+                            <div>
+                              <span className="badge badge-medium" title="Reachable from the Internet">
+                                Exposed
+                              </span>
+                            </div>
+                          )}
                         </td>
                         <td>
-                          <div style={{ fontWeight: 600, color: 'var(--accent)', fontFamily: 'monospace' }}>
-                            {finding.vulnerability?.cve_id}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                            <span style={{ fontWeight: 600, color: 'var(--accent)', fontFamily: 'monospace' }}>
+                              {finding.vulnerability?.cve_id}
+                            </span>
+                            {finding.vulnerability?.in_kev && (
+                              <span className="badge badge-critical" title={kevTitle(finding.vulnerability)}>
+                                KEV
+                              </span>
+                            )}
+                            {finding.vulnerability?.epss_score != null && (
+                              <span
+                                className="badge badge-low"
+                                title="Probability of exploitation in the next 30 days (FIRST EPSS)"
+                              >
+                                {formatEpss(finding.vulnerability.epss_score)}
+                              </span>
+                            )}
                           </div>
                           <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', maxWidth: 320, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                             {finding.vulnerability?.title}
                           </div>
                         </td>
                         <td>
-                          <span className={`badge badge-${finding.risk_level.toLowerCase()}`}>
+                          <span
+                            className={`badge badge-${finding.risk_level.toLowerCase()}`}
+                            title={finding.risk_factors?.length ? finding.risk_factors.map(describeFactor).join('\n') : undefined}
+                          >
                             {finding.risk_score.toFixed(2)}
                           </span>
                         </td>
