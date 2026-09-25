@@ -87,9 +87,9 @@ def update_asset(
     for key, val in changes.items():
         setattr(asset, key, val)
 
-    # Risk is a function of business criticality, so a change here invalidates
-    # every score already computed for this asset's open findings.
-    if "business_criticality" in changes:
+    # Risk is a function of business criticality and exposure, so a change to
+    # either invalidates every score already computed for this asset's findings.
+    if changes.keys() & {"business_criticality", "internet_facing"}:
         rescore_open_findings(db, AssetVulnerability.asset_id == asset.id)
 
     db.commit()

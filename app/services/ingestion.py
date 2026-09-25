@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.models.asset import Asset
 from app.models.vulnerability import AssetVulnerability, Status, Vulnerability
-from app.services.asset_policy import criticality_for
+from app.services.asset_policy import criticality_for, exposure_for
 from app.services.remediation import apply_kev_sla, calculate_remediation_deadline
 from app.services.risk_scoring import RiskInputs, compute_risk
 
@@ -257,6 +257,7 @@ def _upsert_assets(
                 hostname=finding["hostname"],
                 operating_system=finding["operating_system"],
                 business_criticality=criticality_for(ip),
+                internet_facing=exposure_for(ip),
             )
             db.add(asset)
             created += 1

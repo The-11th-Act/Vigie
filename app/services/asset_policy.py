@@ -53,6 +53,32 @@ def criticality_for(ip_address: str | None) -> Criticality:
     return _as_criticality(best_level)
 
 
+def exposure_for(ip_address: str | None) -> bool:
+    """Whether a newly discovered address sits in an Internet-facing subnet.
+
+    Unset or unparseable means internal: marking a host exposed raises the risk
+    of all its findings, so it is never guessed.
+    """
+    subnets = settings.INTERNET_FACING_SUBNETS or []
+    if not subnets or not ip_address:
+        return False
+
+    try:
+        address = ipaddress.ip_address(ip_address.strip())
+    except ValueError:
+        return False
+
+    for cidr in subnets:
+        try:
+            network = ipaddress.ip_network(cidr, strict=False)
+        except ValueError:
+            logger.warning("Ignoring malformed CIDR in INTERNET_FACING_SUBNETS: %r", cidr)
+            continue
+        if address.version == network.version and address in network:
+            return True
+    return False
+
+
 def _as_criticality(level: str | None) -> Criticality:
     if not level:
         return DEFAULT_CRITICALITY

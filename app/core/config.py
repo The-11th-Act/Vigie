@@ -71,6 +71,11 @@ class Settings(BaseSettings):
     #   {"10.0.0.0/8": "Low", "10.0.5.0/24": "Critical"}
     CRITICALITY_RULES: dict[str, str] = {}
 
+    # Subnets reachable from the Internet (a DMZ, public ranges). A newly
+    # discovered asset in one of them starts as internet-facing; an operator's
+    # later choice is never overwritten. Example: ["203.0.113.0/24", "10.99.0.0/16"]
+    INTERNET_FACING_SUBNETS: list[str] = []
+
     # Consecutive scans of a source in which a finding may go unseen before it
     # is closed as remediated. 0 disables automatic closure entirely.
     AUTO_REMEDIATE_AFTER_MISSES: int = 3

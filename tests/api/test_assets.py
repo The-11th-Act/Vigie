@@ -154,3 +154,24 @@ class TestInternetExposure:
         response = client.put(f"/api/v1/assets/{asset.id}", json={field: None})
 
         assert response.status_code == 422
+
+    def test_exposure_change_rescores_open_findings(self, client, db_session):
+        asset = Asset(ip_address="10.30.0.4")
+        vuln = Vulnerability(
+            cve_id="CVE-2024-6002", title="Exposed", cvss_score=5.0, severity="Medium"
+        )
+        db_session.add_all([asset, vuln])
+        db_session.flush()
+        link = AssetVulnerability(
+            asset_id=asset.id,
+            vulnerability_id=vuln.id,
+            status=Status.open,
+            risk_score=5.0,
+        )
+        db_session.add(link)
+        db_session.commit()
+
+        client.put(f"/api/v1/assets/{asset.id}", json={"internet_facing": True})
+
+        db_session.refresh(link)
+        assert link.risk_score == 6.0  # 5.0 x 1.2

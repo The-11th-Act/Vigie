@@ -444,3 +444,42 @@ class TestThreatContextAtIngestion:
 
 def _aware(value):
     return value if value.tzinfo else value.replace(tzinfo=UTC)
+
+
+class TestExposureRules:
+    def test_a_new_asset_in_an_exposed_subnet_is_internet_facing(
+        self, db_session, monkeypatch
+    ):
+        monkeypatch.setattr(settings, "INTERNET_FACING_SUBNETS", ["203.0.113.0/24"])
+
+        ingest_findings(
+            db_session,
+            [
+                finding(ip="203.0.113.7", cve="CVE-2024-0001", hostname="edge"),
+                finding(ip="10.0.0.1", cve="CVE-2024-0002", hostname="internal"),
+            ],
+            "nessus",
+        )
+
+        by_ip = {a.ip_address: a for a in db_session.query(Asset).all()}
+        assert by_ip["203.0.113.7"].internet_facing is True
+        assert by_ip["10.0.0.1"].internet_facing is False
+
+    def test_an_operator_choice_is_never_overwritten(self, db_session, monkeypatch):
+        """The rule seeds new assets; it does not fight a later manual decision."""
+        monkeypatch.setattr(settings, "INTERNET_FACING_SUBNETS", ["203.0.113.0/24"])
+        ingest_findings(db_session, [finding(ip="203.0.113.7")], "nessus")
+        asset = db_session.query(Asset).one()
+        asset.internet_facing = False
+        db_session.commit()
+
+        ingest_findings(db_session, [finding(ip="203.0.113.7")], "nessus")
+
+        assert db_session.query(Asset).one().internet_facing is False
+
+    def test_malformed_or_unset_rules_mean_internal(self, db_session, monkeypatch):
+        monkeypatch.setattr(settings, "INTERNET_FACING_SUBNETS", ["not-a-cidr"])
+
+        ingest_findings(db_session, [finding(ip="10.0.0.1")], "nessus")
+
+        assert db_session.query(Asset).one().internet_facing is False
