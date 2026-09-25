@@ -127,6 +127,11 @@ class TestProductionOverlay:
             redis_url = prod_services[name]["environment"]["REDIS_URL"]
             assert redis_url.startswith("redis://:"), name
 
+    def test_the_scheduler_is_not_probed_like_the_api(self, prod_services):
+        """Le HEALTHCHECK de l'image interroge l'API sur :8000, que beat ne sert
+        pas : le conteneur était marqué « unhealthy » en permanence."""
+        assert prod_services["beat"]["healthcheck"]["disable"] is True
+
 
 # Réglages que le déploiement n'a pas à exposer : des constantes de l'API, ou
 # un chemin figé par l'image et ses volumes.

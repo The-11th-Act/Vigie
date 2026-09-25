@@ -25,8 +25,12 @@ fail() {
   echo "::error::$*"
   echo "----- état des conteneurs -----"
   "${COMPOSE[@]}" ps -a || true
-  echo "----- journaux -----"
-  "${COMPOSE[@]}" logs --no-color --tail=80 || true
+  # Service par service : les journaux de l'API noieraient sinon ceux d'un
+  # conteneur qui redémarre en boucle.
+  for service in frontend web worker beat migrate; do
+    echo "----- journaux : $service -----"
+    "${COMPOSE[@]}" logs --no-color --tail=40 "$service" || true
+  done
   exit 1
 }
 

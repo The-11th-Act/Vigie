@@ -151,6 +151,11 @@ services:
     build: .
     container_name: vigie_beat
     command: celery -A app.worker.celery_app beat --loglevel=info
+    # The image's HEALTHCHECK probes the API on :8000, which a scheduler does
+    # not serve: the container was always reported unhealthy. beat runs as the
+    # container's main process, so it being alive is the container being up.
+    healthcheck:
+      disable: true
     volumes:
       - .:/app
     environment:
