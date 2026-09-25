@@ -52,6 +52,29 @@ OVERDUE_FINDINGS = Gauge(
 )
 
 
+OPEN_KEV_FINDINGS = Gauge(
+    "vigie_open_kev_findings",
+    "Open findings on a CVE listed in CISA KEV (exploited in the wild).",
+    registry=REGISTRY,
+)
+
+OVERDUE_KEV_FINDINGS = Gauge(
+    "vigie_overdue_kev_findings",
+    "Open KEV findings past their remediation deadline.",
+    registry=REGISTRY,
+)
+
+# Read from the database at scrape time: the worker that refreshes the feeds
+# exposes no /metrics of its own. 0 until a feed was first applied, so an alert
+# on "time() - value > 2d" also fires for a feed that never worked.
+THREAT_FEED_LAST_SUCCESS = Gauge(
+    "vigie_threat_feed_last_success_timestamp_seconds",
+    "Unix time of the last successful application of a threat feed.",
+    ["feed"],
+    registry=REGISTRY,
+)
+
+
 def observe_request(method: str, route: str, status: int, duration: float) -> None:
     REQUEST_COUNT.labels(method=method, route=route, status=str(status)).inc()
     REQUEST_LATENCY.labels(method=method, route=route).observe(duration)
@@ -70,9 +93,11 @@ def refresh_backlog_gauges(db: Session) -> None:
     """
     from datetime import datetime
 
-    from app.models.vulnerability import AssetVulnerability, Status
+    from app.models.threat_intel import FEEDS, ThreatFeedStatus
+    from app.models.vulnerability import AssetVulnerability, Status, Vulnerability
 
     try:
+        now = datetime.now(UTC)
         open_count = (
             db.query(func.count(AssetVulnerability.id))
             .filter(AssetVulnerability.status == Status.open)
@@ -83,10 +108,28 @@ def refresh_backlog_gauges(db: Session) -> None:
             .filter(
                 AssetVulnerability.status == Status.open,
                 AssetVulnerability.remediation_deadline.isnot(None),
-                AssetVulnerability.remediation_deadline < datetime.now(UTC),
+                AssetVulnerability.remediation_deadline < now,
             )
             .scalar()
         ) or 0
+        open_kev = (
+            db.query(func.count(AssetVulnerability.id))
+            .join(AssetVulnerability.vulnerability)
+            .filter(
+                AssetVulnerability.status == Status.open, Vulnerability.in_kev.is_(True)
+            )
+        )
+        open_kev_count = open_kev.scalar() or 0
+        overdue_kev_count = (
+            open_kev.filter(
+                AssetVulnerability.remediation_deadline.isnot(None),
+                AssetVulnerability.remediation_deadline < now,
+            ).scalar()
+        ) or 0
+        last_success = {
+            row.feed: row.last_success_at
+            for row in db.query(ThreatFeedStatus.feed, ThreatFeedStatus.last_success_at)
+        }
     except Exception as exc:
         # A scrape must never take the application down.
         logger.warning("Could not refresh backlog gauges: %s", exc)
@@ -94,3 +137,12 @@ def refresh_backlog_gauges(db: Session) -> None:
 
     OPEN_FINDINGS.set(open_count)
     OVERDUE_FINDINGS.set(overdue_count)
+    OPEN_KEV_FINDINGS.set(open_kev_count)
+    OVERDUE_KEV_FINDINGS.set(overdue_kev_count)
+    for feed in FEEDS:
+        moment = last_success.get(feed)
+        if moment is not None and moment.tzinfo is None:
+            moment = moment.replace(tzinfo=UTC)
+        THREAT_FEED_LAST_SUCCESS.labels(feed=feed).set(
+            moment.timestamp() if moment else 0
+        )

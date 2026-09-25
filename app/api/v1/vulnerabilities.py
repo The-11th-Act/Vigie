@@ -3,13 +3,15 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi import status as http_status
 from sqlalchemy import or_
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, contains_eager, joinedload
 
 from app.api.deps import get_or_404
 from app.core.security import decode_token, require_admin
 from app.db.database import get_db
+from app.models.asset import Asset
 from app.models.vulnerability import (
     CLOSED_STATUSES,
+    RISK_ORDER,
     AssetVulnerability,
     FindingAuditLog,
     Severity,
@@ -145,6 +147,9 @@ def get_findings(
     status_filter: Status | None = None,
     min_risk: float | None = Query(None, ge=0, le=10),
     overdue_only: bool = False,
+    kev_only: bool = False,
+    min_epss: float | None = Query(None, ge=0, le=1),
+    internet_facing_only: bool = False,
     db: Session = Depends(get_db),
     payload: dict = Depends(decode_token),
 ):
@@ -154,9 +159,16 @@ def get_findings(
     from. Without this endpoint the platform stored a risk score nobody could
     order by.
     """
-    query = db.query(AssetVulnerability).options(
-        joinedload(AssetVulnerability.vulnerability),
-        joinedload(AssetVulnerability.asset),
+    # Explicit joins rather than joinedload: the filters and the ranking read
+    # the vulnerability and the asset, which a joinedload alias cannot offer.
+    query = (
+        db.query(AssetVulnerability)
+        .join(AssetVulnerability.vulnerability)
+        .join(AssetVulnerability.asset)
+        .options(
+            contains_eager(AssetVulnerability.vulnerability),
+            contains_eager(AssetVulnerability.asset),
+        )
     )
 
     if status_filter:
@@ -169,14 +181,15 @@ def get_findings(
             AssetVulnerability.remediation_deadline.isnot(None),
             AssetVulnerability.remediation_deadline < datetime.now(UTC),
         )
+    if kev_only:
+        query = query.filter(Vulnerability.in_kev.is_(True))
+    if min_epss is not None:
+        query = query.filter(Vulnerability.epss_score >= min_epss)
+    if internet_facing_only:
+        query = query.filter(Asset.internet_facing.is_(True))
 
     total = query.count()
-    items = (
-        query.order_by(AssetVulnerability.risk_score.desc(), AssetVulnerability.id.desc())
-        .offset(skip)
-        .limit(limit)
-        .all()
-    )
+    items = query.order_by(*RISK_ORDER).offset(skip).limit(limit).all()
     return {"total": total, "items": items}
 
 
@@ -189,10 +202,15 @@ def get_asset_vulnerabilities(
     db: Session = Depends(get_db),
     payload: dict = Depends(decode_token),
 ):
-    # joinedload avoids one extra SELECT per row for the nested vulnerability.
+    # Eager loads avoid one extra SELECT per row for the nested vulnerability
+    # and asset, both read by the response (risk_factors included).
     query = (
         db.query(AssetVulnerability)
-        .options(joinedload(AssetVulnerability.vulnerability))
+        .join(AssetVulnerability.vulnerability)
+        .options(
+            contains_eager(AssetVulnerability.vulnerability),
+            joinedload(AssetVulnerability.asset),
+        )
         .filter(AssetVulnerability.asset_id == asset_id)
     )
 
@@ -200,12 +218,7 @@ def get_asset_vulnerabilities(
         query = query.filter(AssetVulnerability.status == status_filter)
 
     total = query.count()
-    items = (
-        query.order_by(AssetVulnerability.risk_score.desc(), AssetVulnerability.id.desc())
-        .offset(skip)
-        .limit(limit)
-        .all()
-    )
+    items = query.order_by(*RISK_ORDER).offset(skip).limit(limit).all()
     return {"total": total, "items": items}
 
 

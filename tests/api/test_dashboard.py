@@ -1,3 +1,5 @@
+from datetime import UTC, datetime, timedelta
+
 from app.models.asset import Asset
 from app.models.vulnerability import AssetVulnerability, Vulnerability
 
@@ -81,3 +83,58 @@ class TestHealth:
         data = response.json()
         assert data["status"] == "online"
         assert "project" in data
+
+
+class TestThreatContextOnTheDashboard:
+    def seed(self, db_session):
+        asset = Asset(ip_address="10.60.0.1", internet_facing=True)
+        kev = Vulnerability(
+            cve_id="CVE-2024-3400",
+            title="PAN-OS",
+            cvss_score=10.0,
+            severity="Critical",
+            in_kev=True,
+        )
+        likely = Vulnerability(
+            cve_id="CVE-2024-0002",
+            title="Likely",
+            cvss_score=5.0,
+            severity="Medium",
+            epss_score=0.4,
+        )
+        db_session.add_all([asset, kev, likely])
+        db_session.flush()
+        db_session.add_all(
+            [
+                AssetVulnerability(
+                    asset_id=asset.id,
+                    vulnerability_id=kev.id,
+                    risk_score=10.0,
+                    remediation_deadline=datetime.now(UTC) - timedelta(days=2),
+                ),
+                AssetVulnerability(
+                    asset_id=asset.id, vulnerability_id=likely.id, risk_score=6.9
+                ),
+            ]
+        )
+        db_session.commit()
+
+    def test_counts_kev_and_likely_exploits(self, client, db_session):
+        self.seed(db_session)
+
+        data = client.get("/api/v1/dashboard/stats").json()
+
+        assert data["kev_open_count"] == 1
+        assert data["kev_overdue_count"] == 1
+        assert data["high_epss_open_count"] == 1
+        assert [f["feed"] for f in data["threat_intel"]["feeds"]] == ["kev", "epss"]
+
+    def test_top_risks_carry_the_threat_context(self, client, db_session):
+        self.seed(db_session)
+
+        top = client.get("/api/v1/dashboard/top-risks").json()[0]
+
+        assert top["cve_id"] == "CVE-2024-3400"
+        assert top["in_kev"] is True
+        assert top["internet_facing"] is True
+        assert {"kev", "internet_facing"} <= {f["code"] for f in top["risk_factors"]}

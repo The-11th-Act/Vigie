@@ -1,3 +1,5 @@
+from datetime import UTC, datetime, timedelta
+
 import pytest
 
 from app.models.asset import Asset
@@ -246,3 +248,81 @@ class TestDashboardRiskMetrics:
         assert data[0]["cve_id"] == "CVE-2024-7000"
         assert data[0]["risk_level"] == "High"
         assert data[0]["hostname"] == "triage-host"
+
+
+@pytest.fixture
+def threat_backlog(db_session):
+    """Four open findings; three share a score so the tie-break shows."""
+
+    def add(cve, risk, in_kev=False, epss=None, exposed=False, overdue=False):
+        asset = Asset(ip_address=f"10.50.0.{len(cve)}{cve[-1]}", internet_facing=exposed)
+        vuln = Vulnerability(
+            cve_id=cve,
+            title=cve,
+            cvss_score=7.0,
+            severity="High",
+            in_kev=in_kev,
+            epss_score=epss,
+        )
+        db_session.add_all([asset, vuln])
+        db_session.flush()
+        deadline = datetime.now(UTC) + timedelta(days=-3 if overdue else 30)
+        db_session.add(
+            AssetVulnerability(
+                asset_id=asset.id,
+                vulnerability_id=vuln.id,
+                status=Status.open,
+                risk_score=risk,
+                remediation_deadline=deadline,
+            )
+        )
+
+    add("CVE-2024-0001", 7.0, in_kev=True, epss=0.02, overdue=True)
+    add("CVE-2024-0002", 7.0, epss=0.6, exposed=True)
+    add("CVE-2024-0003", 7.0)
+    add("CVE-2024-0004", 9.0)
+    db_session.commit()
+
+
+def cves(client, **params):
+    response = client.get("/api/v1/vulnerabilities/findings", params=params)
+    assert response.status_code == 200
+    return [item["vulnerability"]["cve_id"] for item in response.json()["items"]]
+
+
+class TestThreatFilters:
+    def test_equal_scores_rank_kev_then_likelier_exploits_first(
+        self, client, threat_backlog
+    ):
+        assert cves(client) == [
+            "CVE-2024-0004",  # highest score
+            "CVE-2024-0001",  # KEV
+            "CVE-2024-0002",  # EPSS 60 %
+            "CVE-2024-0003",  # no intel
+        ]
+
+    def test_kev_only(self, client, threat_backlog):
+        assert cves(client, kev_only=True) == ["CVE-2024-0001"]
+
+    def test_min_epss_excludes_unscored_cves(self, client, threat_backlog):
+        assert cves(client, min_epss=0.5) == ["CVE-2024-0002"]
+        assert cves(client, min_epss=0.01) == ["CVE-2024-0001", "CVE-2024-0002"]
+
+    def test_internet_facing_only(self, client, threat_backlog):
+        assert cves(client, internet_facing_only=True) == ["CVE-2024-0002"]
+
+    def test_filters_combine(self, client, threat_backlog):
+        assert cves(client, kev_only=True, overdue_only=True) == ["CVE-2024-0001"]
+        assert cves(client, kev_only=True, internet_facing_only=True) == []
+
+    def test_an_epss_above_one_is_rejected(self, client):
+        response = client.get(
+            "/api/v1/vulnerabilities/findings", params={"min_epss": 1.5}
+        )
+        assert response.status_code == 422
+
+    def test_the_total_follows_the_filters(self, client, threat_backlog):
+        response = client.get(
+            "/api/v1/vulnerabilities/findings", params={"kev_only": True}
+        )
+        assert response.json()["total"] == 1

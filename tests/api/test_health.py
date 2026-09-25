@@ -157,3 +157,26 @@ class TestMetrics:
         body = client.get("/metrics").text
         assert 'route="/api/v1/assets/{asset_id}"' in body
         assert f'route="/api/v1/assets/{asset.id}"' not in body
+
+    def test_exposes_the_threat_context_gauges(self, client, db_session):
+        from datetime import UTC, datetime
+
+        from app.models.threat_intel import ThreatFeedStatus
+
+        db_session.add(
+            ThreatFeedStatus(
+                feed="kev", last_success_at=datetime(2026, 9, 25, tzinfo=UTC)
+            )
+        )
+        db_session.commit()
+
+        body = client.get("/metrics").text
+
+        assert "vigie_open_kev_findings 0.0" in body
+        assert "vigie_overdue_kev_findings 0.0" in body
+        assert (
+            'vigie_threat_feed_last_success_timestamp_seconds{feed="kev"} 1.7902944e+09'
+            in body
+        )
+        # Never applied: 0, so a staleness alert fires for it too.
+        assert 'vigie_threat_feed_last_success_timestamp_seconds{feed="epss"} 0.0' in body

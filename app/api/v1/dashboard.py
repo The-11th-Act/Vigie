@@ -2,13 +2,24 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, contains_eager, joinedload
 
+from app.core.config import settings
 from app.core.security import decode_token
 from app.db.database import get_db
 from app.models.asset import Asset
-from app.models.vulnerability import AssetVulnerability, Severity, Status, Vulnerability
-from app.services.risk_scoring import risk_level
+from app.models.vulnerability import (
+    RISK_ORDER,
+    AssetVulnerability,
+    Severity,
+    Status,
+    Vulnerability,
+)
+from app.services.risk_scoring import EPSS_BANDS, RiskInputs, explain_risk, risk_level
+from app.services.threat_intel import feed_freshness
+
+# "Likely to be exploited": the lower bound of the second EPSS band (10 %).
+HIGH_EPSS_THRESHOLD = EPSS_BANDS[1][0]
 
 router = APIRouter()
 
@@ -56,6 +67,25 @@ def get_dashboard_stats(
         .scalar()
     ) or 0
 
+    def open_findings_where(*criteria) -> int:
+        return (
+            db.query(func.count(AssetVulnerability.id))
+            .join(AssetVulnerability.vulnerability)
+            .filter(AssetVulnerability.status == Status.open, *criteria)
+            .scalar()
+        ) or 0
+
+    kev = Vulnerability.in_kev.is_(True)
+    kev_open_count = open_findings_where(kev)
+    kev_overdue_count = open_findings_where(
+        kev,
+        AssetVulnerability.remediation_deadline.isnot(None),
+        AssetVulnerability.remediation_deadline < now,
+    )
+    high_epss_open_count = open_findings_where(
+        Vulnerability.epss_score >= HIGH_EPSS_THRESHOLD
+    )
+
     open_aggregates = (
         db.query(
             func.avg(Vulnerability.cvss_score),
@@ -86,6 +116,13 @@ def get_dashboard_stats(
         "average_risk_score": round(avg_risk or 0, 2),
         "max_risk_score": round(max_risk or 0, 2),
         "remediation_rate_percent": remediation_rate,
+        "kev_open_count": kev_open_count,
+        "kev_overdue_count": kev_overdue_count,
+        "high_epss_open_count": high_epss_open_count,
+        "threat_intel": {
+            "enabled": settings.THREAT_INTEL_ENABLED,
+            "feeds": feed_freshness(db, now),
+        },
     }
 
 
@@ -98,12 +135,13 @@ def get_top_risks(
     """The highest-risk open findings — what to fix first."""
     findings = (
         db.query(AssetVulnerability)
+        .join(AssetVulnerability.vulnerability)
         .options(
-            joinedload(AssetVulnerability.vulnerability),
+            contains_eager(AssetVulnerability.vulnerability),
             joinedload(AssetVulnerability.asset),
         )
         .filter(AssetVulnerability.status == Status.open)
-        .order_by(AssetVulnerability.risk_score.desc(), AssetVulnerability.id.desc())
+        .order_by(*RISK_ORDER)
         .limit(limit)
         .all()
     )
@@ -126,9 +164,22 @@ def get_top_risks(
             "risk_level": risk_level(f.risk_score or 0.0),
             "remediation_deadline": f.remediation_deadline,
             "is_overdue": _is_past(f.remediation_deadline, now),
+            "in_kev": bool(f.vulnerability.in_kev) if f.vulnerability else False,
+            "epss_score": f.vulnerability.epss_score if f.vulnerability else None,
+            "internet_facing": bool(f.asset.internet_facing) if f.asset else False,
+            "risk_factors": _risk_factors(f, now),
         }
         for f in findings
     ]
+
+
+def _risk_factors(finding, now) -> list[dict]:
+    if finding.asset is None or finding.vulnerability is None:
+        return []
+    inputs = RiskInputs.of(
+        finding.asset, finding.vulnerability, finding.remediation_deadline
+    )
+    return explain_risk(inputs, now)
 
 
 def _value_of(value):
