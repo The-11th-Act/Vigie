@@ -133,7 +133,7 @@ check() {
 check "CRITICALITY_RULES atteint le worker" .asset.business_criticality Critical
 check "INTERNET_FACING_SUBNETS atteint le worker" .asset.internet_facing true
 # 6.0 x 1.5 (Critical) x min(1.5, 1.3 x 1.2) = 13.5 -> 10.0
-check "le score tient compte du KEV et de l'exposition" .risk_score 10
+check "le score tient compte du KEV et de l'exposition" ".risk_score == 10" true
 # Réglage lu par l'API lors de l'import (resserrement de l'échéance) :
 DAYS=$(echo "$FINDING" | jq -r '((.remediation_deadline[0:19] + "Z" | fromdateiso8601) - now) / 86400 | ceil')
 [ "$DAYS" -le 7 ] || fail "KEV_SLA_DAYS=7 n'atteint pas l'API (échéance dans $DAYS jours)"
