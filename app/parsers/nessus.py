@@ -5,6 +5,7 @@ from defusedxml import ElementTree as ET
 from defusedxml.common import DefusedXmlException
 
 from app.parsers.utils import (
+    ParsedScan,
     clean_text,
     is_valid_cve,
     normalize_severity,
@@ -31,13 +32,23 @@ def parse_nessus_report(xml_content: bytes) -> list[dict[str, Any]]:
     Returns an empty list on malformed input — ingestion callers treat that as
     "nothing to import" rather than a hard failure.
     """
-    results: list[dict[str, Any]] = []
+    return parse_nessus_scan(xml_content).findings
+
+
+def parse_nessus_scan(xml_content: bytes) -> ParsedScan:
+    """Findings of a .nessus report, plus every host it covered.
+
+    Every ``ReportHost`` counts as scanned, including one without a single CVE:
+    a fully patched host is exactly the case where its old findings must close.
+    """
+    scan = ParsedScan()
+    results = scan.findings
 
     try:
         root = ET.fromstring(xml_content)
     except (ET.ParseError, DefusedXmlException, ValueError) as exc:
         logger.error("Error parsing Nessus file: %s", exc)
-        return results
+        return scan
 
     for host in root.findall(".//ReportHost"):
         ip_address = clean_text(host.attrib.get("name")) or "Unknown"
@@ -52,6 +63,9 @@ def parse_nessus_report(xml_content: bytes) -> list[dict[str, Any]]:
                 os_name = clean_text(prop.text)
             elif tag_name == "host-ip" and ip_address == "Unknown":
                 ip_address = clean_text(prop.text) or "Unknown"
+
+        if ip_address != "Unknown":
+            scan.scanned_addresses.add(ip_address)
 
         for item in host.findall(".//ReportItem"):
             cve_elements = item.findall("cve")
@@ -98,5 +112,9 @@ def parse_nessus_report(xml_content: bytes) -> list[dict[str, Any]]:
                     }
                 )
 
-    logger.info("Parsed %d findings from Nessus report", len(results))
-    return results
+    logger.info(
+        "Parsed %d findings on %d hosts from Nessus report",
+        len(results),
+        len(scan.scanned_addresses),
+    )
+    return scan

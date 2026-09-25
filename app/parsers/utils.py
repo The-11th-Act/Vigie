@@ -13,15 +13,28 @@ task can treat them uniformly:
         "cvss_score": float,   # clamped to [0, 10]
         "severity": str,       # always a valid Severity enum value
     }
+
+File-based parsers also report which hosts the scan covered (``ParsedScan``),
+including hosts that came back clean: that is what tells ingestion a finding
+disappeared because it was fixed, not because its host was out of scope.
 """
 
 import re
+from dataclasses import dataclass, field
 from typing import Any
 
 from app.models.vulnerability import Severity
 
 # CVE-YYYY-NNNN+ — used to reject junk values such as "NOCVE" or "".
 CVE_PATTERN = re.compile(r"^CVE-\d{4}-\d{4,}$", re.IGNORECASE)
+
+
+@dataclass
+class ParsedScan:
+    """Findings of a scan file plus the addresses it actually scanned."""
+
+    findings: list[dict[str, Any]] = field(default_factory=list)
+    scanned_addresses: set[str] = field(default_factory=set)
 
 
 def safe_float(value: Any, default: float = 0.0) -> float:

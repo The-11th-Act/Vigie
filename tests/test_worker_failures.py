@@ -16,6 +16,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from app.parsers.utils import ParsedScan
 from app.worker.tasks import PARSERS, process_scan_file_task
 
 VALID_XML = b"<NessusClientData_v2></NessusClientData_v2>"
@@ -76,7 +77,7 @@ class TestScanTypeDispatch:
         fake_session.close.assert_not_called()
 
     def test_the_scan_type_is_case_insensitive(self, fake_session, staged):
-        with patch.dict(PARSERS, {"nessus": lambda _: []}), run_task() as task:
+        with patch.dict(PARSERS, {"nessus": lambda _: ParsedScan()}), run_task() as task:
             result = task(staged, "NESSUS")
         assert result["status"] == "success"
 
@@ -94,7 +95,10 @@ class TestSuccessPath:
             processed_records=7, new_assets=2, new_vulnerabilities=3, new_associations=7
         )
         with (
-            patch.dict(PARSERS, {"nessus": lambda _: [{"cve_id": "CVE-2021-1"}]}),
+            patch.dict(
+                PARSERS,
+                {"nessus": lambda _: ParsedScan(findings=[{"cve_id": "CVE-2021-1"}])},
+            ),
             patch("app.worker.tasks.ingest_findings", return_value=ingestion_result),
             run_task() as task,
         ):
@@ -108,7 +112,7 @@ class TestSuccessPath:
         from app.services.ingestion import IngestionResult
 
         with (
-            patch.dict(PARSERS, {"nessus": lambda _: []}),
+            patch.dict(PARSERS, {"nessus": lambda _: ParsedScan()}),
             patch("app.worker.tasks.ingest_findings", return_value=IngestionResult()),
             run_task() as task,
         ):

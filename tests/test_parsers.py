@@ -6,8 +6,8 @@ XML entity expansion attacks.
 """
 
 from app.models.vulnerability import Severity
-from app.parsers.nessus import parse_nessus_report
-from app.parsers.openvas import parse_openvas_report
+from app.parsers.nessus import parse_nessus_report, parse_nessus_scan
+from app.parsers.openvas import parse_openvas_report, parse_openvas_scan
 
 VALID_SEVERITIES = {s.value for s in Severity}
 
@@ -148,6 +148,60 @@ class TestOpenVASParser:
 
     def test_malformed_xml_returns_empty_list(self):
         assert parse_openvas_report(b"<broken") == []
+
+
+class TestScannedScope:
+    """Parsers report every host a scan covered, not only hosts with findings.
+
+    Automatic closure relies on it: a host that came back clean is exactly the
+    one whose old findings must close, and a host absent from the file must not
+    count a miss at all.
+    """
+
+    def test_nessus_counts_a_host_without_any_cve(self):
+        report = NESSUS_REPORT.replace(
+            b"</Report>",
+            b'<ReportHost name="10.0.0.2"><HostProperties/></ReportHost></Report>',
+        )
+        scan = parse_nessus_scan(report)
+        assert scan.scanned_addresses == {"10.0.0.1", "10.0.0.2"}
+        assert {f["ip_address"] for f in scan.findings} == {"10.0.0.1"}
+
+    def test_nessus_falls_back_to_the_host_ip_tag(self):
+        report = b"""<NessusClientData_v2><Report>
+          <ReportHost name=""><HostProperties>
+            <tag name="host-ip">10.0.0.3</tag>
+          </HostProperties></ReportHost>
+        </Report></NessusClientData_v2>"""
+        assert parse_nessus_scan(report).scanned_addresses == {"10.0.0.3"}
+
+    def test_openvas_counts_results_without_a_cve(self):
+        scan = parse_openvas_scan(OPENVAS_REPORT)
+        # 192.168.1.6 only raised a non-CVE result: scanned, but no finding.
+        assert "192.168.1.6" in scan.scanned_addresses
+        assert not any(f["ip_address"] == "192.168.1.6" for f in scan.findings)
+
+    def test_openvas_counts_hosts_listed_without_results(self):
+        report = OPENVAS_REPORT.replace(
+            b"</report>", b"<host><ip>192.168.1.9</ip></host></report>"
+        )
+        assert "192.168.1.9" in parse_openvas_scan(report).scanned_addresses
+
+    def test_wrappers_return_the_same_findings(self):
+        assert (
+            parse_nessus_report(NESSUS_REPORT)
+            == parse_nessus_scan(NESSUS_REPORT).findings
+        )
+        assert (
+            parse_openvas_report(OPENVAS_REPORT)
+            == parse_openvas_scan(OPENVAS_REPORT).findings
+        )
+
+    def test_malformed_xml_covers_nothing(self):
+        for parse in (parse_nessus_scan, parse_openvas_scan):
+            scan = parse(b"<broken")
+            assert scan.findings == []
+            assert scan.scanned_addresses == set()
 
 
 BILLION_LAUGHS = b"""<?xml version="1.0"?>

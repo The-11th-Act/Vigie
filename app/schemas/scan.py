@@ -17,6 +17,7 @@ class ScanJobResponse(BaseModel):
     new_vulnerabilities: int = 0
     new_associations: int = 0
     reopened: int = 0
+    auto_remediated: int = 0
     message: str | None = None
     created_at: datetime
     finished_at: datetime | None = None

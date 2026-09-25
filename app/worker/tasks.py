@@ -6,16 +6,18 @@ from app.core.logging import set_request_id
 from app.core.metrics import observe_ingestion
 from app.db.database import SessionLocal
 from app.models.scan import ScanJob, ScanStatus
-from app.parsers.nessus import parse_nessus_report
-from app.parsers.openvas import parse_openvas_report
+from app.parsers.nessus import parse_nessus_scan
+from app.parsers.openvas import parse_openvas_scan
 from app.services.ingestion import ingest_findings
 from app.worker.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 
+# Each parser returns a ParsedScan: the findings and the hosts the file covered,
+# which bounds the automatic closure to what was actually scanned.
 PARSERS = {
-    "nessus": parse_nessus_report,
-    "openvas": parse_openvas_report,
+    "nessus": parse_nessus_scan,
+    "openvas": parse_openvas_scan,
 }
 
 
@@ -59,8 +61,10 @@ def process_scan_file_task(self, scan_file_path: str, scan_type: str, scan_job_i
         with open(scan_file_path, "rb") as handle:
             raw = handle.read()
 
-        findings = parser(raw)
-        result = ingest_findings(db, findings, scan_type)
+        scan = parser(raw)
+        result = ingest_findings(
+            db, scan.findings, scan_type, scanned_addresses=scan.scanned_addresses
+        )
 
         observe_ingestion(scan_type, result.processed_records)
         _apply_result(db, scan_job_id, result)
@@ -174,6 +178,7 @@ def _apply_result(db, scan_job_id, result) -> None:
     job.new_vulnerabilities = result.new_vulnerabilities
     job.new_associations = result.new_associations
     job.reopened = result.reopened
+    job.auto_remediated = result.auto_remediated
     job.message = result.message or None
     job.finished_at = datetime.now(UTC)
     db.commit()

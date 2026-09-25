@@ -72,6 +72,9 @@ class ScanJob(Base):
     reopened: Mapped[int] = mapped_column(
         Integer, default=0, server_default="0", nullable=False
     )
+    auto_remediated: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
 
     message: Mapped[str | None] = mapped_column(Text, nullable=True)
 

@@ -50,31 +50,47 @@ class IngestionResult:
 
 
 def ingest_findings(
-    db: Session, findings: Iterable[dict[str, Any]], scan_source: str
+    db: Session,
+    findings: Iterable[dict[str, Any]],
+    scan_source: str,
+    scanned_addresses: set[str] | None = None,
 ) -> IngestionResult:
     """Upsert assets, vulnerabilities and their associations from findings.
 
     Re-detections refresh ``last_seen_at`` and recompute the risk score rather
     than being silently dropped, so a finding that reappears after being marked
     remediated is reopened instead of hiding from the backlog.
+
+    ``scanned_addresses`` is the scope of a file-based scan: only findings on
+    those hosts can count a miss. ``None`` means the source reports its whole
+    inventory at once (the CrowdStrike sync), so the sweep spans the source.
     """
     findings = list(findings)
-    if not findings:
+    if not findings and not scanned_addresses:
         return IngestionResult(message="No findings in scan file")
 
     now = datetime.now(UTC)
+    new_assets = new_vulns = new_links = reopened = 0
+    seen_ids: set = set()
+    covered_asset_ids: set = set()
 
-    trusted_hostnames = _unambiguous_hostnames(findings)
+    if findings:
+        trusted_hostnames = _unambiguous_hostnames(findings)
 
-    asset_cache, new_assets = _upsert_assets(db, findings, trusted_hostnames)
-    vuln_cache, new_vulns = _upsert_vulnerabilities(db, findings)
-    # Flush so freshly created rows get their primary keys before we link them.
-    db.flush()
+        asset_cache, new_assets = _upsert_assets(db, findings, trusted_hostnames)
+        vuln_cache, new_vulns = _upsert_vulnerabilities(db, findings)
+        # Flush so freshly created rows get their primary keys before we link them.
+        db.flush()
 
-    new_links, reopened, seen_ids = _upsert_associations(
-        db, findings, asset_cache, vuln_cache, scan_source, now, trusted_hostnames
-    )
-    auto_remediated = _close_unseen_findings(db, scan_source, seen_ids, now)
+        new_links, reopened, seen_ids = _upsert_associations(
+            db, findings, asset_cache, vuln_cache, scan_source, now, trusted_hostnames
+        )
+        covered_asset_ids = {asset.id for asset in asset_cache.values()}
+
+    scope = None
+    if scanned_addresses is not None:
+        scope = covered_asset_ids | _asset_ids_at(db, scanned_addresses)
+    auto_remediated = _close_unseen_findings(db, scan_source, seen_ids, scope, now)
     db.commit()
 
     result = IngestionResult(
@@ -84,6 +100,7 @@ def ingest_findings(
         new_associations=new_links,
         reopened=reopened,
         auto_remediated=auto_remediated,
+        message="" if findings else "No findings in scan file",
     )
     logger.info(
         "Ingested %d findings from %s: %d new assets, %d new vulns, %d new links, "
@@ -99,29 +116,42 @@ def ingest_findings(
     return result
 
 
+def _asset_ids_at(db: Session, addresses: set[str]) -> set:
+    """Ids of the known assets currently at any of these addresses."""
+    if not addresses:
+        return set()
+    rows = db.query(Asset.id).filter(Asset.ip_address.in_(addresses)).all()
+    return {row.id for row in rows}
+
+
 def _close_unseen_findings(
-    db: Session, scan_source: str, seen_ids: set, now: datetime
+    db: Session,
+    scan_source: str,
+    seen_ids: set,
+    scope: set | None,
+    now: datetime,
 ) -> int:
     """Close findings this source has stopped reporting.
 
     A patched host used to leave its findings open forever, so the backlog
     drifted away from reality. Closure waits for several consecutive misses
-    rather than one: a partial or failed scan would otherwise wrongly close
-    everything it did not cover.
+    rather than one, so a failed scan cannot wipe the backlog on its own.
+
+    A miss only counts on a host the scan covered (``scope``): a scan of one
+    subnet says nothing about another, and used to close its findings anyway.
     """
     threshold = settings.AUTO_REMEDIATE_AFTER_MISSES
-    if threshold <= 0:
+    if threshold <= 0 or scope == set():
         return 0
 
-    stale = (
-        db.query(AssetVulnerability)
-        .filter(
-            AssetVulnerability.scan_source == scan_source,
-            AssetVulnerability.status == Status.open,
-            AssetVulnerability.id.notin_(seen_ids) if seen_ids else True,
-        )
-        .all()
+    query = db.query(AssetVulnerability).filter(
+        AssetVulnerability.scan_source == scan_source,
+        AssetVulnerability.status == Status.open,
+        AssetVulnerability.id.notin_(seen_ids) if seen_ids else True,
     )
+    if scope is not None:
+        query = query.filter(AssetVulnerability.asset_id.in_(scope))
+    stale = query.all()
 
     closed = 0
     for finding in stale:

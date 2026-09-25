@@ -131,6 +131,34 @@ class TestScanProcessing:
 
         assert seen.get("rid") == "upload-trace-1"
 
+    def test_records_the_findings_a_clean_rescan_closed(
+        self, worker_session, admin_user, tmp_path, monkeypatch
+    ):
+        """Regression: the counter was returned by the task but never stored,
+        because the ScanJob had no column for it."""
+        monkeypatch.setattr(settings, "AUTO_REMEDIATE_AFTER_MISSES", 1)
+        process_scan_file_task.apply(args=(staged_file(tmp_path), "nessus", None)).get()
+
+        clean = NESSUS_REPORT.split(b"<ReportItem")[0] + b"</ReportHost></Report>"
+        clean += b"</NessusClientData_v2>"
+        job = ScanJob(
+            scan_type="nessus", filename="clean.nessus", uploaded_by=admin_user.id
+        )
+        worker_session.add(job)
+        worker_session.commit()
+
+        result = process_scan_file_task.apply(
+            args=(staged_file(tmp_path, clean, "clean.nessus"), "nessus", job.id)
+        ).get()
+
+        assert result["auto_remediated"] == 1
+        # Read the column back rather than the instance: an unmapped attribute
+        # set on the same object would survive a refresh and hide the bug.
+        stored = (
+            worker_session.query(ScanJob.auto_remediated).filter_by(id=job.id).scalar()
+        )
+        assert stored == 1
+
 
 class TestCrowdStrikeSync:
     def test_disabled_sync_is_a_no_op(self, monkeypatch):

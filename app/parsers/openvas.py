@@ -5,6 +5,7 @@ from defusedxml import ElementTree as ET
 from defusedxml.common import DefusedXmlException
 
 from app.parsers.utils import (
+    ParsedScan,
     clean_text,
     is_valid_cve,
     normalize_severity,
@@ -48,15 +49,38 @@ def _extract_cve_ids(nvt_el) -> list[str]:
 
 def parse_openvas_report(xml_content: bytes) -> list[dict[str, Any]]:
     """Parse an OpenVAS/GVM XML report into normalised findings."""
-    results: list[dict[str, Any]] = []
+    return parse_openvas_scan(xml_content).findings
+
+
+def parse_openvas_scan(xml_content: bytes) -> ParsedScan:
+    """Findings of an OpenVAS/GVM report, plus every host it covered.
+
+    A host counts as scanned when the report lists it in a ``<host><ip>`` block
+    or when any result — CVE or not — was raised against it, so a host that
+    came back clean still lets its old findings close.
+    """
+    scan = ParsedScan()
+    results = scan.findings
 
     try:
         root = ET.fromstring(xml_content)
     except (ET.ParseError, DefusedXmlException, ValueError) as exc:
         logger.error("Error parsing OpenVAS file: %s", exc)
-        return results
+        return scan
+
+    for ip_el in root.findall(".//host/ip"):
+        address = clean_text(ip_el.text)
+        if address:
+            scan.scanned_addresses.add(address)
 
     for result in root.findall(".//results/result"):
+        host_el = result.find("host")
+        ip_address = (
+            clean_text(host_el.text if host_el is not None else None) or "Unknown"
+        )
+        if ip_address != "Unknown":
+            scan.scanned_addresses.add(ip_address)
+
         nvt_el = result.find("nvt")
         if nvt_el is None:
             continue
@@ -64,11 +88,6 @@ def parse_openvas_report(xml_content: bytes) -> list[dict[str, Any]]:
         cve_ids = _extract_cve_ids(nvt_el)
         if not cve_ids:
             continue
-
-        host_el = result.find("host")
-        ip_address = (
-            clean_text(host_el.text if host_el is not None else None) or "Unknown"
-        )
 
         hostname_el = result.find("host/hostname")
         hostname = clean_text(hostname_el.text if hostname_el is not None else None)
@@ -111,5 +130,9 @@ def parse_openvas_report(xml_content: bytes) -> list[dict[str, Any]]:
                 }
             )
 
-    logger.info("Parsed %d findings from OpenVAS report", len(results))
-    return results
+    logger.info(
+        "Parsed %d findings on %d hosts from OpenVAS report",
+        len(results),
+        len(scan.scanned_addresses),
+    )
+    return scan

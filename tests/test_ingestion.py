@@ -325,3 +325,60 @@ class TestAutomaticClosure:
 
         assert result.auto_remediated == 1
         assert result.as_dict()["auto_remediated"] == 1
+
+
+class TestScopedClosure:
+    """A file-based scan only says something about the hosts it covered."""
+
+    @pytest.fixture(autouse=True)
+    def threshold(self, monkeypatch):
+        monkeypatch.setattr(settings, "AUTO_REMEDIATE_AFTER_MISSES", 2)
+
+    def other_host_scan(self, db_session):
+        return ingest_findings(
+            db_session,
+            [finding(ip="10.0.0.2", cve="CVE-2024-9999", hostname="other")],
+            "nessus",
+            scanned_addresses={"10.0.0.2"},
+        )
+
+    def test_a_host_outside_the_scan_counts_no_miss(self, db_session):
+        """Regression: scanning one subnet used to close another's findings."""
+        ingest_findings(db_session, [finding()], "nessus")
+
+        for _ in range(settings.AUTO_REMEDIATE_AFTER_MISSES + 1):
+            self.other_host_scan(db_session)
+
+        untouched = link_for(db_session)
+        assert untouched.status == Status.open
+        assert untouched.missed_scans == 0
+
+    def test_a_clean_host_in_scope_gets_its_findings_closed(self, db_session):
+        """The patched host reports nothing at all: that is the case to close."""
+        ingest_findings(db_session, [finding()], "nessus")
+
+        result = None
+        for _ in range(settings.AUTO_REMEDIATE_AFTER_MISSES):
+            result = ingest_findings(
+                db_session, [], "nessus", scanned_addresses={"10.0.0.1"}
+            )
+
+        assert link_for(db_session).status == Status.remediated
+        assert result.auto_remediated == 1
+        assert result.message == "No findings in scan file"
+
+    def test_a_scan_covering_nothing_closes_nothing(self, db_session):
+        ingest_findings(db_session, [finding()], "nessus")
+
+        for _ in range(settings.AUTO_REMEDIATE_AFTER_MISSES + 1):
+            ingest_findings(db_session, [], "nessus", scanned_addresses=set())
+
+        assert link_for(db_session).status == Status.open
+
+    def test_an_unknown_address_in_scope_is_harmless(self, db_session):
+        ingest_findings(db_session, [finding()], "nessus")
+
+        result = ingest_findings(db_session, [], "nessus", scanned_addresses={"10.9.9.9"})
+
+        assert result.auto_remediated == 0
+        assert link_for(db_session).missed_scans == 0
