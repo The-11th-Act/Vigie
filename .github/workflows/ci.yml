@@ -95,6 +95,10 @@ jobs:
           DATABASE_URL: postgresql://vigie_ci:vigie_ci@localhost:5432/vigie_ci
         run: |
           alembic upgrade head
+          # Les tests construisent le schema a partir des modeles (create_all) :
+          # une colonne ajoutee au modele sans migration y passerait inapercue,
+          # pour n'echouer qu'en production. alembic check compare les deux.
+          alembic check
           # Le retour arriere doit fonctionner : une migration qu'on ne peut
           # pas annuler n'est pas deployable (point D7).
           alembic downgrade base
