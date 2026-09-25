@@ -187,7 +187,11 @@ services:
     read_only: true
     tmpfs:
       - /tmp
-      - /var/cache/nginx
+      # Nginx tourne en utilisateur nginx (uid 101 dans l'image officielle) et
+      # doit creer ses repertoires temporaires ici. Un tmpfs appartient a root
+      # par defaut : sans uid/gid, Nginx echouait au demarrage (mkdir
+      # client_temp: Permission denied) et redemarrait en boucle.
+      - /var/cache/nginx:uid=101,gid=101
     security_opt:
       - no-new-privileges:true
     deploy:
