@@ -3,7 +3,7 @@
 # Même image que la base : pg_dump doit être de la même version majeure que le
 # serveur, sinon il refuse de sauvegarder (ou produit une archive que le
 # serveur ne sait pas relire). Changer l'une impose de changer l'autre.
-FROM postgres:15-alpine
+FROM postgres:18-alpine
 
 # age : chiffrement asymétrique des sauvegardes (https://age-encryption.org).
 RUN apk add --no-cache age
