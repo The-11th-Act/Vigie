@@ -282,3 +282,28 @@ class TestKevSLA:
         monkeypatch.setattr(settings, "KEV_SLA_DAYS", 0)
         medium = calculate_remediation_deadline("Medium", self.DETECTED)
         assert apply_kev_sla(medium, self.DETECTED, None) == medium
+
+
+class TestRiskRank:
+    """The clamp at 10.0 tied findings that are not equally urgent."""
+
+    def test_the_rank_is_the_unclamped_score(self):
+        exposed_kev = compute_risk(
+            RiskInputs(6.0, "Critical", in_kev=True, internet_facing=True)
+        )
+        assert exposed_kev.score == 10.0
+        assert exposed_kev.rank == 13.5  # 6.0 x 1.5 x 1.5
+
+    def test_the_rank_tells_saturated_findings_apart(self):
+        """Seen on real data: an internal Log4Shell came before an exposed
+        PAN-OS, both at 10.0."""
+        internal = compute_risk(RiskInputs(10.0, "Medium", in_kev=True))
+        exposed = compute_risk(
+            RiskInputs(10.0, "Medium", in_kev=True, internet_facing=True)
+        )
+        assert internal.score == exposed.score == 10.0
+        assert exposed.rank > internal.rank
+
+    def test_below_the_ceiling_rank_and_score_agree(self):
+        breakdown = compute_risk(RiskInputs(5.0, "Medium", epss_score=0.2))
+        assert breakdown.rank == breakdown.score

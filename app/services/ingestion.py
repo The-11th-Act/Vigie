@@ -353,9 +353,9 @@ def _upsert_associations(
                 status=Status.open,
                 scan_source=scan_source,
                 remediation_deadline=deadline,
-                risk_score=_score(asset, vuln, deadline, now),
                 last_seen_at=now,
             )
+            _apply_score(assoc, asset, vuln, deadline, now)
             new_assocs.append(assoc)
             assoc_cache[key] = assoc
             continue
@@ -379,9 +379,7 @@ def _upsert_associations(
                 assoc.remediation_deadline, assoc.detected_at, vuln.kev_date_added
             )
 
-        assoc.risk_score = _score(
-            asset, vuln, assoc.remediation_deadline or deadline, now
-        )
+        _apply_score(assoc, asset, vuln, assoc.remediation_deadline or deadline, now)
 
     for i in range(0, len(new_assocs), CHUNK_SIZE):
         db.add_all(new_assocs[i : i + CHUNK_SIZE])
@@ -394,11 +392,15 @@ def _upsert_associations(
     return len(new_assocs), reopened, seen_ids
 
 
-def _score(asset: Asset, vuln: Vulnerability, deadline, now: datetime) -> float:
+def _apply_score(
+    assoc: AssetVulnerability, asset: Asset, vuln: Vulnerability, deadline, now: datetime
+) -> None:
     """Score from the stored vulnerability, not the scanner's copy of it.
 
     Two scanners can report different CVSS values for one CVE; the stored one is
     what the daily rescoring uses, so scoring from anything else here would only
     last until the next night.
     """
-    return compute_risk(RiskInputs.of(asset, vuln, deadline), now).score
+    breakdown = compute_risk(RiskInputs.of(asset, vuln, deadline), now)
+    assoc.risk_score = breakdown.score
+    assoc.risk_rank = breakdown.rank

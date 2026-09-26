@@ -116,6 +116,10 @@ class RiskFactor:
 class RiskBreakdown:
     score: float
     factors: tuple[RiskFactor, ...]
+    # The same computation before the [0, 10] clamp. It orders findings the
+    # clamp would tie: several can sit at 10.0, and the exposed one with a KEV
+    # entry must still come before an internal one.
+    rank: float = 0.0
 
 
 def compute_risk(inputs: RiskInputs, now: datetime | None = None) -> RiskBreakdown:
@@ -198,7 +202,11 @@ def compute_risk(inputs: RiskInputs, now: datetime | None = None) -> RiskBreakdo
         )
         raw = KEV_RISK_FLOOR
 
-    return RiskBreakdown(score=min(10.0, max(0.0, round(raw, 2))), factors=tuple(factors))
+    return RiskBreakdown(
+        score=min(10.0, max(0.0, round(raw, 2))),
+        factors=tuple(factors),
+        rank=max(0.0, round(raw, 2)),
+    )
 
 
 def calculate_risk_score(

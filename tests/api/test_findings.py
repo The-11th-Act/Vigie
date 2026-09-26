@@ -326,3 +326,34 @@ class TestThreatFilters:
             "/api/v1/vulnerabilities/findings", params={"kev_only": True}
         )
         assert response.json()["total"] == 1
+
+
+class TestSaturatedScores:
+    def test_findings_at_the_ceiling_are_ordered_by_their_unclamped_rank(
+        self, client, db_session
+    ):
+        """Regression: among findings at 10.0 the order fell back to insertion.
+        The more urgent one is created first here, so an id-based order would
+        put it last."""
+        for ip, cve, rank in (
+            ("10.80.0.1", "CVE-2024-8001", 13.5),
+            ("10.80.0.2", "CVE-2024-8002", 11.0),
+        ):
+            asset = Asset(ip_address=ip)
+            vuln = Vulnerability(
+                cve_id=cve, title=cve, cvss_score=10.0, severity="Critical"
+            )
+            db_session.add_all([asset, vuln])
+            db_session.flush()
+            db_session.add(
+                AssetVulnerability(
+                    asset_id=asset.id,
+                    vulnerability_id=vuln.id,
+                    status=Status.open,
+                    risk_score=10.0,
+                    risk_rank=rank,
+                )
+            )
+        db_session.commit()
+
+        assert cves(client) == ["CVE-2024-8001", "CVE-2024-8002"]

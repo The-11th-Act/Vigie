@@ -42,6 +42,8 @@ def make_finding(db_session):
             vulnerability_id=vuln.id,
             status=status,
             risk_score=risk_score,
+            # Stored score and rank move together; below 10 they are equal.
+            risk_rank=risk_score,
             remediation_deadline=deadline,
         )
         db_session.add(finding)

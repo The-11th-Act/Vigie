@@ -39,8 +39,9 @@ def rescore_open_findings(db: Session, *criteria, now: datetime | None = None) -
         inputs = RiskInputs.of(
             finding.asset, finding.vulnerability, finding.remediation_deadline
         )
-        score = compute_risk(inputs, now).score
-        if score != finding.risk_score:
-            finding.risk_score = score
+        breakdown = compute_risk(inputs, now)
+        if (breakdown.score, breakdown.rank) != (finding.risk_score, finding.risk_rank):
+            finding.risk_score = breakdown.score
+            finding.risk_rank = breakdown.rank
             changed += 1
     return changed
