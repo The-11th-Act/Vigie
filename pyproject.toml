@@ -21,6 +21,10 @@ addopts = "-q --strict-markers --strict-config"
 filterwarnings = [
     # A deprecation we introduce ourselves must fail the build, not scroll by.
     "error::DeprecationWarning:app.*",
+    # Starlette signale ses depreciations par une sous-classe de UserWarning,
+    # que la ligne precedente n'attrape pas : un nom de statut HTTP deprecie
+    # passait donc sans bruit jusqu'au jour de son retrait.
+    "error::starlette.exceptions.StarletteDeprecationWarning",
 ]
 markers = [
     "postgres: requires a real PostgreSQL instance (skipped on SQLite)",

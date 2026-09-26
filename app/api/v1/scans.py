@@ -214,7 +214,7 @@ async def _stream_to_disk(file: UploadFile, destination: str, max_bytes: int) ->
                     out.close()
                     _discard(destination)
                     raise HTTPException(
-                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        status_code=status.HTTP_413_CONTENT_TOO_LARGE,
                         detail=(
                             f"File exceeds the maximum upload size of "
                             f"{max_bytes // (1024 * 1024)} MB"

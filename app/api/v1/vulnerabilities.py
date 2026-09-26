@@ -234,7 +234,7 @@ def update_finding_status(
 
     if update_in.status in STATUSES_REQUIRING_NOTE and not update_in.status_note:
         raise HTTPException(
-            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=http_status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=(
                 f"A status_note is required to set status to "
                 f"'{update_in.status.value}'"

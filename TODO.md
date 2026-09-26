@@ -208,12 +208,15 @@ ci-dessous avec la mention *(items 5-18)*.
 - [x] Couverture `pytest --cov` publiée en artefact
 - [x] Le job `compose` vérifie qu'aucun réglage de développement (`--reload`, bind mount,
       port de base publié, serveur Vite) ne survit à la surcouche de production
-- [ ] Dependabot et scan d'image Trivy (le reste de D6 est en place)
+- [x] Dependabot et scan d'image Trivy *(26/09/2026 : Dependabot hebdomadaire sur
+      pip, npm, actions, images ; Trivy bloquant sur CRITICAL corrigeable pour les 3
+      images — le premier scan a fait remplacer nginx 1.27, retirer pip/setuptools de
+      l'image API et gosu de l'image de sauvegarde)*
 
 ### D3. Build Docker
 - [x] Multi-stage : le compilateur reste dans l'étage de build
 - [x] `HEALTHCHECK` dans le `Dockerfile`, lisible hors docker-compose
-- [ ] Épingler l'image de base par digest (toujours `python:3.11-slim`)
+- [x] Épingler les images de base par digest *(26/09/2026, tenus à jour par Dependabot)*
 
 ### T4. Outillage qualité
 - [x] `pyproject.toml` : `ruff` (E, F, I, B, UP, S, C4), `black`, `pytest`, `coverage`
@@ -224,7 +227,8 @@ ci-dessous avec la mention *(items 5-18)*.
 - [x] `lxml` retiré (importé nulle part)
 - [x] Versions bornées par le haut, `requirements-dev.txt` séparé
 - [x] `@app.on_event("startup")` migré vers `lifespan`
-- [ ] Lockfile figé (`pip-tools` / `uv`) — les bornes limitent la dérive sans la supprimer
+- [x] Lockfile figé : `requirements.lock.txt` (uv, hachages), installé par l'image et
+      la CI, synchronisation vérifiée en CI *(26/09/2026)*
 - [x] `requests` reste, à juste titre : `parsers/crowdstrike.py` est désormais un vrai
       client Falcon Spotlight *(items 5-18, point 5)*
 
