@@ -38,8 +38,28 @@ updates:
       - /deploy/backup
     schedule:
       interval: weekly
+    ignore:
+      # Une majeure de PostgreSQL ne demarre pas sur les donnees de la
+      # precedente : elle demande pg_upgrade ou une sauvegarde/restauration, et
+      # la meme version pour la base et la sauvegarde. C'est une operation
+      # planifiee, pas une PR de routine.
+      - dependency-name: postgres
+        update-types: ["version-update:semver-major"]
+      # Changer de version de Python impose de regenerer le lockfile pour elle.
+      - dependency-name: python
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
 
   - package-ecosystem: docker-compose
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # Une majeure de PostgreSQL ne demarre pas sur les donnees de la
+      # precedente : elle demande pg_upgrade ou une sauvegarde/restauration, et
+      # la meme version pour la base et la sauvegarde. C'est une operation
+      # planifiee, pas une PR de routine.
+      - dependency-name: postgres
+        update-types: ["version-update:semver-major"]
+      # Changer de version de Python impose de regenerer le lockfile pour elle.
+      - dependency-name: python
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
