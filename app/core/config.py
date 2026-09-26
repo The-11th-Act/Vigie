@@ -95,6 +95,11 @@ class Settings(BaseSettings):
     # penalty grows with time, so scores must move even when no scan comes in.
     RESCORE_HOUR_UTC: int = Field(default=2, ge=0, le=23)
 
+    # How long a risk acceptance lasts when none is given, and the longest
+    # one may last. Expired acceptances are reopened by the daily job.
+    RISK_ACCEPTANCE_DEFAULT_DAYS: int = Field(default=90, ge=1)
+    RISK_ACCEPTANCE_MAX_DAYS: int = Field(default=365, ge=1)
+
     # Days to fix a CVE listed in CISA KEV, counted from its detection or its
     # listing, whichever is later. Only ever shortens a deadline. 0 disables it.
     KEV_SLA_DAYS: int = Field(default=14, ge=0)
@@ -178,6 +183,14 @@ class Settings(BaseSettings):
                 "allowed; list the exact origins instead."
             )
         return v
+
+    @model_validator(mode="after")
+    def validate_risk_acceptance(self) -> "Settings":
+        if self.RISK_ACCEPTANCE_DEFAULT_DAYS > self.RISK_ACCEPTANCE_MAX_DAYS:
+            raise ValueError(
+                "RISK_ACCEPTANCE_DEFAULT_DAYS cannot exceed RISK_ACCEPTANCE_MAX_DAYS"
+            )
+        return self
 
     @model_validator(mode="after")
     def validate_secret_key(self) -> "Settings":

@@ -33,6 +33,7 @@ from app.parsers.threat_feeds import (
 )
 from app.services.remediation import apply_kev_sla
 from app.services.rescoring import rescore_open_findings
+from app.services.risk_acceptance import reopen_for_kev
 from app.services.risk_scoring import epss_band
 
 logger = logging.getLogger(__name__)
@@ -185,6 +186,13 @@ def apply_kev(
         )
 
     db.flush()
+    # A risk accepted as theoretical is no longer theoretical: reopened first,
+    # so the new KEV deadline and score apply to it too.
+    reopened = reopen_for_kev(
+        db, newly_listed, {v.id: v.kev_date_added for v in listed if v.id in newly_listed}
+    )
+    if reopened:
+        logger.warning("%d accepted finding(s) reopened: their CVE entered KEV", reopened)
     _tighten_deadlines(db, newly_listed)
     rescored = _rescore(
         db, [*newly_listed, *(v.id for v in flagged if not v.in_kev)], now

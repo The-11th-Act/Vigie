@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi import status as http_status
@@ -6,6 +6,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session, contains_eager, joinedload
 
 from app.api.deps import get_or_404
+from app.core.config import settings
 from app.core.security import decode_token, require_admin
 from app.db.database import get_db
 from app.models.asset import Asset
@@ -241,9 +242,12 @@ def update_finding_status(
             ),
         )
 
+    accepted_until = _acceptance_end(update_in)
+
     previous_status = _status_value(finding.status)
 
     finding.status = update_in.status
+    finding.accepted_until = accepted_until
     if update_in.status_note is not None:
         finding.status_note = update_in.status_note
 
@@ -263,6 +267,7 @@ def update_finding_status(
             old_status=previous_status,
             new_status=_status_value(update_in.status),
             status_note=update_in.status_note,
+            accepted_until=accepted_until,
         )
     )
 
@@ -288,6 +293,46 @@ def get_finding_history(
         .order_by(FindingAuditLog.id.desc())
         .all()
     )
+
+
+def _acceptance_end(update_in: AssetVulnerabilityUpdate) -> datetime | None:
+    """When a risk acceptance ends: requested, or the default; never unbounded.
+
+    An acceptance without an end date was a way to make a finding vanish from
+    the backlog for good. It now lasts RISK_ACCEPTANCE_DEFAULT_DAYS unless the
+    analyst says otherwise, and at most RISK_ACCEPTANCE_MAX_DAYS.
+    """
+    requested = update_in.accepted_until
+    if update_in.status != Status.risk_accepted:
+        if requested is not None:
+            raise HTTPException(
+                status_code=http_status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="accepted_until only applies to 'Risk Accepted'",
+            )
+        return None
+
+    now = datetime.now(UTC)
+    if requested is None:
+        return now + timedelta(days=settings.RISK_ACCEPTANCE_DEFAULT_DAYS)
+
+    if requested.tzinfo is None:
+        requested = requested.replace(tzinfo=UTC)
+    if requested <= now:
+        raise HTTPException(
+            status_code=http_status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="accepted_until must be in the future",
+        )
+    # A minute of slack, so "exactly the maximum" picked in a form is accepted.
+    latest = now + timedelta(days=settings.RISK_ACCEPTANCE_MAX_DAYS, minutes=1)
+    if requested > latest:
+        raise HTTPException(
+            status_code=http_status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=(
+                "A risk acceptance lasts at most "
+                f"{settings.RISK_ACCEPTANCE_MAX_DAYS} days"
+            ),
+        )
+    return requested
 
 
 def _status_value(status) -> str:

@@ -164,3 +164,58 @@ describe('FindingsBacklog — threat context', () => {
     })
   })
 })
+
+describe('FindingsBacklog — risk acceptance', () => {
+  it('sends the chosen end date with the acceptance', async () => {
+    mockOneFinding()
+    vulnerabilityService.updateFinding.mockResolvedValue({ data: {} })
+    const user = userEvent.setup()
+    render(<FindingsBacklog />)
+
+    await selectStatus(user, 'Risk Accepted')
+    await user.type(screen.getByPlaceholderText(/justification/i), 'Isolated host.')
+    const until = screen.getByLabelText(/accepted until/i)
+    await user.clear(until)
+    await user.type(until, '2027-01-15')
+    await user.click(screen.getByRole('button', { name: /save/i }))
+
+    await waitFor(() => {
+      expect(vulnerabilityService.updateFinding).toHaveBeenCalledWith(1, {
+        status: 'Risk Accepted',
+        status_note: 'Isolated host.',
+        accepted_until: new Date('2027-01-15T23:59:00').toISOString(),
+      })
+    })
+  })
+
+  it('lets the API pick the default duration when no date is given', async () => {
+    mockOneFinding()
+    vulnerabilityService.updateFinding.mockResolvedValue({ data: {} })
+    const user = userEvent.setup()
+    render(<FindingsBacklog />)
+
+    await selectStatus(user, 'Risk Accepted')
+    await user.type(screen.getByPlaceholderText(/justification/i), 'Isolated host.')
+    await user.click(screen.getByRole('button', { name: /save/i }))
+
+    await waitFor(() => {
+      expect(vulnerabilityService.updateFinding).toHaveBeenCalledWith(1, {
+        status: 'Risk Accepted',
+        status_note: 'Isolated host.',
+        accepted_until: undefined,
+      })
+    })
+  })
+
+  it('shows until when an accepted finding stays accepted', async () => {
+    vulnerabilityService.getFindings.mockResolvedValue({
+      data: {
+        total: 1,
+        items: [{ ...FINDING, status: 'Risk Accepted', accepted_until: '2027-01-15T12:00:00Z' }],
+      },
+    })
+    render(<FindingsBacklog />)
+
+    expect(await screen.findByText(/^until /)).toBeInTheDocument()
+  })
+})

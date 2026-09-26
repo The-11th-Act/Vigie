@@ -14,6 +14,17 @@ const EPSS_THRESHOLDS = [
   { value: '0.01', label: 'EPSS ≥ 1%' },
 ];
 
+// A date picked in the form means "until the end of that day", local time.
+function endOfDay(isoDate) {
+  return new Date(`${isoDate}T23:59:00`).toISOString();
+}
+
+function tomorrow() {
+  const day = new Date();
+  day.setDate(day.getDate() + 1);
+  return day.toISOString().slice(0, 10);
+}
+
 function formatEpss(score) {
   const percent = score * 100;
   return `EPSS ${percent < 10 ? percent.toFixed(1) : Math.round(percent)}%`;
@@ -71,14 +82,15 @@ export default function FindingsBacklog() {
 
   const totalPages = data ? Math.ceil(data.total / PAGE_SIZE) : 0;
 
-  const getRow = (id) => rowState[id] || { status: '', note: '', submitting: false, error: null };
+  const getRow = (id) =>
+    rowState[id] || { status: '', note: '', until: '', submitting: false, error: null };
 
   const setRow = (id, patch) => {
     setRowState((prev) => ({ ...prev, [id]: { ...getRow(id), ...patch } }));
   };
 
   const handleStatusChange = (finding, newStatus) => {
-    setRow(finding.id, { status: newStatus, note: '', error: null });
+    setRow(finding.id, { status: newStatus, note: '', until: '', error: null });
   };
 
   const handleSubmit = async (finding) => {
@@ -90,8 +102,11 @@ export default function FindingsBacklog() {
       await vulnerabilityService.updateFinding(finding.id, {
         status: nextStatus,
         status_note: row.note || undefined,
+        // Left empty, the API applies its default duration.
+        accepted_until:
+          nextStatus === 'Risk Accepted' && row.until ? endOfDay(row.until) : undefined,
       });
-      setRow(finding.id, { submitting: false, status: '', note: '' });
+      setRow(finding.id, { submitting: false, status: '', note: '', until: '' });
       refetch();
     } catch (err) {
       setRow(finding.id, {
@@ -265,7 +280,17 @@ export default function FindingsBacklog() {
                             <div style={{ fontSize: '0.75rem', color: 'var(--high)' }}>Overdue</div>
                           )}
                         </td>
-                        <td>{finding.status}</td>
+                        <td>
+                          {finding.status}
+                          {finding.accepted_until && (
+                            <div
+                              style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}
+                              title="Reopened automatically after this date"
+                            >
+                              until {formatDate(finding.accepted_until)}
+                            </div>
+                          )}
+                        </td>
                         <td>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', minWidth: 220 }}>
                             <select
@@ -292,6 +317,23 @@ export default function FindingsBacklog() {
                                   color: 'var(--text-main)', fontSize: '0.8rem', outline: 'none', resize: 'vertical',
                                 }}
                               />
+                            )}
+
+                            {isChanged && pendingStatus === 'Risk Accepted' && (
+                              <label style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                Accepted until (empty: default duration)
+                                <input
+                                  type="date"
+                                  min={tomorrow()}
+                                  value={row.until}
+                                  onChange={(e) => setRow(finding.id, { until: e.target.value })}
+                                  style={{
+                                    padding: '0.3rem 0.5rem', background: 'rgba(255,255,255,0.05)',
+                                    border: '1px solid var(--border)', borderRadius: '6px',
+                                    color: 'var(--text-main)', fontSize: '0.8rem', outline: 'none',
+                                  }}
+                                />
+                              </label>
                             )}
 
                             {isChanged && (

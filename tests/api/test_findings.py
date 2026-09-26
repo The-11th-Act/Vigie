@@ -2,6 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from app.core.config import settings
 from app.models.asset import Asset
 from app.models.vulnerability import AssetVulnerability, Status, Vulnerability
 
@@ -357,3 +358,73 @@ class TestSaturatedScores:
         db_session.commit()
 
         assert cves(client) == ["CVE-2024-8001", "CVE-2024-8002"]
+
+
+def accept(client, finding, **extra):
+    return client.patch(
+        f"/api/v1/vulnerabilities/findings/{finding.id}",
+        json={"status": "Risk Accepted", "status_note": "Compensating control.", **extra},
+    )
+
+
+def parse(value: str) -> datetime:
+    moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return moment if moment.tzinfo else moment.replace(tzinfo=UTC)
+
+
+class TestRiskAcceptanceExpiry:
+    """An acceptance used to close a finding for good; it now has an end."""
+
+    def test_an_acceptance_gets_the_default_duration(self, client, finding):
+        response = accept(client, finding)
+
+        assert response.status_code == 200
+        until = parse(response.json()["accepted_until"])
+        expected = datetime.now(UTC) + timedelta(
+            days=settings.RISK_ACCEPTANCE_DEFAULT_DAYS
+        )
+        assert abs(until - expected) < timedelta(minutes=5)
+
+    def test_an_explicit_end_date_is_kept(self, client, finding):
+        wanted = (datetime.now(UTC) + timedelta(days=30)).replace(microsecond=0)
+
+        response = accept(client, finding, accepted_until=wanted.isoformat())
+
+        assert parse(response.json()["accepted_until"]) == wanted
+
+    def test_a_past_end_date_is_refused(self, client, finding):
+        past = (datetime.now(UTC) - timedelta(days=1)).isoformat()
+        assert accept(client, finding, accepted_until=past).status_code == 422
+
+    def test_an_end_date_beyond_the_maximum_is_refused(self, client, finding):
+        too_far = datetime.now(UTC) + timedelta(
+            days=settings.RISK_ACCEPTANCE_MAX_DAYS + 2
+        )
+        response = accept(client, finding, accepted_until=too_far.isoformat())
+        assert response.status_code == 422
+
+    def test_an_end_date_only_goes_with_an_acceptance(self, client, finding):
+        response = client.patch(
+            f"/api/v1/vulnerabilities/findings/{finding.id}",
+            json={
+                "status": "Remediated",
+                "accepted_until": (datetime.now(UTC) + timedelta(days=5)).isoformat(),
+            },
+        )
+        assert response.status_code == 422
+
+    def test_leaving_the_acceptance_clears_its_end(self, client, finding):
+        accept(client, finding)
+
+        response = client.patch(
+            f"/api/v1/vulnerabilities/findings/{finding.id}", json={"status": "Open"}
+        )
+
+        assert response.json()["accepted_until"] is None
+
+    def test_the_audit_log_records_the_end_date(self, client, finding):
+        accept(client, finding)
+
+        history = client.get(f"/api/v1/vulnerabilities/findings/{finding.id}/history")
+
+        assert history.json()[0]["accepted_until"] is not None

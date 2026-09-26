@@ -237,7 +237,7 @@ class TestDailyRescoring:
 
         result = rescore_open_findings_task.apply().get()
 
-        assert result == {"status": "success", "rescored": 1}
+        assert result == {"status": "success", "rescored": 1, "acceptances_expired": 0}
         worker_session.rollback()  # anything left uncommitted would vanish here
         assert finding.risk_score == 7.5  # 6.0 + the 1.5 cap for 90 days late
 

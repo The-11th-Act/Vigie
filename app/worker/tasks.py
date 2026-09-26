@@ -11,6 +11,7 @@ from app.parsers.nessus import parse_nessus_scan
 from app.parsers.openvas import parse_openvas_scan
 from app.services.ingestion import ingest_findings
 from app.services.rescoring import rescore_open_findings
+from app.services.risk_acceptance import expire_risk_acceptances
 from app.services.threat_intel import refresh_threat_intel
 from app.worker.celery_app import celery_app
 
@@ -164,10 +165,17 @@ def rescore_open_findings_task():
     """
     db = SessionLocal()
     try:
+        # Expired acceptances first: once reopened, they are part of the open
+        # backlog this run rescores.
+        expired = expire_risk_acceptances(db)
         changed = rescore_open_findings(db)
         db.commit()
-        logger.info("Daily rescoring updated %d open finding(s)", changed)
-        return {"status": "success", "rescored": changed}
+        logger.info(
+            "Daily run: %d risk acceptance(s) expired, %d open finding(s) rescored",
+            expired,
+            changed,
+        )
+        return {"status": "success", "rescored": changed, "acceptances_expired": expired}
     except Exception:
         db.rollback()
         logger.exception("Daily rescoring failed")
