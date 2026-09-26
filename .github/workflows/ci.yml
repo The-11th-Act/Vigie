@@ -240,6 +240,38 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Build de l'image de sauvegarde
+        uses: docker/build-push-action@v7
+        with:
+          context: ./deploy/backup
+          push: false
+          load: true
+          tags: vigie-backup:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Une plateforme de gestion des vulnerabilites ne peut pas livrer d'images
+      # vulnerables. Bloquant sur CRITICAL disposant d'un correctif (une faille
+      # sans correctif ne se corrige pas en changeant de digest) ; les HIGH sont
+      # affiches sans bloquer. Exceptions motivees : .trivyignore.
+      - uses: aquasecurity/setup-trivy@v0.3.1
+        with:
+          version: v0.74.0
+          cache: true
+
+      - name: Scan Trivy des images
+        run: |
+          set -euo pipefail
+          for image in vigie-api:ci vigie-frontend:ci vigie-backup:ci; do
+            echo "::group::Trivy $image"
+            trivy image --quiet --severity HIGH,CRITICAL --ignore-unfixed \
+              --ignorefile .trivyignore --exit-code 0 "$image"
+            echo "::endgroup::"
+            trivy image --quiet --severity CRITICAL --ignore-unfixed \
+              --ignorefile .trivyignore --exit-code 1 --format table "$image" \
+              || { echo "::error::$image contient une faille CRITICAL corrigeable"; exit 1; }
+          done
+
       # Verification du point D2 : sans .dockerignore, le COPY . . embarquait
       # le .env reel — donc le SECRET_KEY — dans une couche d'image. Ce test
       # empeche la regression, qui serait invisible autrement.

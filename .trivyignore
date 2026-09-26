@@ -1,0 +1,6 @@
+# Exceptions au scan Trivy des images (job CI « Build des images »).
+#
+# Une ligne par identifiant (CVE-… ou GHSA-…), précédée d'un commentaire qui dit
+# pourquoi la faille ne s'applique pas ici et quand revoir l'exception.
+# Une exception sans justification n'a rien à faire ici : mieux vaut changer de
+# digest ou de dépendance.
