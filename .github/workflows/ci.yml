@@ -31,7 +31,13 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-dev.txt
 
-      - run: pip install -r requirements-dev.txt
+      # Les versions de l'image d'abord, puis les outils de dev : les tests
+      # tournent sur ce qui sera deploye, pas sur la derniere version publiee.
+      # (deux commandes : un fichier avec hachages impose des hachages a tout
+      # ce qui est installe dans la meme commande, et le dev n en a pas)
+      - run: |
+          pip install --require-hashes -r requirements.lock.txt
+          pip install -r requirements-dev.txt
 
       - name: ruff
         run: ruff check --output-format=github .
@@ -80,7 +86,13 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-dev.txt
 
-      - run: pip install -r requirements-dev.txt
+      # Les versions de l'image d'abord, puis les outils de dev : les tests
+      # tournent sur ce qui sera deploye, pas sur la derniere version publiee.
+      # (deux commandes : un fichier avec hachages impose des hachages a tout
+      # ce qui est installe dans la meme commande, et le dev n en a pas)
+      - run: |
+          pip install --require-hashes -r requirements.lock.txt
+          pip install -r requirements-dev.txt
 
       - name: Suite complete (SQLite, rapide)
         env:
@@ -135,7 +147,18 @@ jobs:
       # Une plateforme de gestion de vulnerabilites qui embarque des
       # dependances vulnerables perd sa credibilite avant sa securite.
       - name: pip-audit
-        run: pip-audit -r requirements.txt --strict
+        run: pip-audit -r requirements.lock.txt --strict --disable-pip
+
+      # Le lockfile doit rester l'image de requirements.txt. uv reprend les
+      # versions deja epinglees : regenerer ne change rien tant que les deux
+      # fichiers concordent, et une nouvelle version publiee ne fait pas
+      # echouer ce controle.
+      - name: Lockfile synchronise avec requirements.txt
+        run: |
+          pip install uv
+          uv pip compile requirements.txt --generate-hashes --python-version 3.11 \
+            --python-platform x86_64-manylinux_2_28 --no-header --quiet -o requirements.lock.txt
+          git diff --exit-code requirements.lock.txt
 
       - uses: actions/setup-node@v7
         with:

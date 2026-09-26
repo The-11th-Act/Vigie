@@ -22,10 +22,12 @@ WORKDIR /build
 
 # Copié seul : la couche d'installation n'est invalidée que lorsque les
 # dépendances changent, pas à chaque modification du code applicatif.
-COPY requirements.txt .
+# Depuis le lockfile, avec hachages : l'image installe exactement les versions
+# testees en CI, et un paquet altere sur l'index fait echouer le build.
+COPY requirements.lock.txt .
 RUN python -m venv /opt/venv \
     && /opt/venv/bin/pip install --upgrade pip \
-    && /opt/venv/bin/pip install -r requirements.txt
+    && /opt/venv/bin/pip install --require-hashes -r requirements.lock.txt
 
 
 # --------------------------------------------------------------------------

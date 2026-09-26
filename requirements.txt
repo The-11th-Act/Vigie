@@ -1,6 +1,9 @@
 # Dependances directes de l'application. Les versions sont bornees par le haut
 # sur la majeure pour eviter qu'un build futur ne tire une rupture d'API
-# silencieusement. Le build reproductible passe par requirements.lock.txt.
+# silencieusement. Le build reproductible passe par requirements.lock.txt,
+# regenere apres toute modification ici :
+#   uv pip compile requirements.txt --generate-hashes --python-version 3.11 \
+#     --python-platform x86_64-manylinux_2_28 --no-header -o requirements.lock.txt
 
 fastapi>=0.100.0,<1.0.0
 uvicorn[standard]>=0.22.0,<1.0.0
