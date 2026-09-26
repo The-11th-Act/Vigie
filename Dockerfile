@@ -56,7 +56,7 @@ COPY --from=builder /opt/venv /opt/venv
 # (msgpack, jaraco.context...), que Trivy signale a juste titre. Retires du
 # Python systeme comme du virtualenv.
 RUN /opt/venv/bin/python -m pip uninstall --yes --quiet pip setuptools wheel \
-    && python -m pip uninstall --yes --quiet pip setuptools wheel \
+    && /usr/local/bin/python -m pip uninstall --yes --quiet pip setuptools wheel \
     && rm -rf /usr/local/lib/python3.11/ensurepip
 
 WORKDIR /app
