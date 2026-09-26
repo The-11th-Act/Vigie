@@ -1,17 +1,23 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core import ratelimit
+from app.core.config import settings
 from app.core.security import (
+    ACCESS_COOKIE,
+    CSRF_COOKIE,
+    REFRESH_COOKIE,
+    SESSION_MODE_HEADER,
     create_access_token,
     create_refresh_token,
     decode_refresh_token,
     decode_token,
     get_password_hash,
-    oauth2_scheme,
+    new_csrf_token,
+    require_csrf,
     verify_password_constant_time,
 )
 from app.core.tokens import revoke
@@ -65,8 +71,13 @@ def register(user_in: UserCreate, db: Session = Depends(get_db)):
     return db_user
 
 
-@router.post("/login", response_model=Token)
-def login(credentials: UserLogin, request: Request, db: Session = Depends(get_db)):
+@router.post("/login", response_model=Token, response_model_exclude_none=True)
+def login(
+    credentials: UserLogin,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
     client_ip = _client_ip(request)
 
     # Both scopes are checked: per-IP stops one host working through many
@@ -94,24 +105,32 @@ def login(credentials: UserLogin, request: Request, db: Session = Depends(get_db
     ratelimit.reset("ip", client_ip)
     ratelimit.reset("user", credentials.username)
 
-    claims = {"role": user.role, "username": user.username}
-    return Token(
-        access_token=create_access_token(subject=user.id, extra_claims=claims),
-        refresh_token=create_refresh_token(subject=user.id, extra_claims=claims),
-        role=user.role,
-        username=user.username,
-    )
+    return _issue_tokens(user, response, cookie_mode=_wants_cookies(request))
 
 
-@router.post("/refresh", response_model=Token)
-def refresh(body: RefreshRequest, db: Session = Depends(get_db)):
+@router.post("/refresh", response_model=Token, response_model_exclude_none=True)
+def refresh(
+    request: Request,
+    response: Response,
+    body: RefreshRequest | None = None,
+    db: Session = Depends(get_db),
+):
     """Exchange a refresh token for a new pair, rotating the refresh token.
 
     The presented token is revoked as part of the exchange, so a captured
     refresh token is single-use: replaying it once the legitimate client has
-    refreshed will fail.
+    refreshed will fail. A browser session sends it as a cookie, and gets the
+    new pair back as cookies.
     """
-    payload = decode_refresh_token(body.refresh_token)
+    from_cookie = body is None
+    if from_cookie:
+        presented = request.cookies.get(REFRESH_COOKIE)
+        if not presented:
+            raise INVALID_CREDENTIALS
+        require_csrf(request)
+    else:
+        presented = body.refresh_token
+    payload = decode_refresh_token(presented)
 
     try:
         user_id = int(payload["sub"])
@@ -124,37 +143,38 @@ def refresh(body: RefreshRequest, db: Session = Depends(get_db)):
 
     revoke(payload.get("jti"), payload.get("exp"))
 
-    claims = {"role": user.role, "username": user.username}
-    return Token(
-        access_token=create_access_token(subject=user.id, extra_claims=claims),
-        refresh_token=create_refresh_token(subject=user.id, extra_claims=claims),
-        role=user.role,
-        username=user.username,
+    return _issue_tokens(
+        user, response, cookie_mode=from_cookie or _wants_cookies(request)
     )
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 def logout(
+    request: Request,
+    response: Response,
     body: RefreshRequest | None = None,
-    token: str = Depends(oauth2_scheme),
     payload: dict = Depends(decode_token),
 ):
     """Revoke the current access token, and the refresh token when supplied.
 
     Without this there was no server-side logout at all: clearing the browser's
-    storage left a token valid for its full remaining lifetime.
+    storage left a token valid for its full remaining lifetime. A browser
+    session's refresh token comes from its cookie, and the cookies are cleared.
     """
     revoke(payload.get("jti"), payload.get("exp"))
 
-    if body and body.refresh_token:
+    refresh_token = body.refresh_token if body else request.cookies.get(REFRESH_COOKIE)
+    if refresh_token:
         try:
-            refresh_payload = decode_refresh_token(body.refresh_token)
+            refresh_payload = decode_refresh_token(refresh_token)
         except HTTPException:
             # An invalid or already-revoked refresh token is no reason to fail
             # a logout — the access token is revoked either way.
             pass
         else:
             revoke(refresh_payload.get("jti"), refresh_payload.get("exp"))
+
+    _clear_session_cookies(response)
 
 
 @router.get("/me", response_model=UserResponse)
@@ -177,6 +197,83 @@ def get_current_user_info(
             status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
         )
     return user
+
+
+def _wants_cookies(request: Request) -> bool:
+    return request.headers.get(SESSION_MODE_HEADER, "").strip().lower() == "cookie"
+
+
+def _issue_tokens(user: User, response: Response, *, cookie_mode: bool) -> Token:
+    """A new token pair: in the body for API clients, in cookies for browsers.
+
+    In cookie mode the tokens are left out of the body on purpose: a script
+    injected into the page could read the body, never an HttpOnly cookie.
+    """
+    claims = {"role": user.role, "username": user.username}
+    access = create_access_token(subject=user.id, extra_claims=claims)
+    refresh = create_refresh_token(subject=user.id, extra_claims=claims)
+
+    if not cookie_mode:
+        return Token(
+            access_token=access,
+            refresh_token=refresh,
+            role=user.role,
+            username=user.username,
+        )
+
+    secure = settings.auth_cookie_secure
+    access_age = settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+    refresh_age = settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400
+    response.set_cookie(
+        ACCESS_COOKIE,
+        access,
+        max_age=access_age,
+        path=settings.API_V1_STR,
+        httponly=True,
+        secure=secure,
+        samesite="strict",
+    )
+    # Scoped to the auth routes: the long-lived token is never sent with an
+    # ordinary API call.
+    response.set_cookie(
+        REFRESH_COOKIE,
+        refresh,
+        max_age=refresh_age,
+        path=f"{settings.API_V1_STR}/auth",
+        httponly=True,
+        secure=secure,
+        samesite="strict",
+    )
+    # Readable by the page, which copies it into the X-CSRF-Token header.
+    response.set_cookie(  # noqa: S604 - httponly=False is the point of this cookie
+        CSRF_COOKIE,
+        new_csrf_token(),
+        max_age=refresh_age,
+        path="/",
+        httponly=False,
+        secure=secure,
+        samesite="strict",
+    )
+    return Token(role=user.role, username=user.username)
+
+
+def _clear_session_cookies(response: Response) -> None:
+    secure = settings.auth_cookie_secure
+    response.delete_cookie(
+        ACCESS_COOKIE,
+        path=settings.API_V1_STR,
+        secure=secure,
+        httponly=True,
+        samesite="strict",
+    )
+    response.delete_cookie(
+        REFRESH_COOKIE,
+        path=f"{settings.API_V1_STR}/auth",
+        secure=secure,
+        httponly=True,
+        samesite="strict",
+    )
+    response.delete_cookie(CSRF_COOKIE, path="/", secure=secure, samesite="strict")
 
 
 def _client_ip(request: Request) -> str:

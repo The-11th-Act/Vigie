@@ -42,7 +42,8 @@ class UserLogin(BaseModel):
 
 
 class Token(BaseModel):
-    access_token: str
+    # Absent in cookie mode: the tokens then travel only as HttpOnly cookies.
+    access_token: str | None = None
     refresh_token: str | None = None
     # "bearer" is the OAuth2 scheme name, not a credential.
     token_type: str = "bearer"  # noqa: S105

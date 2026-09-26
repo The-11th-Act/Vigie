@@ -24,6 +24,7 @@ from app.core import metrics
 from app.core.bootstrap import bootstrap_admin_user
 from app.core.config import settings
 from app.core.logging import configure_logging, get_request_id, set_request_id
+from app.core.security import CSRF_HEADER, SESSION_MODE_HEADER
 from app.db.database import SessionLocal, get_db
 
 configure_logging()
@@ -62,7 +63,7 @@ app.add_middleware(
     allow_origins=settings.BACKEND_CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_headers=["Authorization", "Content-Type", CSRF_HEADER, SESSION_MODE_HEADER],
     expose_headers=[REQUEST_ID_HEADER],
 )
 

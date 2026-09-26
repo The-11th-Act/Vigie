@@ -8,8 +8,8 @@ from app.core.config import settings
 from app.core.security import (
     create_access_token,
     create_refresh_token,
+    decode_access_token,
     decode_refresh_token,
-    decode_token,
 )
 from app.core.tokens import is_revoked, revoke
 
@@ -41,7 +41,7 @@ class TestTokenTypeSeparation:
         refresh = create_refresh_token(subject=1)
 
         with pytest.raises(HTTPException) as exc:
-            decode_token(refresh)
+            decode_access_token(refresh)
         assert exc.value.status_code == 401
 
     def test_access_token_is_not_accepted_as_a_refresh_token(self):
@@ -57,12 +57,12 @@ class TestRevocation:
         token = create_access_token(subject=1)
         payload = claims_of(token)
 
-        assert decode_token(token)["sub"] == "1"
+        assert decode_access_token(token)["sub"] == "1"
 
         revoke(payload["jti"], payload["exp"])
 
         with pytest.raises(HTTPException) as exc:
-            decode_token(token)
+            decode_access_token(token)
         assert exc.value.status_code == 401
 
     def test_revoking_one_token_leaves_others_valid(self):
@@ -73,7 +73,7 @@ class TestRevocation:
         revoke(payload["jti"], payload["exp"])
 
         assert is_revoked(payload["jti"]) is True
-        assert decode_token(kept)["sub"] == "1"
+        assert decode_access_token(kept)["sub"] == "1"
 
     def test_already_expired_token_is_not_stored(self):
         """No point holding an entry for a token signature validation already
@@ -114,15 +114,15 @@ class TestKeyRotation:
     def test_new_tokens_use_the_new_key(self, rotated):
         token = create_access_token(subject=1)
         assert jwt.get_unverified_header(token)["kid"] == "k2"
-        assert decode_token(token)["sub"] == "1"
+        assert decode_access_token(token)["sub"] == "1"
 
     def test_a_token_from_the_retired_key_still_works(self, rotated):
-        assert decode_token(rotated)["sub"] == "1"
+        assert decode_access_token(rotated)["sub"] == "1"
 
     def test_retiring_the_key_ends_its_tokens(self, rotated, monkeypatch):
         monkeypatch.setattr(settings, "PREVIOUS_SECRET_KEYS", {})
         with pytest.raises(HTTPException) as exc:
-            decode_token(rotated)
+            decode_access_token(rotated)
         assert exc.value.status_code == 401
 
     def test_an_unknown_kid_is_rejected(self, rotated):
@@ -133,7 +133,7 @@ class TestKeyRotation:
             headers={"kid": "k9"},
         )
         with pytest.raises(HTTPException):
-            decode_token(forged)
+            decode_access_token(forged)
 
     def test_a_kid_does_not_vouch_for_another_key(self, rotated):
         """The kid only picks the key: a token claiming the retired key but
@@ -145,7 +145,7 @@ class TestKeyRotation:
             headers={"kid": "k1"},
         )
         with pytest.raises(HTTPException):
-            decode_token(forged)
+            decode_access_token(forged)
 
     def test_a_malformed_kid_is_a_401_not_a_crash(self, rotated):
         """Forged by hand, as an attacker would: PyJWT refuses to mint it."""
@@ -165,7 +165,7 @@ class TestKeyRotation:
         forged = f"{header}.{body}.{b64(signature.digest())}"
 
         with pytest.raises(HTTPException) as exc:
-            decode_token(forged)
+            decode_access_token(forged)
         assert exc.value.status_code == 401
 
     def test_a_token_minted_before_key_ids_is_still_accepted(self):
@@ -175,7 +175,7 @@ class TestKeyRotation:
             algorithm=settings.ALGORITHM,
         )
         assert "kid" not in jwt.get_unverified_header(legacy)
-        assert decode_token(legacy)["sub"] == "1"
+        assert decode_access_token(legacy)["sub"] == "1"
 
 
 class TestKeyConfiguration:

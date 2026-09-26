@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     # they issued. Drop one once REFRESH_TOKEN_EXPIRE_DAYS have passed.
     PREVIOUS_SECRET_KEYS: dict[str, str] = {}
     ALGORITHM: str = "HS256"
+    # Secure flag of the session cookies (browser clients). Unset: on in
+    # production, off otherwise, since a Secure cookie is never sent over the
+    # plain HTTP of a development setup.
+    AUTH_COOKIE_SECURE: bool | None = None
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
@@ -152,6 +156,12 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.ENVIRONMENT.lower() == "production"
+
+    @property
+    def auth_cookie_secure(self) -> bool:
+        if self.AUTH_COOKIE_SECURE is None:
+            return self.is_production
+        return self.AUTH_COOKIE_SECURE
 
     @property
     def sqlalchemy_database_url(self) -> str:

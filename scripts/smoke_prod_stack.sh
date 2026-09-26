@@ -106,6 +106,20 @@ TOKEN=$(curl -fsS -X POST "$API/auth/login" -H 'Content-Type: application/json' 
   || fail "connexion impossible via Nginx"
 AUTH=(-H "Authorization: Bearer $TOKEN")
 
+# Session navigateur : cookies HttpOnly, et Secure puisque ENVIRONMENT vaut
+# production (le terminateur TLS est devant Nginx). curl ne les renverrait pas
+# en HTTP ; on vérifie donc les en-têtes Set-Cookie eux-mêmes.
+COOKIE_HEADERS=$(curl -fsS -D - -o /dev/null -X POST "$API/auth/login" \
+  -H 'Content-Type: application/json' -H 'X-Session-Mode: cookie' \
+  -d "{\"username\":\"admin\",\"password\":\"$ADMIN_PASSWORD\"}" | tr -d '\r')
+ACCESS_COOKIE=$(echo "$COOKIE_HEADERS" | grep -i '^set-cookie: vigie_access=' || true)
+[ -n "$ACCESS_COOKIE" ] || fail "le login en mode cookie ne pose pas vigie_access"
+for attribute in HttpOnly Secure "SameSite=strict"; do
+  echo "$ACCESS_COOKIE" | grep -qi "$attribute" \
+    || fail "cookie de session sans l'attribut $attribute : $ACCESS_COOKIE"
+done
+echo "ok - session navigateur : cookie HttpOnly, Secure, SameSite=Strict"
+
 # --- Upload -> Redis -> worker -> base --------------------------------------
 cat > "$WORK/report.nessus" <<'XML'
 <?xml version="1.0"?>

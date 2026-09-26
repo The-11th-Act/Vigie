@@ -271,3 +271,181 @@ class TestTokenLifecycle:
 
     def test_logout_requires_authentication(self, unauthenticated_client):
         assert unauthenticated_client.post("/api/v1/auth/logout").status_code == 401
+
+
+COOKIE_MODE = {"X-Session-Mode": "cookie"}
+
+
+def cookie_login(client, username="admin"):
+    response = client.post(
+        "/api/v1/auth/login",
+        json={"username": username, "password": VALID_PASSWORD},
+        headers=COOKIE_MODE,
+    )
+    assert response.status_code == 200
+    return response
+
+
+def set_cookies(response) -> dict[str, str]:
+    """Set-Cookie headers by cookie name, attributes lower-cased."""
+    cookies = {}
+    for header in response.headers.get_list("set-cookie"):
+        name = header.split("=", 1)[0]
+        cookies[name] = header.lower()
+    return cookies
+
+
+def csrf(client) -> dict[str, str]:
+    return {"X-CSRF-Token": client.cookies.get("vigie_csrf")}
+
+
+class TestBrowserSessions:
+    """Tokens in localStorage were readable by any script injected into the page
+    (T6). A browser client now asks for HttpOnly cookies instead."""
+
+    def test_login_sets_the_cookies_and_keeps_tokens_out_of_the_body(
+        self, unauthenticated_client, admin_user
+    ):
+        response = cookie_login(unauthenticated_client)
+
+        body = response.json()
+        assert "access_token" not in body and "refresh_token" not in body
+        assert body["username"] == "admin"
+
+        cookies = set_cookies(response)
+        assert "httponly" in cookies["vigie_access"]
+        assert "samesite=strict" in cookies["vigie_access"]
+        assert "path=/api/v1" in cookies["vigie_access"]
+        # The long-lived token only ever travels to the auth routes.
+        assert "path=/api/v1/auth" in cookies["vigie_refresh"]
+        assert "httponly" in cookies["vigie_refresh"]
+        # The page must read the CSRF value to echo it in a header.
+        assert "httponly" not in cookies["vigie_csrf"]
+
+    def test_without_the_header_api_clients_are_unchanged(
+        self, unauthenticated_client, admin_user
+    ):
+        response = unauthenticated_client.post(
+            "/api/v1/auth/login", json={"username": "admin", "password": VALID_PASSWORD}
+        )
+        assert response.json()["access_token"]
+        assert not set_cookies(response)
+
+    def test_the_cookie_authenticates_reads(self, unauthenticated_client, admin_user):
+        cookie_login(unauthenticated_client)
+
+        response = unauthenticated_client.get("/api/v1/auth/me")
+
+        assert response.status_code == 200
+        assert response.json()["username"] == "admin"
+
+    def test_a_cookie_write_without_csrf_token_is_refused(
+        self, unauthenticated_client, admin_user
+    ):
+        """The browser attaches cookies to a request another site triggers; the
+        CSRF header is what that site cannot forge."""
+        cookie_login(unauthenticated_client)
+
+        response = unauthenticated_client.post(
+            "/api/v1/assets/", json={"ip_address": "10.70.0.1"}
+        )
+
+        assert response.status_code == 403
+
+    def test_a_wrong_csrf_token_is_refused(self, unauthenticated_client, admin_user):
+        cookie_login(unauthenticated_client)
+
+        response = unauthenticated_client.post(
+            "/api/v1/assets/",
+            json={"ip_address": "10.70.0.2"},
+            headers={"X-CSRF-Token": "forged"},
+        )
+
+        assert response.status_code == 403
+
+    def test_a_cookie_write_with_the_csrf_token_goes_through(
+        self, unauthenticated_client, admin_user
+    ):
+        cookie_login(unauthenticated_client)
+
+        response = unauthenticated_client.post(
+            "/api/v1/assets/",
+            json={"ip_address": "10.70.0.3"},
+            headers=csrf(unauthenticated_client),
+        )
+
+        assert response.status_code == 201
+
+    def test_a_bearer_write_needs_no_csrf_token(self, unauthenticated_client, admin_user):
+        token = unauthenticated_client.post(
+            "/api/v1/auth/login", json={"username": "admin", "password": VALID_PASSWORD}
+        ).json()["access_token"]
+
+        response = unauthenticated_client.post(
+            "/api/v1/assets/",
+            json={"ip_address": "10.70.0.4"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert response.status_code == 201
+
+    def test_refresh_rotates_the_cookies(self, unauthenticated_client, admin_user):
+        cookie_login(unauthenticated_client)
+        old_refresh = unauthenticated_client.cookies.get("vigie_refresh")
+
+        response = unauthenticated_client.post(
+            "/api/v1/auth/refresh", headers=csrf(unauthenticated_client)
+        )
+
+        assert response.status_code == 200
+        assert "access_token" not in response.json()
+        new_refresh = set_cookies(response)["vigie_refresh"]
+        assert old_refresh.lower() not in new_refresh
+
+        # The previous refresh token was revoked by the exchange.
+        replay = unauthenticated_client.post(
+            "/api/v1/auth/refresh", json={"refresh_token": old_refresh}
+        )
+        assert replay.status_code == 401
+
+    def test_a_cookie_refresh_needs_the_csrf_token(
+        self, unauthenticated_client, admin_user
+    ):
+        cookie_login(unauthenticated_client)
+
+        assert unauthenticated_client.post("/api/v1/auth/refresh").status_code == 403
+
+    def test_logout_revokes_and_clears_the_cookies(
+        self, unauthenticated_client, admin_user
+    ):
+        cookie_login(unauthenticated_client)
+        access = unauthenticated_client.cookies.get("vigie_access")
+        refresh = unauthenticated_client.cookies.get("vigie_refresh")
+
+        response = unauthenticated_client.post(
+            "/api/v1/auth/logout", headers=csrf(unauthenticated_client)
+        )
+
+        assert response.status_code == 204
+        cleared = set_cookies(response)
+        assert {"vigie_access", "vigie_refresh", "vigie_csrf"} <= set(cleared)
+        assert all("max-age=0" in header for header in cleared.values())
+        # Both tokens are dead server-side, not merely forgotten by the browser.
+        bearer = {"Authorization": f"Bearer {access}"}
+        assert (
+            unauthenticated_client.get("/api/v1/auth/me", headers=bearer).status_code
+            == 401
+        )
+        replay = unauthenticated_client.post(
+            "/api/v1/auth/refresh", json={"refresh_token": refresh}
+        )
+        assert replay.status_code == 401
+
+    def test_cookies_are_secure_when_configured(
+        self, unauthenticated_client, admin_user, monkeypatch
+    ):
+        monkeypatch.setattr(settings, "AUTH_COOKIE_SECURE", True)
+
+        cookies = set_cookies(cookie_login(unauthenticated_client))
+
+        assert all("secure" in header for header in cookies.values())
