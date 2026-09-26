@@ -333,6 +333,14 @@ export default function FindingsBacklog() {
                               until {formatDate(finding.accepted_until)}
                             </div>
                           )}
+                          {finding.sources?.length > 0 && (
+                            <div
+                              style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}
+                              title="Scanners reporting this finding; it closes once all of them stop"
+                            >
+                              {finding.sources.map((s) => s.source).join(' · ')}
+                            </div>
+                          )}
                         </td>
                         <td>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', minWidth: 220 }}>

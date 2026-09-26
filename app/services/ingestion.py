@@ -11,11 +11,16 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import func, or_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
 from app.models.asset import Asset
-from app.models.vulnerability import AssetVulnerability, Status, Vulnerability
+from app.models.vulnerability import (
+    AssetVulnerability,
+    FindingDetection,
+    Status,
+    Vulnerability,
+)
 from app.services.asset_policy import criticality_for, exposure_for
 from app.services.remediation import apply_kev_sla, calculate_remediation_deadline
 from app.services.risk_scoring import RiskInputs, compute_risk
@@ -145,22 +150,44 @@ def _close_unseen_findings(
     if threshold <= 0 or scope == set():
         return 0
 
-    query = db.query(AssetVulnerability).filter(
-        AssetVulnerability.scan_source == scan_source,
-        AssetVulnerability.status == Status.open,
-        AssetVulnerability.id.notin_(seen_ids) if seen_ids else True,
+    # Misses are counted per source: this scan only speaks for its own
+    # sightings, never for what another scanner still reports.
+    query = (
+        db.query(FindingDetection)
+        .join(FindingDetection.finding)
+        .filter(
+            FindingDetection.source == scan_source,
+            AssetVulnerability.status == Status.open,
+            FindingDetection.finding_id.notin_(seen_ids) if seen_ids else True,
+        )
     )
     if scope is not None:
         query = query.filter(AssetVulnerability.asset_id.in_(scope))
     stale = query.all()
+    if not stale:
+        return 0
 
+    for detection in stale:
+        detection.missed_scans = (detection.missed_scans or 0) + 1
+    db.flush()
+
+    # A finding closes once every source that saw it has stopped seeing it:
+    # one scanner still reporting the CVE keeps it open.
     closed = 0
-    for finding in stale:
-        finding.missed_scans = (finding.missed_scans or 0) + 1
-        if finding.missed_scans >= threshold:
-            finding.status = Status.remediated
-            finding.fixed_at = now
-            closed += 1
+    affected = sorted({detection.finding_id for detection in stale})
+    for i in range(0, len(affected), CHUNK_SIZE):
+        findings = (
+            db.query(AssetVulnerability)
+            .options(selectinload(AssetVulnerability.detections))
+            .filter(AssetVulnerability.id.in_(affected[i : i + CHUNK_SIZE]))
+            .all()
+        )
+        for finding in findings:
+            finding.missed_scans = min(d.missed_scans for d in finding.detections)
+            if finding.missed_scans >= threshold:
+                finding.status = Status.remediated
+                finding.fixed_at = now
+                closed += 1
 
     if closed:
         logger.info(
@@ -170,6 +197,54 @@ def _close_unseen_findings(
             scan_source,
         )
     return closed
+
+
+def _detections_of(
+    db: Session, findings: list[AssetVulnerability], source: str
+) -> dict[int, FindingDetection]:
+    """This source's existing detections, keyed by the finding object."""
+    by_id = {finding.id: finding for finding in findings}
+    ids = list(by_id)
+    detections: dict[int, FindingDetection] = {}
+    for i in range(0, len(ids), CHUNK_SIZE):
+        rows = db.query(FindingDetection).filter(
+            FindingDetection.finding_id.in_(ids[i : i + CHUNK_SIZE]),
+            FindingDetection.source == source,
+        )
+        for detection in rows:
+            detections[id(by_id[detection.finding_id])] = detection
+    return detections
+
+
+def _touch_detection(
+    db: Session,
+    finding: AssetVulnerability,
+    detections: dict[int, FindingDetection],
+    source: str,
+    now: datetime,
+) -> None:
+    """Record that ``source`` sees ``finding`` now.
+
+    Keyed by the finding object rather than its id: a finding created by this
+    very scan has no id yet, and a file can report the same pair twice.
+    """
+    detection = detections.get(id(finding))
+    if detection is not None:
+        detection.last_seen_at = now
+        detection.missed_scans = 0
+        return
+
+    detection = FindingDetection(
+        source=source, first_seen_at=now, last_seen_at=now, missed_scans=0
+    )
+    if finding.id is None:
+        finding.detections.append(detection)
+    else:
+        # Not through the relationship: that would load every other source's
+        # detections of this finding, one query per finding.
+        detection.finding_id = finding.id
+        db.add(detection)
+    detections[id(finding)] = detection
 
 
 def _asset_key(finding: dict[str, Any], trusted_hostnames: set) -> str:
@@ -342,6 +417,7 @@ def _upsert_associations(
     assoc_cache: dict[tuple[int, int], AssetVulnerability] = {
         (a.asset_id, a.vulnerability_id): a for a in existing
     }
+    detections = _detections_of(db, existing, scan_source)
 
     new_assocs: list[AssetVulnerability] = []
     reopened = 0
@@ -366,6 +442,7 @@ def _upsert_associations(
                 last_seen_at=now,
             )
             _apply_score(assoc, asset, vuln, deadline, now)
+            _touch_detection(db, assoc, detections, scan_source, now)
             new_assocs.append(assoc)
             assoc_cache[key] = assoc
             continue
@@ -375,6 +452,7 @@ def _upsert_associations(
         assoc.scan_source = scan_source
         # Seen again, so any run of misses is broken.
         assoc.missed_scans = 0
+        _touch_detection(db, assoc, detections, scan_source, now)
 
         # Still detected after having been closed as fixed — reopen it.
         if assoc.status == Status.remediated:

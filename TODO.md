@@ -411,7 +411,8 @@ lançait les images une par une. Le faire a révélé trois défauts, corrigés 
       l'exposition et la criticité — vu sur données réelles, Log4Shell sur un hôte
       interne passe devant PAN-OS exposé. Piste : trier sur le score non plafonné
       *Réglé le 26/09/2026 : `risk_rank`, le score avant plafonnement, départage les 10.*
-- [ ] Détections par source (aujourd'hui `scan_source` est écrasé par le dernier scanner)
+- [x] Détections par source *(26/09/2026 : `finding_detections`, un finding ne se
+      ferme que lorsque toutes ses sources ont cessé de le voir)*
 - [x] Acceptation de risque avec expiration, revue quand un CVE accepté entre dans KEV
       *(26/09/2026 : `accepted_until`, 90 j par défaut, 365 j max ; réouverture tracée
       par l'acteur « system »)*

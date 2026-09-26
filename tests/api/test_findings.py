@@ -494,3 +494,33 @@ class TestBacklogExport:
             "/api/v1/vulnerabilities/findings/export.csv"
         )
         assert response.status_code == 401
+
+
+class TestSources:
+    def test_the_finding_lists_every_source(self, client, db_session):
+        from app.models.vulnerability import FindingDetection
+
+        asset = Asset(ip_address="10.82.0.1")
+        vuln = Vulnerability(
+            cve_id="CVE-2024-8201", title="Seen twice", cvss_score=5.0, severity="Medium"
+        )
+        db_session.add_all([asset, vuln])
+        db_session.flush()
+        link = AssetVulnerability(
+            asset_id=asset.id,
+            vulnerability_id=vuln.id,
+            status=Status.open,
+            risk_score=5.0,
+        )
+        link.detections = [
+            FindingDetection(source="openvas"),
+            FindingDetection(source="nessus"),
+        ]
+        db_session.add(link)
+        db_session.commit()
+
+        item = client.get("/api/v1/vulnerabilities/findings").json()["items"][0]
+        _, rows = export(client)
+
+        assert [s["source"] for s in item["sources"]] == ["nessus", "openvas"]
+        assert rows[1][rows[0].index("sources")] == "nessus, openvas"

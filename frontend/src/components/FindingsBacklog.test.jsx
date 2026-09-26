@@ -240,3 +240,17 @@ describe('FindingsBacklog — export', () => {
     )
   })
 })
+
+describe('FindingsBacklog — sources', () => {
+  it('lists every scanner that reports the finding', async () => {
+    vulnerabilityService.getFindings.mockResolvedValue({
+      data: {
+        total: 1,
+        items: [{ ...FINDING, sources: [{ source: 'nessus' }, { source: 'openvas' }] }],
+      },
+    })
+    render(<FindingsBacklog />)
+
+    expect(await screen.findByText('nessus · openvas')).toBeInTheDocument()
+  })
+})

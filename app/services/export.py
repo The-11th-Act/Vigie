@@ -40,6 +40,7 @@ COLUMNS = (
     "accepted_until",
     "detected_at",
     "last_seen_at",
+    "sources",
     "risk_factors",
 )
 
@@ -108,6 +109,7 @@ def _row(finding, now: datetime) -> list:
         _iso(finding.accepted_until),
         _iso(finding.detected_at),
         _iso(finding.last_seen_at),
+        ", ".join(detection.source for detection in finding.detections),
         "; ".join(factor["label"] for factor in factors),
     ]
 

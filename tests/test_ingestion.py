@@ -515,3 +515,84 @@ class TestEnrichmentOfNewCves:
         vuln = link_for(db_session).vulnerability
         assert vuln.in_kev is False
         assert vuln.epss_score is None
+
+
+class TestDetectionsPerSource:
+    """A finding closes once every scanner that saw it has stopped seeing it.
+
+    Closure used to listen to the last source only: Nessus still reporting a
+    CVE could not keep open a finding OpenVAS had stopped reporting.
+    """
+
+    @pytest.fixture(autouse=True)
+    def threshold(self, monkeypatch):
+        monkeypatch.setattr(settings, "AUTO_REMEDIATE_AFTER_MISSES", 2)
+
+    def clean_scan(self, db_session, source):
+        """The host was scanned and came back without the CVE."""
+        return ingest_findings(db_session, [], source, scanned_addresses={"10.0.0.1"})
+
+    def sources_of(self, db_session):
+        return {d.source: d for d in link_for(db_session).detections}
+
+    def test_each_source_is_recorded(self, db_session):
+        ingest_findings(db_session, [finding()], "nessus")
+        ingest_findings(db_session, [finding()], "openvas")
+
+        assert set(self.sources_of(db_session)) == {"nessus", "openvas"}
+        assert link_for(db_session).scan_source == "openvas"  # still the last one
+
+    def test_one_source_still_seeing_it_keeps_it_open(self, db_session):
+        ingest_findings(db_session, [finding()], "nessus")
+        ingest_findings(db_session, [finding()], "openvas")
+
+        for _ in range(3):
+            self.clean_scan(db_session, "openvas")
+
+        link = link_for(db_session)
+        assert link.status == Status.open
+        assert self.sources_of(db_session)["openvas"].missed_scans == 3
+        assert self.sources_of(db_session)["nessus"].missed_scans == 0
+
+    def test_it_closes_once_every_source_stopped_seeing_it(self, db_session):
+        ingest_findings(db_session, [finding()], "nessus")
+        ingest_findings(db_session, [finding()], "openvas")
+
+        for _ in range(2):
+            self.clean_scan(db_session, "openvas")
+            assert link_for(db_session).status == Status.open
+        for _ in range(2):
+            self.clean_scan(db_session, "nessus")
+
+        assert link_for(db_session).status == Status.remediated
+
+    def test_a_full_inventory_sweep_only_speaks_for_its_source(self, db_session):
+        """CrowdStrike reports its whole inventory: its misses are its own."""
+        ingest_findings(db_session, [finding()], "nessus")
+        ingest_findings(db_session, [finding()], "crowdstrike")
+
+        for _ in range(3):
+            ingest_findings(
+                db_session,
+                [finding(ip="10.0.0.2", cve="CVE-2024-9999", hostname="other")],
+                "crowdstrike",
+            )
+
+        assert link_for(db_session).status == Status.open
+
+    def test_a_redetection_resets_only_its_source(self, db_session):
+        ingest_findings(db_session, [finding()], "nessus")
+        ingest_findings(db_session, [finding()], "openvas")
+        self.clean_scan(db_session, "openvas")
+        self.clean_scan(db_session, "nessus")
+
+        ingest_findings(db_session, [finding()], "nessus")
+
+        sources = self.sources_of(db_session)
+        assert sources["nessus"].missed_scans == 0
+        assert sources["openvas"].missed_scans == 1
+
+    def test_a_pair_reported_twice_in_one_file_has_one_detection(self, db_session):
+        ingest_findings(db_session, [finding(), finding()], "nessus")
+
+        assert list(self.sources_of(db_session)) == ["nessus"]

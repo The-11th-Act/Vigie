@@ -244,6 +244,10 @@ host the file actually covered — including hosts that came back clean — so a
 scan of one subnet never closes another subnet's findings. The CrowdStrike sync
 reports the whole inventory each time, so its sweep spans the source.
 
+Misses are counted per source (`finding_detections`): a finding reported by
+Nessus and OpenVAS closes only once both have stopped reporting it, and each
+finding lists the scanners that see it.
+
 ### CrowdStrike Falcon Spotlight
 Set `CROWDSTRIKE_CLIENT_ID` / `CROWDSTRIKE_CLIENT_SECRET`, adjust
 `CROWDSTRIKE_BASE_URL` to your region, and set `CROWDSTRIKE_SYNC_ENABLED=true`;

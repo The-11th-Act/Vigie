@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi import status as http_status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import or_
-from sqlalchemy.orm import Session, contains_eager, joinedload
+from sqlalchemy.orm import Session, contains_eager, joinedload, selectinload
 
 from app.api.deps import get_or_404
 from app.core.config import settings
@@ -179,6 +179,7 @@ def _findings_query(db: Session, filters: FindingFilters):
         .options(
             contains_eager(AssetVulnerability.vulnerability),
             contains_eager(AssetVulnerability.asset),
+            selectinload(AssetVulnerability.detections),
         )
     )
 
@@ -257,6 +258,7 @@ def get_asset_vulnerabilities(
         .options(
             contains_eager(AssetVulnerability.vulnerability),
             joinedload(AssetVulnerability.asset),
+            selectinload(AssetVulnerability.detections),
         )
         .filter(AssetVulnerability.asset_id == asset_id)
     )
