@@ -15,7 +15,13 @@ import requests
 
 from app.core.config import settings
 from app.models.asset import Asset, Criticality
-from app.models.threat_intel import FEED_EPSS, FEED_KEV, ThreatFeedStatus
+from app.models.threat_intel import (
+    FEED_EPSS,
+    FEED_KEV,
+    EpssScoreEntry,
+    KevCatalogEntry,
+    ThreatFeedStatus,
+)
 from app.models.vulnerability import AssetVulnerability, Status, Vulnerability
 from app.parsers.threat_feeds import (
     EpssScore,
@@ -375,3 +381,51 @@ class TestImportFeed:
     def test_an_unknown_feed_is_an_error(self, db_session):
         with pytest.raises(ThreatFeedError, match="Unknown feed"):
             import_feed(db_session, "nvd", b"{}")
+
+
+class TestSnapshotsAreKeptWhole:
+    """Every published CVE is kept, not only the tracked ones, so a CVE seen
+    for the first time can be enriched at once."""
+
+    def test_the_whole_kev_catalogue_is_stored(self, db_session, track):
+        track("CVE-2024-0001")
+
+        apply_kev(
+            db_session,
+            catalog("CVE-2024-0001", "CVE-2099-9999"),
+            source="network",
+            now=NOW,
+        )
+
+        stored = {row.cve_id for row in db_session.query(KevCatalogEntry)}
+        assert stored == {"CVE-2024-0001", "CVE-2099-9999"}
+
+    def test_the_whole_epss_file_is_stored_and_replaced(self, db_session, track):
+        apply_epss(
+            db_session,
+            snapshot({"CVE-2099-0001": 0.4, "CVE-2099-0002": 0.01}),
+            source="network",
+            now=NOW,
+        )
+        apply_epss(
+            db_session,
+            snapshot({"CVE-2099-0003": 0.2}, score_date=date(2026, 9, 26)),
+            source="network",
+            now=NOW,
+        )
+
+        stored = {row.cve_id: row.score for row in db_session.query(EpssScoreEntry)}
+        assert stored == {"CVE-2099-0003": pytest.approx(0.2)}
+
+    def test_a_refused_snapshot_leaves_the_stored_one(self, db_session, track):
+        apply_epss(
+            db_session, snapshot({"CVE-2099-0001": 0.4}), source="network", now=NOW
+        )
+        older = snapshot({"CVE-2099-0002": 0.9}, score_date=date(2026, 9, 1))
+
+        with pytest.raises(FeedRejected):
+            apply_epss(db_session, older, source="import", now=NOW)
+
+        assert {row.cve_id for row in db_session.query(EpssScoreEntry)} == {
+            "CVE-2099-0001"
+        }

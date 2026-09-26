@@ -18,10 +18,18 @@ from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 
+from sqlalchemy import delete, insert
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.models.threat_intel import FEED_EPSS, FEED_KEV, FEEDS, ThreatFeedStatus
+from app.models.threat_intel import (
+    FEED_EPSS,
+    FEED_KEV,
+    FEEDS,
+    EpssScoreEntry,
+    KevCatalogEntry,
+    ThreatFeedStatus,
+)
 from app.models.vulnerability import AssetVulnerability, Status, Vulnerability
 from app.parsers.threat_feeds import (
     EpssSnapshot,
@@ -40,6 +48,8 @@ logger = logging.getLogger(__name__)
 
 # Well under SQLite's bound-parameter limit, and a sane IN () list for PostgreSQL.
 CHUNK_SIZE = 500
+# Rows per INSERT when storing a whole snapshot (~380 000 for EPSS).
+SNAPSHOT_BATCH_SIZE = 5_000
 
 # A catalogue with fewer entries than this share of the last one is refused:
 # CISA removes entries rarely and one at a time, a truncated file removes many.
@@ -103,9 +113,7 @@ def refresh_threat_intel(
         FEED_EPSS,
         lambda: apply_epss(
             db,
-            parse_epss(
-                client.get(settings.THREAT_INTEL_EPSS_URL), tracked_cves(db), max_bytes
-            ),
+            parse_epss(client.get(settings.THREAT_INTEL_EPSS_URL), None, max_bytes),
             source=SOURCE_NETWORK,
             now=now,
         ),
@@ -133,7 +141,7 @@ def import_feed(
         catalog = parse_kev(raw, max_bytes)
         return apply_kev(db, catalog, source=SOURCE_IMPORT, now=now, force=force)
     if feed == FEED_EPSS:
-        snapshot = parse_epss(raw, tracked_cves(db), max_bytes)
+        snapshot = parse_epss(raw, None, max_bytes)
         return apply_epss(db, snapshot, source=SOURCE_IMPORT, now=now, force=force)
     raise ThreatFeedError(f"Unknown feed {feed!r}")
 
@@ -198,6 +206,19 @@ def apply_kev(
         db, [*newly_listed, *(v.id for v in flagged if not v.in_kev)], now
     )
 
+    _replace_table(
+        db,
+        KevCatalogEntry,
+        (
+            {
+                "cve_id": entry.cve_id,
+                "date_added": entry.date_added,
+                "due_date": entry.due_date,
+                "ransomware": entry.ransomware,
+            }
+            for entry in catalog.entries.values()
+        ),
+    )
     _record_success(
         status,
         source,
@@ -234,7 +255,9 @@ def apply_epss(
 
     changed = 0
     band_moved: list[int] = []
-    for vuln in _vulnerabilities_by_cve(db, snapshot.scores):
+    # The file covers every published CVE; only the tracked ones are looked up.
+    covered = tracked_cves(db) & snapshot.scores.keys()
+    for vuln in _vulnerabilities_by_cve(db, covered):
         score = snapshot.scores[vuln.cve_id]
         old_band = epss_band(vuln.epss_score)
         wanted = {
@@ -252,6 +275,19 @@ def apply_epss(
     db.flush()
     rescored = _rescore(db, band_moved, now)
 
+    _replace_table(
+        db,
+        EpssScoreEntry,
+        (
+            {
+                "cve_id": cve_id,
+                "score": score.score,
+                "percentile": score.percentile,
+                "score_date": snapshot.score_date,
+            }
+            for cve_id, score in snapshot.scores.items()
+        ),
+    )
     _record_success(
         status,
         source,
@@ -270,6 +306,57 @@ def apply_epss(
         rescored,
     )
     return FeedResult(FEED_EPSS, "applied", snapshot.total_rows, changed, rescored)
+
+
+def _replace_table(db: Session, model, rows) -> None:
+    """Swap the stored snapshot for a new one, inside the caller's transaction.
+
+    Called only once a snapshot passed every guard, and committed together with
+    the rest of its application: a refused or failed feed leaves the previous
+    snapshot in place.
+    """
+    db.execute(delete(model))
+    batch: list[dict] = []
+    for row in rows:
+        batch.append(row)
+        if len(batch) >= SNAPSHOT_BATCH_SIZE:
+            db.execute(insert(model), batch)
+            batch = []
+    if batch:
+        db.execute(insert(model), batch)
+
+
+def enrich_new_vulnerabilities(db: Session, vulnerabilities, now: datetime) -> None:
+    """Give CVEs seen for the first time the intel of the last snapshots.
+
+    Without this a new CVE waited for the next daily refresh — up to a day
+    without its KEV deadline or its EPSS weight. The caller flushes.
+    """
+    by_cve = {vuln.cve_id: vuln for vuln in vulnerabilities}
+    ids = list(by_cve)
+    for i in range(0, len(ids), CHUNK_SIZE):
+        chunk = ids[i : i + CHUNK_SIZE]
+        for entry in db.query(KevCatalogEntry).filter(KevCatalogEntry.cve_id.in_(chunk)):
+            _assign(
+                by_cve[entry.cve_id],
+                {
+                    "in_kev": True,
+                    "kev_date_added": entry.date_added,
+                    "kev_due_date": entry.due_date,
+                    "kev_ransomware": entry.ransomware,
+                },
+                now,
+            )
+        for entry in db.query(EpssScoreEntry).filter(EpssScoreEntry.cve_id.in_(chunk)):
+            _assign(
+                by_cve[entry.cve_id],
+                {
+                    "epss_score": entry.score,
+                    "epss_percentile": entry.percentile,
+                    "epss_date": entry.score_date,
+                },
+                now,
+            )
 
 
 def tracked_cves(db: Session) -> set[str]:

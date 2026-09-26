@@ -1,5 +1,6 @@
-from sqlalchemy import Date, DateTime, Integer, String, Text
+from sqlalchemy import Boolean, Date, DateTime, Float, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.sql import false
 
 from app.db.database import Base
 
@@ -45,3 +46,32 @@ class ThreatFeedStatus(Base):
     changed: Mapped[int] = mapped_column(
         Integer, default=0, server_default="0", nullable=False
     )
+
+
+class KevCatalogEntry(Base):
+    """The last applied KEV catalogue, whole.
+
+    ``vulnerabilities`` only carries the flag for CVEs already seen. Keeping the
+    catalogue lets a CVE detected for the first time be flagged at ingestion,
+    instead of waiting up to a day for the next refresh.
+    """
+
+    __tablename__ = "kev_catalog"
+
+    cve_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    date_added: Mapped[Date | None] = mapped_column(Date, nullable=True)
+    due_date: Mapped[Date | None] = mapped_column(Date, nullable=True)
+    ransomware: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false(), nullable=False
+    )
+
+
+class EpssScoreEntry(Base):
+    """The last applied EPSS file, whole (see KevCatalogEntry)."""
+
+    __tablename__ = "epss_scores"
+
+    cve_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    score: Mapped[float] = mapped_column(Float, nullable=False)
+    percentile: Mapped[float | None] = mapped_column(Float, nullable=True)
+    score_date: Mapped[Date | None] = mapped_column(Date, nullable=True)

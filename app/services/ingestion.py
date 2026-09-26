@@ -19,6 +19,7 @@ from app.models.vulnerability import AssetVulnerability, Status, Vulnerability
 from app.services.asset_policy import criticality_for, exposure_for
 from app.services.remediation import apply_kev_sla, calculate_remediation_deadline
 from app.services.risk_scoring import RiskInputs, compute_risk
+from app.services.threat_intel import enrich_new_vulnerabilities
 
 logger = logging.getLogger(__name__)
 
@@ -291,6 +292,7 @@ def _upsert_vulnerabilities(
     cache: dict[str, Vulnerability] = {v.cve_id: v for v in existing}
     created = 0
 
+    new_vulns: list[Vulnerability] = []
     for finding in findings:
         cve = finding["cve_id"]
         if cve in cache:
@@ -301,10 +303,18 @@ def _upsert_vulnerabilities(
             description=finding["description"],
             cvss_score=finding["cvss_score"],
             severity=finding["severity"],
+            in_kev=False,
+            kev_ransomware=False,
         )
         db.add(vuln)
         cache[cve] = vuln
+        new_vulns.append(vuln)
         created += 1
+
+    # Known to the last KEV / EPSS snapshots before they are known here: their
+    # KEV deadline and EPSS weight apply from this very ingestion.
+    if new_vulns:
+        enrich_new_vulnerabilities(db, new_vulns, datetime.now(UTC))
 
     return cache, created
 

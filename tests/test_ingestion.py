@@ -4,6 +4,7 @@ import pytest
 
 from app.core.config import settings
 from app.models.asset import Asset, Criticality
+from app.models.threat_intel import EpssScoreEntry, KevCatalogEntry
 from app.models.vulnerability import AssetVulnerability, Status, Vulnerability
 from app.services.ingestion import ingest_findings
 
@@ -483,3 +484,34 @@ class TestExposureRules:
         ingest_findings(db_session, [finding(ip="10.0.0.1")], "nessus")
 
         assert db_session.query(Asset).one().internet_facing is False
+
+
+class TestEnrichmentOfNewCves:
+    """A CVE first seen in a scan used to wait for the next daily refresh."""
+
+    def test_a_new_cve_gets_the_last_snapshots_at_once(self, db_session):
+        db_session.add_all(
+            [
+                KevCatalogEntry(cve_id="CVE-2024-0001", date_added=date(2024, 1, 10)),
+                EpssScoreEntry(cve_id="CVE-2024-0001", score=0.93, percentile=0.99),
+            ]
+        )
+        db_session.commit()
+
+        ingest_findings(db_session, [finding(cvss=5.0, severity="Medium")], "nessus")
+
+        link = link_for(db_session)
+        vuln = link.vulnerability
+        assert vuln.in_kev is True
+        assert vuln.epss_score == pytest.approx(0.93)
+        # KEV weighs from this very ingestion: floor and short deadline.
+        assert link.risk_score == 7.0
+        window = _aware(link.remediation_deadline) - _aware(link.last_seen_at)
+        assert window <= timedelta(days=14)
+
+    def test_without_snapshots_a_new_cve_is_plain(self, db_session):
+        ingest_findings(db_session, [finding(cvss=6.0)], "nessus")
+
+        vuln = link_for(db_session).vulnerability
+        assert vuln.in_kev is False
+        assert vuln.epss_score is None

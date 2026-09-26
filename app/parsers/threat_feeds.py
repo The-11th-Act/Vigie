@@ -61,7 +61,9 @@ class KevCatalog:
     entries: dict[str, KevEntry] = field(default_factory=dict)
 
 
-@dataclass(frozen=True)
+# slots: the whole daily file (~380 000 rows) is now held, to serve CVEs that
+# are not in the database yet.
+@dataclass(frozen=True, slots=True)
 class EpssScore:
     score: float
     percentile: float | None = None

@@ -403,9 +403,10 @@ lançait les images une par une. Le faire a révélé trois défauts, corrigés 
 
 ## Plus tard
 
-- [ ] Un CVE vu pour la première fois attend jusqu'au prochain rafraîchissement
+- [x] Un CVE vu pour la première fois attend jusqu'au prochain rafraîchissement
       (24 h) pour recevoir KEV / EPSS : l'enrichir dès l'ingestion depuis le
       dernier instantané
+      *Réglé le 26/09/2026 : tables `kev_catalog` et `epss_scores`, lues à l'ingestion.*
 - [x] Saturation à 10 : entre findings plafonnés, le départage (KEV, puis EPSS) ignore
       l'exposition et la criticité — vu sur données réelles, Log4Shell sur un hôte
       interne passe devant PAN-OS exposé. Piste : trier sur le score non plafonné
