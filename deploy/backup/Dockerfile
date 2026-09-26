@@ -8,6 +8,12 @@ FROM postgres:15-alpine@sha256:f7d23353e1b15400d22ebe31189f4d314b87a4c129cc400c8
 # age : chiffrement asymétrique des sauvegardes (https://age-encryption.org).
 RUN apk add --no-cache age
 
+# gosu sert au point d'entree de l'image postgres pour quitter root ; ce
+# service n'utilise pas ce point d'entree et tourne deja en postgres. Le
+# binaire, compile avec une vieille bibliotheque standard Go, ne ferait
+# qu'apporter des failles signalees par Trivy sans jamais s'executer.
+RUN rm -f /usr/local/bin/gosu
+
 COPY vigie-backup vigie-restore vigie-backup-loop /usr/local/bin/
 RUN chmod 0755 /usr/local/bin/vigie-backup /usr/local/bin/vigie-restore \
         /usr/local/bin/vigie-backup-loop \

@@ -51,6 +51,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=builder /opt/venv /opt/venv
 
+# pip, setuptools et wheel ne servent qu'a installer : rien ne les appelle
+# a l'execution. Ils embarquent pourtant leurs propres dependances vendorees
+# (msgpack, jaraco.context...), que Trivy signale a juste titre. Retires du
+# Python systeme comme du virtualenv.
+RUN /opt/venv/bin/python -m pip uninstall --yes --quiet pip setuptools wheel \
+    && python -m pip uninstall --yes --quiet pip setuptools wheel \
+    && rm -rf /usr/local/lib/python3.11/ensurepip
+
 WORKDIR /app
 
 # Créé avant le COPY pour que les fichiers appartiennent directement au bon
