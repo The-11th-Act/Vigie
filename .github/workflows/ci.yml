@@ -21,11 +21,11 @@ env:
 jobs:
   lint:
     name: Lint & format (Python)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
@@ -41,7 +41,7 @@ jobs:
 
   test:
     name: Tests (SQLite + PostgreSQL)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     # La suite tournait uniquement sur SQLite alors que la production est sur
     # PostgreSQL : les ENUM natifs, les ON DELETE CASCADE et les collations
@@ -72,9 +72,9 @@ jobs:
           - 6379:6379
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
@@ -113,7 +113,7 @@ jobs:
           REDIS_URL: redis://localhost:6379/0
         run: pytest tests/api tests/test_ingestion.py tests/test_rescoring.py tests/test_threat_intel.py
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: coverage
@@ -122,11 +122,11 @@ jobs:
 
   audit:
     name: Audit des dependances
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -137,7 +137,7 @@ jobs:
       - name: pip-audit
         run: pip-audit -r requirements.txt --strict
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -152,11 +152,11 @@ jobs:
 
   frontend:
     name: Frontend (lint, tests, build)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -190,14 +190,14 @@ jobs:
 
   docker:
     name: Build des images
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       - name: Build de l'image API
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: false
@@ -207,7 +207,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build de l'image frontend
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./frontend
           file: ./frontend/Dockerfile.prod
@@ -313,9 +313,9 @@ jobs:
 
   compose:
     name: Validation des fichiers compose
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Compose de developpement
         run: docker compose -f docker-compose.yml config --quiet
@@ -372,10 +372,10 @@ jobs:
     # mot de passe, worker et volume partage, PostgreSQL, beat, et le cablage
     # des reglages du .env jusque dans chaque conteneur.
     name: Pile de production de bout en bout
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [docker, compose]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Demarrer et traverser la pile de production
         run: bash scripts/smoke_prod_stack.sh
