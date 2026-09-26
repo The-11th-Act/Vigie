@@ -58,6 +58,11 @@ export const vulnerabilityService = {
 
   updateFinding: (id, data) =>
     api.patch(`/vulnerabilities/findings/${id}`, data),
+
+  // Through axios rather than a plain link, so an expired session is
+  // refreshed like for any other call.
+  exportFindings: (params = {}) =>
+    api.get('/vulnerabilities/findings/export.csv', { params, responseType: 'blob' }),
 }
 
 export const scanService = {

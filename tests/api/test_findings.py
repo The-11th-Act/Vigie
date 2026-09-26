@@ -1,3 +1,5 @@
+import csv
+import io
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -428,3 +430,67 @@ class TestRiskAcceptanceExpiry:
         history = client.get(f"/api/v1/vulnerabilities/findings/{finding.id}/history")
 
         assert history.json()[0]["accepted_until"] is not None
+
+
+def export(client, **params):
+    response = client.get("/api/v1/vulnerabilities/findings/export.csv", params=params)
+    assert response.status_code == 200
+    rows = list(csv.reader(io.StringIO(response.content.decode("utf-8-sig"))))
+    return response, rows
+
+
+class TestBacklogExport:
+    def test_exports_the_backlog_worst_first(self, client, threat_backlog):
+        response, rows = export(client)
+
+        assert response.headers["content-type"].startswith("text/csv")
+        assert "attachment" in response.headers["content-disposition"]
+        header, *data = rows
+        assert header[:5] == [
+            "asset",
+            "ip_address",
+            "business_criticality",
+            "internet_facing",
+            "cve_id",
+        ]
+        cve = header.index("cve_id")
+        assert [row[cve] for row in data] == cves(client)
+
+    def test_exports_what_the_filters_select(self, client, threat_backlog):
+        _, rows = export(client, kev_only=True)
+
+        header, *data = rows
+        assert [row[header.index("cve_id")] for row in data] == ["CVE-2024-0001"]
+        assert data[0][header.index("in_kev")] == "yes"
+        assert "Known exploited" in data[0][header.index("risk_factors")]
+
+    def test_formulas_are_neutralized(self, client, db_session):
+        """A hostname is whatever a scan says it is; opened in a spreadsheet,
+        a HYPERLINK formula would run."""
+        asset = Asset(ip_address="10.81.0.1", hostname='=HYPERLINK("http://evil","x")')
+        vuln = Vulnerability(
+            cve_id="CVE-2024-8101", title="@SUM(1+1)", cvss_score=5.0, severity="Medium"
+        )
+        db_session.add_all([asset, vuln])
+        db_session.flush()
+        db_session.add(
+            AssetVulnerability(
+                asset_id=asset.id,
+                vulnerability_id=vuln.id,
+                status=Status.open,
+                risk_score=5.0,
+            )
+        )
+        db_session.commit()
+
+        _, rows = export(client)
+
+        header, row = rows[0], rows[1]
+        assert row[header.index("asset")].startswith("'=")
+        assert row[header.index("title")] == "'@SUM(1+1)"
+
+    def test_the_export_requires_authentication(self, unauthenticated_client):
+        response = unauthenticated_client.get(
+            "/api/v1/vulnerabilities/findings/export.csv"
+        )
+        assert response.status_code == 401

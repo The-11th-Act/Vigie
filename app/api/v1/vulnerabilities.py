@@ -1,7 +1,9 @@
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi import status as http_status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, contains_eager, joinedload
 
@@ -29,6 +31,7 @@ from app.schemas.vulnerability import (
     VulnerabilityResponse,
     VulnerabilityUpdate,
 )
+from app.services.export import export_findings_csv
 from app.services.rescoring import rescore_open_findings
 
 router = APIRouter()
@@ -141,25 +144,32 @@ def delete_vulnerability(
     db.commit()
 
 
-@router.get("/findings", response_model=PaginatedAssetVulnerabilityResponse)
-def get_findings(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=MAX_LIMIT),
+@dataclass
+class FindingFilters:
+    status_filter: Status | None
+    min_risk: float | None
+    overdue_only: bool
+    kev_only: bool
+    min_epss: float | None
+    internet_facing_only: bool
+
+
+def finding_filters(
     status_filter: Status | None = None,
     min_risk: float | None = Query(None, ge=0, le=10),
     overdue_only: bool = False,
     kev_only: bool = False,
     min_epss: float | None = Query(None, ge=0, le=1),
     internet_facing_only: bool = False,
-    db: Session = Depends(get_db),
-    payload: dict = Depends(decode_token),
-):
-    """The risk-ranked remediation backlog across every asset.
+) -> FindingFilters:
+    """The backlog filters, shared by the listing and its CSV export so the
+    file always holds exactly what the screen showed."""
+    return FindingFilters(
+        status_filter, min_risk, overdue_only, kev_only, min_epss, internet_facing_only
+    )
 
-    Defaults to worst-risk-first, which is the view an analyst actually works
-    from. Without this endpoint the platform stored a risk score nobody could
-    order by.
-    """
+
+def _findings_query(db: Session, filters: FindingFilters):
     # Explicit joins rather than joinedload: the filters and the ranking read
     # the vulnerability and the asset, which a joinedload alias cannot offer.
     query = (
@@ -172,26 +182,62 @@ def get_findings(
         )
     )
 
-    if status_filter:
-        query = query.filter(AssetVulnerability.status == status_filter)
-    if min_risk is not None:
-        query = query.filter(AssetVulnerability.risk_score >= min_risk)
-    if overdue_only:
+    if filters.status_filter:
+        query = query.filter(AssetVulnerability.status == filters.status_filter)
+    if filters.min_risk is not None:
+        query = query.filter(AssetVulnerability.risk_score >= filters.min_risk)
+    if filters.overdue_only:
         query = query.filter(
             AssetVulnerability.status == Status.open,
             AssetVulnerability.remediation_deadline.isnot(None),
             AssetVulnerability.remediation_deadline < datetime.now(UTC),
         )
-    if kev_only:
+    if filters.kev_only:
         query = query.filter(Vulnerability.in_kev.is_(True))
-    if min_epss is not None:
-        query = query.filter(Vulnerability.epss_score >= min_epss)
-    if internet_facing_only:
+    if filters.min_epss is not None:
+        query = query.filter(Vulnerability.epss_score >= filters.min_epss)
+    if filters.internet_facing_only:
         query = query.filter(Asset.internet_facing.is_(True))
+    return query
 
+
+@router.get("/findings", response_model=PaginatedAssetVulnerabilityResponse)
+def get_findings(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=MAX_LIMIT),
+    filters: FindingFilters = Depends(finding_filters),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(decode_token),
+):
+    """The risk-ranked remediation backlog across every asset.
+
+    Defaults to worst-risk-first, which is the view an analyst actually works
+    from. Without this endpoint the platform stored a risk score nobody could
+    order by.
+    """
+    query = _findings_query(db, filters)
     total = query.count()
     items = query.order_by(*RISK_ORDER).offset(skip).limit(limit).all()
     return {"total": total, "items": items}
+
+
+@router.get("/findings/export.csv", response_class=StreamingResponse)
+def export_findings(
+    filters: FindingFilters = Depends(finding_filters),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(decode_token),
+):
+    """The filtered backlog as CSV, worst first, every row: what gets pasted
+    into a remediation ticket or a report, without scraping the screen."""
+    chunks = export_findings_csv(_findings_query(db, filters).order_by(*RISK_ORDER))
+    stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M")
+    return StreamingResponse(
+        chunks,
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="vigie-backlog-{stamp}.csv"'
+        },
+    )
 
 
 @router.get("/assets/{asset_id}", response_model=PaginatedAssetVulnerabilityResponse)

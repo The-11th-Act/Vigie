@@ -6,7 +6,7 @@ import FindingsBacklog from './FindingsBacklog'
 import { vulnerabilityService } from '../services'
 
 vi.mock('../services', () => ({
-  vulnerabilityService: { getFindings: vi.fn(), updateFinding: vi.fn() },
+  vulnerabilityService: { getFindings: vi.fn(), updateFinding: vi.fn(), exportFindings: vi.fn() },
 }))
 
 const FINDING = {
@@ -217,5 +217,26 @@ describe('FindingsBacklog — risk acceptance', () => {
     render(<FindingsBacklog />)
 
     expect(await screen.findByText(/^until /)).toBeInTheDocument()
+  })
+})
+
+describe('FindingsBacklog — export', () => {
+  it('exports with the filters on screen', async () => {
+    mockOneFinding()
+    vulnerabilityService.exportFindings.mockResolvedValue({ data: new Blob(['a,b']) })
+    URL.createObjectURL = vi.fn(() => 'blob:x')
+    URL.revokeObjectURL = vi.fn()
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    const user = userEvent.setup()
+    render(<FindingsBacklog />)
+    await screen.findByText('web-prod-01')
+
+    await user.click(screen.getByLabelText(/known exploited/i))
+    await user.click(screen.getByRole('button', { name: /export csv/i }))
+
+    await waitFor(() => expect(click).toHaveBeenCalled())
+    expect(vulnerabilityService.exportFindings).toHaveBeenCalledWith(
+      expect.objectContaining({ kev_only: true }),
+    )
   })
 })

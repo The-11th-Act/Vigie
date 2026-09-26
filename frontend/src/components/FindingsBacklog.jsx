@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { vulnerabilityService } from '../services';
 import { useFetch } from '../hooks/useFetch';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download } from 'lucide-react';
 
 const PAGE_SIZE = 20;
 const STATUSES = ['Open', 'False Positive', 'Risk Accepted', 'Remediated'];
@@ -58,6 +58,16 @@ export default function FindingsBacklog() {
   const [minEpss, setMinEpss] = useState('');
   const [rowState, setRowState] = useState({});
 
+  // The same filters feed the screen and the export, so the file holds
+  // exactly what the analyst is looking at (every page of it).
+  const filterParams = {
+    status_filter: statusFilter || undefined,
+    min_risk: minRisk || undefined,
+    overdue_only: overdueOnly || undefined,
+    kev_only: kevOnly || undefined,
+    min_epss: minEpss || undefined,
+  };
+
   const fetchFindings = useCallback(async () => {
     const res = await vulnerabilityService.getFindings({
       skip: page * PAGE_SIZE,
@@ -70,6 +80,27 @@ export default function FindingsBacklog() {
     });
     return res.data;
   }, [page, statusFilter, minRisk, overdueOnly, kevOnly, minEpss]);
+
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState(null);
+
+  const handleExport = async () => {
+    setExporting(true);
+    setExportError(null);
+    try {
+      const res = await vulnerabilityService.exportFindings(filterParams);
+      const url = URL.createObjectURL(res.data);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `vigie-backlog-${new Date().toISOString().slice(0, 10)}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setExportError(err.message || 'Export failed');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const { data, loading, error, refetch } = useFetch(fetchFindings, [
     page,
@@ -198,7 +229,19 @@ export default function FindingsBacklog() {
           />
           Known exploited (KEV) only
         </label>
+
+        <button
+          type="button"
+          className="button"
+          onClick={handleExport}
+          disabled={exporting}
+          style={{ marginLeft: 'auto', padding: '0.5rem 0.9rem', fontSize: '0.85rem' }}
+        >
+          <Download size={16} />
+          {exporting ? 'Exporting...' : 'Export CSV'}
+        </button>
       </div>
+      {exportError && <div className="error-message">Export failed: {exportError}</div>}
 
       {loading && <div className="loading">Loading backlog...</div>}
       {error && <div className="error-message">Error: {error}</div>}

@@ -414,6 +414,8 @@ lançait les images une par une. Le faire a révélé trois défauts, corrigés 
 - [x] Acceptation de risque avec expiration, revue quand un CVE accepté entre dans KEV
       *(26/09/2026 : `accepted_until`, 90 j par défaut, 365 j max ; réouverture tracée
       par l'acteur « system »)*
-- [ ] Export CSV du backlog, webhooks
+- [x] Export CSV du backlog *(26/09/2026 : mêmes filtres que l'écran, formules
+      neutralisées, écrit via un fichier temporaire)*
+- [ ] Webhooks
 - [ ] `.gitattributes` pour fixer les fins de ligne (le dépôt mélange CRLF et LF dans
       l'arbre de travail ; à faire avec un `git add --renormalize` dédié)
