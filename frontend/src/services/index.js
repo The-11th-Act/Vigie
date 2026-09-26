@@ -1,20 +1,21 @@
-import api from './api'
+import api, { COOKIE_SESSION } from './api'
 
 export const authService = {
+  // Cookie mode: the API answers with HttpOnly session cookies and keeps the
+  // tokens out of the response body.
   login: (username, password) =>
-    api.post('/auth/login', { username, password }),
+    api.post('/auth/login', { username, password }, { headers: COOKIE_SESSION }),
 
-  register: (email, username, password, role = 'analyst') =>
-    api.post('/auth/register', { email, username, password, role }),
+  register: (email, username, password) =>
+    api.post('/auth/register', { email, username, password }),
 
+  // Probed on start-up: a 401 just means nobody is signed in.
   getMe: () =>
-    api.get('/auth/me'),
+    api.get('/auth/me', { skipLoginRedirect: true }),
 
-  refresh: (refreshToken) =>
-    api.post('/auth/refresh', { refresh_token: refreshToken }),
-
-  logout: (refreshToken) =>
-    api.post('/auth/logout', { refresh_token: refreshToken }),
+  // The refresh token is the session cookie; the API clears the cookies.
+  logout: () =>
+    api.post('/auth/logout'),
 }
 
 export const dashboardService = {

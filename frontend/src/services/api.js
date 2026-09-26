@@ -1,21 +1,37 @@
 import axios from 'axios'
 
+// Browser sessions live in HttpOnly cookies set by the API: no token is ever
+// readable from JavaScript, so a script injected into the page cannot steal one.
+// State-changing requests echo the CSRF cookie in a header, which another site
+// can trigger but never read.
+const CSRF_COOKIE = 'vigie_csrf'
+const CSRF_HEADER = 'X-CSRF-Token'
+export const COOKIE_SESSION = { 'X-Session-Mode': 'cookie' }
+const SAFE_METHODS = new Set(['get', 'head', 'options'])
+
+// Keys written by the previous, localStorage-based session. Purged on start-up
+// so a token left behind by an older version does not linger in the browser.
+const LEGACY_KEYS = ['access_token', 'refresh_token', 'role', 'username']
+
+export function purgeLegacySession() {
+  LEGACY_KEYS.forEach((key) => localStorage.removeItem(key))
+}
+
+export function readCookie(name) {
+  const prefix = `${name}=`
+  const match = document.cookie.split('; ').find((part) => part.startsWith(prefix))
+  return match ? decodeURIComponent(match.slice(prefix.length)) : null
+}
+
 const api = axios.create({
   baseURL: '/api/v1',
   headers: { 'Content-Type': 'application/json' },
 })
 
-export function clearSession() {
-  localStorage.removeItem('access_token')
-  localStorage.removeItem('refresh_token')
-  localStorage.removeItem('role')
-  localStorage.removeItem('username')
-}
-
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('access_token')
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
+  if (!SAFE_METHODS.has((config.method || 'get').toLowerCase())) {
+    const csrf = readCookie(CSRF_COOKIE)
+    if (csrf) config.headers[CSRF_HEADER] = csrf
   }
   return config
 })
@@ -25,19 +41,11 @@ api.interceptors.request.use((config) => {
 // token multiple times over.
 let refreshInFlight = null
 
-function refreshAccessToken() {
-  const refreshToken = localStorage.getItem('refresh_token')
-  if (!refreshToken) return Promise.reject(new Error('no refresh token'))
-
+function refreshSession() {
   if (!refreshInFlight) {
     refreshInFlight = axios
-      .post('/api/v1/auth/refresh', { refresh_token: refreshToken })
-      .then(({ data }) => {
-        localStorage.setItem('access_token', data.access_token)
-        if (data.refresh_token) {
-          localStorage.setItem('refresh_token', data.refresh_token)
-        }
-        return data.access_token
+      .post('/api/v1/auth/refresh', null, {
+        headers: { ...COOKIE_SESSION, [CSRF_HEADER]: readCookie(CSRF_COOKIE) || '' },
       })
       .finally(() => {
         refreshInFlight = null
@@ -46,34 +54,39 @@ function refreshAccessToken() {
   return refreshInFlight
 }
 
+function redirectToLogin(config) {
+  // The session probe on start-up expects a 401 when nobody is signed in, and
+  // the login page must not reload itself in a loop.
+  if (config?.skipLoginRedirect || window.location.pathname === '/login') return
+  window.location.href = '/login'
+}
+
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const original = error.config
 
-    // Retry once, and never for the refresh call itself — that would loop.
+    // Retry once, and never for the auth calls themselves — that would loop.
     const canRetry =
       error.response?.status === 401 &&
       original &&
       !original._retried &&
-      !original.url?.includes('/auth/refresh')
+      !original.url?.includes('/auth/refresh') &&
+      !original.url?.includes('/auth/login')
 
     if (canRetry) {
       original._retried = true
       try {
-        const token = await refreshAccessToken()
-        original.headers.Authorization = `Bearer ${token}`
+        await refreshSession()
         return api(original)
       } catch {
-        clearSession()
-        window.location.href = '/login'
+        redirectToLogin(original)
         return Promise.reject(error)
       }
     }
 
     if (error.response?.status === 401) {
-      clearSession()
-      window.location.href = '/login'
+      redirectToLogin(original)
     }
     return Promise.reject(error)
   }

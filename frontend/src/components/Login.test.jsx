@@ -1,13 +1,14 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 
 import Login from './Login'
+import { AuthProvider } from '../auth/AuthContext'
 import { authService } from '../services'
 
 vi.mock('../services', () => ({
-  authService: { login: vi.fn() },
+  authService: { login: vi.fn(), getMe: vi.fn(), logout: vi.fn() },
 }))
 
 const navigate = vi.fn()
@@ -17,9 +18,13 @@ vi.mock('react-router-dom', async () => {
 })
 
 function renderLogin() {
+  // Nobody is signed in when the login page opens.
+  authService.getMe.mockRejectedValue({ response: { status: 401 } })
   return render(
     <MemoryRouter>
-      <Login />
+      <AuthProvider>
+        <Login />
+      </AuthProvider>
     </MemoryRouter>
   )
 }
@@ -31,27 +36,21 @@ async function submitCredentials(user, username = 'admin', password = 'adminpass
 }
 
 describe('Login', () => {
-  it('stores both tokens and the identity on success', async () => {
-    authService.login.mockResolvedValue({
-      data: {
-        access_token: 'access-1',
-        refresh_token: 'refresh-1',
-        role: 'admin',
-        username: 'admin',
-      },
-    })
+  beforeEach(() => navigate.mockClear())
+
+  it('signs in without writing any token to the browser storage', async () => {
+    // The API answers with HttpOnly cookies; the body carries no token.
+    authService.login.mockResolvedValue({ data: { role: 'admin', username: 'admin' } })
 
     const user = userEvent.setup()
     renderLogin()
     await submitCredentials(user)
 
     await waitFor(() => {
-      expect(localStorage.getItem('access_token')).toBe('access-1')
+      expect(navigate).toHaveBeenCalledWith('/', { replace: true })
     })
-    // Without the refresh token the session could not survive expiry.
-    expect(localStorage.getItem('refresh_token')).toBe('refresh-1')
-    expect(localStorage.getItem('role')).toBe('admin')
-    expect(navigate).toHaveBeenCalledWith('/', { replace: true })
+    expect(authService.login).toHaveBeenCalledWith('admin', 'adminpass123456')
+    expect(localStorage.length).toBe(0)
   })
 
   it('shows the API error and keeps the user on the page', async () => {
@@ -64,7 +63,7 @@ describe('Login', () => {
     await submitCredentials(user, 'admin', 'wrongpass')
 
     expect(await screen.findByText(/incorrect username or password/i)).toBeInTheDocument()
-    expect(localStorage.getItem('access_token')).toBeNull()
+    expect(navigate).not.toHaveBeenCalledWith('/', { replace: true })
   })
 
   it('surfaces a lockout message from the throttle', async () => {

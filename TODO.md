@@ -301,7 +301,9 @@ un usage réglementaire.
 `services/api.js` : lisible par tout script injecté. Le point 9 y a ajouté le refresh
 token, ce qui rend le passage au cookie plus pressant.
 
-- [ ] Cookie `HttpOnly` + `SameSite=Strict` + protection CSRF
+- [x] Cookie `HttpOnly` + `SameSite=Strict` + protection CSRF *(26/09/2026 : mode
+      cookie demandé par `X-Session-Mode`, CSRF double-submit, Bearer inchangé pour
+      les clients d'API ; le frontend n'écrit plus rien dans `localStorage`)*
 
 ---
 

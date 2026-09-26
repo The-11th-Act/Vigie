@@ -268,6 +268,15 @@ the beat scheduler then pulls open findings every
 - Failed logins are throttled per IP and per account (`LOGIN_MAX_ATTEMPTS`,
   `LOGIN_LOCKOUT_SECONDS`). Access tokens can be revoked via
   `POST /api/v1/auth/logout`; refresh tokens rotate on use.
+- The web app keeps no token in `localStorage`: it logs in with
+  `X-Session-Mode: cookie` and the API answers with HttpOnly, `SameSite=Strict`
+  cookies (`Secure` in production, `AUTH_COOKIE_SECURE`). A request
+  authenticated by cookie that changes something must echo the `vigie_csrf`
+  cookie in `X-CSRF-Token`. API clients and scripts keep using
+  `Authorization: Bearer`, unchanged.
+- Tokens carry the id of their signing key (`kid`): the key can be rotated
+  without logging anyone out, see
+  [`docs/EXPLOITATION.md`](docs/EXPLOITATION.md).
 
 ## Project status
 

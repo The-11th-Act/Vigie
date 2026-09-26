@@ -3,6 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import AssetsList from './AssetsList'
+import { AuthContext } from '../auth/AuthContext'
 import { assetService } from '../services'
 
 vi.mock('../services', () => ({
@@ -44,11 +45,14 @@ describe('AssetsList — Internet exposure', () => {
   it('sends the exposure when editing an asset', async () => {
     // The update payload is built field by field: a field left out of it is
     // silently never saved, which is exactly what this guards against.
-    localStorage.setItem('role', 'admin')
     mockAssets(ASSET)
     assetService.update.mockResolvedValue({ data: {} })
     const user = userEvent.setup()
-    render(<AssetsList />)
+    render(
+      <AuthContext.Provider value={{ user: { username: 'admin', role: 'admin' }, loading: false }}>
+        <AssetsList />
+      </AuthContext.Provider>,
+    )
 
     await user.click(await screen.findByTitle('Edit'))
     await user.click(screen.getByLabelText(/exposed to the internet/i))

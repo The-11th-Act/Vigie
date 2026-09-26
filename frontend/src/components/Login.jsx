@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LogIn } from 'lucide-react';
-import { authService } from '../services';
+import { useAuth } from '../auth/AuthContext';
 
 export default function Login() {
   const navigate = useNavigate();
+  const { login } = useAuth();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
@@ -15,13 +16,7 @@ export default function Login() {
     setLoading(true);
     setError(null);
     try {
-      const res = await authService.login(username, password);
-      localStorage.setItem('access_token', res.data.access_token);
-      if (res.data.refresh_token) {
-        localStorage.setItem('refresh_token', res.data.refresh_token);
-      }
-      localStorage.setItem('role', res.data.role);
-      localStorage.setItem('username', res.data.username);
+      await login(username, password);
       navigate('/', { replace: true });
     } catch (err) {
       setError(err.response?.data?.detail || err.message || 'Login failed');

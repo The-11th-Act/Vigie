@@ -8,23 +8,15 @@ import FindingsBacklog from './components/FindingsBacklog'
 import ScanUpload from './components/ScanUpload'
 import Login from './components/Login'
 import ProtectedRoute from './components/ProtectedRoute'
-import { authService } from './services'
-import { clearSession } from './services/api'
+import { AuthProvider, useAuth } from './auth/AuthContext'
 
 function Sidebar() {
   const navigate = useNavigate()
-  const username = localStorage.getItem('username')
+  const { user, logout } = useAuth()
+  const username = user?.username
 
   const handleLogout = async () => {
-    // Revoke server-side first: clearing local storage alone would leave the
-    // token valid for the rest of its lifetime. A failure here (expired token,
-    // API down) must still log the user out locally.
-    try {
-      await authService.logout(localStorage.getItem('refresh_token'))
-    } catch {
-      /* revocation is best-effort */
-    }
-    clearSession()
+    await logout()
     navigate('/login')
   }
 
@@ -94,10 +86,12 @@ function AuthenticatedLayout() {
 function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route path="/*" element={<AuthenticatedLayout />} />
-      </Routes>
+      <AuthProvider>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="/*" element={<AuthenticatedLayout />} />
+        </Routes>
+      </AuthProvider>
     </BrowserRouter>
   )
 }

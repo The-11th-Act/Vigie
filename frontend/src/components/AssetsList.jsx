@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { assetService } from '../services';
 import { useFetch } from '../hooks/useFetch';
+import { useAuth } from '../auth/AuthContext';
 import { Search, ChevronLeft, ChevronRight, Plus, Pencil, Trash2 } from 'lucide-react';
 
 const PAGE_SIZE = 20;
@@ -35,7 +36,9 @@ export default function AssetsList() {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState(null);
 
-  const isAdmin = localStorage.getItem('role') === 'admin';
+  // Only hides controls: the API enforces the role on its own, from the
+  // database.
+  const isAdmin = useAuth().user?.role === 'admin';
 
   // Debounce held in a ref rather than on `window`: a module-level global was
   // shared with every other list and leaked its timer between components.
