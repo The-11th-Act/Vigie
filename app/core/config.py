@@ -39,6 +39,13 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"  # development | staging | production
 
     SECRET_KEY: str
+    # Identifies SECRET_KEY in the header ("kid") of every token it signs, so the
+    # key can be rotated without logging everyone out. Procedure:
+    # docs/EXPLOITATION.md.
+    SECRET_KEY_ID: str = Field(default="k1", min_length=1, max_length=32)
+    # Keys retired from signing, by kid, still accepted to verify the tokens
+    # they issued. Drop one once REFRESH_TOKEN_EXPIRE_DAYS have passed.
+    PREVIOUS_SECRET_KEYS: dict[str, str] = {}
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
@@ -164,15 +171,26 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_secret_key(self) -> "Settings":
-        weak = (
-            len(self.SECRET_KEY) < MIN_SECRET_KEY_LENGTH
-            or self.SECRET_KEY in INSECURE_SECRET_KEYS
+        if self.SECRET_KEY_ID in self.PREVIOUS_SECRET_KEYS:
+            raise ValueError(
+                f"SECRET_KEY_ID {self.SECRET_KEY_ID!r} is also listed in "
+                "PREVIOUS_SECRET_KEYS: give the new key a new id."
+            )
+        if self.SECRET_KEY in self.PREVIOUS_SECRET_KEYS.values():
+            raise ValueError("SECRET_KEY is also listed in PREVIOUS_SECRET_KEYS.")
+
+        # A retired key still verifies tokens: it deserves the same scrutiny.
+        keys = [self.SECRET_KEY, *self.PREVIOUS_SECRET_KEYS.values()]
+        weak = any(
+            len(key) < MIN_SECRET_KEY_LENGTH or key in INSECURE_SECRET_KEYS
+            for key in keys
         )
         if not weak:
             return self
 
         message = (
-            "SECRET_KEY is weak or is a known default value. Generate one with: "
+            "SECRET_KEY (or a key in PREVIOUS_SECRET_KEYS) is weak or is a known "
+            "default value. Generate one with: "
             'python -c "import secrets; print(secrets.token_urlsafe(48))"'
         )
         if self.is_production:

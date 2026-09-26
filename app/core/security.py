@@ -37,7 +37,12 @@ def _encode(
     }
     if extra_claims:
         to_encode.update(extra_claims)
-    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    return jwt.encode(
+        to_encode,
+        settings.SECRET_KEY,
+        algorithm=settings.ALGORITHM,
+        headers={"kid": settings.SECRET_KEY_ID},
+    )
 
 
 def create_access_token(
@@ -80,10 +85,13 @@ def _decode(token: str, expected_type: str) -> dict:
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+    key = _verification_key(token)
+    if key is None:
+        raise credentials_exception
     try:
         payload = jwt.decode(
             token,
-            settings.SECRET_KEY,
+            key,
             algorithms=[settings.ALGORITHM],
             options={"require": ["exp", "sub"]},
         )
@@ -106,6 +114,25 @@ def _decode(token: str, expected_type: str) -> dict:
         raise credentials_exception
 
     return payload
+
+
+def _verification_key(token: str) -> str | None:
+    """The key that must have signed ``token``, according to its "kid".
+
+    The current key for its own id and for tokens minted before key ids
+    existed; a retired key for a kid listed in PREVIOUS_SECRET_KEYS; None for
+    anything else. The header is read unverified, which is safe: it only picks
+    the key, and the signature is then checked against that key alone.
+    """
+    try:
+        kid = jwt.get_unverified_header(token).get("kid")
+    except jwt.PyJWTError:
+        return None
+    if kid is None or kid == settings.SECRET_KEY_ID:
+        return settings.SECRET_KEY
+    if not isinstance(kid, str):
+        return None
+    return settings.PREVIOUS_SECRET_KEYS.get(kid)
 
 
 def decode_token(token: str = Depends(oauth2_scheme)) -> dict:

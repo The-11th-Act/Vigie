@@ -12,6 +12,7 @@
 # unnoticed: in development, the bind-mounted .env hid the gap.
 x-app-settings: &app-settings
   LOG_LEVEL: ${LOG_LEVEL:-}
+  SECRET_KEY_ID: ${SECRET_KEY_ID:-}
   ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-}
   REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-}
   MAX_SCAN_UPLOAD_BYTES: ${MAX_SCAN_UPLOAD_BYTES:-}
@@ -97,6 +98,9 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-vigie_user}:${POSTGRES_PASSWORD:-vigie_password}@db:5432/${POSTGRES_DB:-vigie}
       REDIS_URL: redis://redis:6379/0
       BACKEND_CORS_ORIGINS: '["http://localhost:5173","http://localhost:3000","http://frontend:5173"]'
+      # Retired signing keys, still accepted to verify their tokens. Secret,
+      # and only the API verifies tokens.
+      PREVIOUS_SECRET_KEYS: ${PREVIOUS_SECRET_KEYS:-}
       # Login throttling only concerns the API.
       RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-}
       LOGIN_MAX_ATTEMPTS: ${LOGIN_MAX_ATTEMPTS:-}

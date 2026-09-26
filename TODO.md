@@ -265,9 +265,10 @@ Les secrets viennent d'un `.env` sur disque, sans coffre ni rotation. Changer `S
 invalide d'un coup tous les tokens émis : pas de `kid`, pas de période de recouvrement.
 
 - [ ] Sortir les secrets du fichier (Docker secrets, SOPS, ou coffre managé)
-- [ ] `kid` dans l'en-tête JWT + acceptation de N clés, pour tourner la clé sans
-      déconnecter tout le monde
-- [ ] Documenter la procédure de rotation
+- [x] `kid` dans l'en-tête JWT + acceptation de N clés (`SECRET_KEY_ID`,
+      `PREVIOUS_SECRET_KEYS`), pour tourner la clé sans déconnecter tout le monde
+      *(26/09/2026)*
+- [x] Documenter la procédure de rotation : `docs/EXPLOITATION.md`
 
 ### D8. Aucune sauvegarde
 Le volume `pgdata` n'a ni politique de sauvegarde ni procédure de restauration. Le perdre,

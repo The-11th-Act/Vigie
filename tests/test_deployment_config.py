@@ -163,6 +163,7 @@ NOT_DEPLOYMENT_SETTINGS = {"PROJECT_NAME", "API_V1_STR", "ALGORITHM", "SCAN_UPLO
 # un identifiant administrateur n'a rien à faire dans l'environnement des autres.
 ONLY_ON = {
     "web": {
+        "PREVIOUS_SECRET_KEYS",
         "BACKEND_CORS_ORIGINS",
         "RATE_LIMIT_ENABLED",
         "LOGIN_MAX_ATTEMPTS",
