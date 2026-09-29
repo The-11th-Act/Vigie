@@ -5,7 +5,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session, contains_eager, joinedload
 
 from app.core.config import settings
-from app.core.security import decode_token
+from app.core.security import decode_token, require_admin
 from app.db.database import get_db
 from app.models.asset import Asset
 from app.models.vulnerability import (
@@ -15,7 +15,9 @@ from app.models.vulnerability import (
     Status,
     Vulnerability,
 )
+from app.services.dashboard_metrics import performance, team_names, trends
 from app.services.risk_scoring import EPSS_BANDS, RiskInputs, explain_risk, risk_level
+from app.services.snapshots import record_snapshots
 from app.services.threat_intel import feed_freshness
 
 # "Likely to be exploited": the lower bound of the second EPSS band (10 %).
@@ -193,3 +195,41 @@ def _is_past(deadline, now) -> bool:
     if deadline.tzinfo is None:
         deadline = deadline.replace(tzinfo=UTC)
     return deadline < now
+
+
+@router.get("/trends")
+def get_trends(
+    days: int = Query(90, ge=7, le=365),
+    owner_team: str | None = Query(None, max_length=128),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(decode_token),
+):
+    """The backlog day by day (from the daily snapshots), the estate or a team.
+
+    Days rebuilt from detection and fix dates rather than recorded that day
+    are flagged ``estimated``.
+    """
+    return {"days": days, "points": trends(db, days, owner_team)}
+
+
+@router.get("/performance")
+def get_performance(
+    days: int = Query(30, ge=1, le=365),
+    owner_team: str | None = Query(None, max_length=128),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(decode_token),
+):
+    """Remediation over a recent window: fixes, deadlines kept, time to fix
+    (overall and by criticality), risk removed, and every team's standing."""
+    return {**performance(db, days, owner_team), "team_names": team_names(db)}
+
+
+@router.post("/snapshots/rebuild")
+def rebuild_snapshots(
+    db: Session = Depends(get_db), admin: dict = Depends(require_admin)
+):
+    """Take yesterday's snapshot and rebuild any missing day of the last 90,
+    without waiting for the daily pass (after an install, typically)."""
+    result = record_snapshots(db)
+    db.commit()
+    return result

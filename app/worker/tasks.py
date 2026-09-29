@@ -13,6 +13,7 @@ from app.services.categorization import categorize_missing
 from app.services.ingestion import ingest_findings
 from app.services.rescoring import rescore_open_findings
 from app.services.risk_acceptance import expire_risk_acceptances
+from app.services.snapshots import record_snapshots
 from app.services.threat_intel import refresh_threat_intel
 from app.services.tickets import sync_tickets
 from app.worker.celery_app import celery_app
@@ -174,6 +175,8 @@ def rescore_open_findings_task():
         # Safety net: every ticket in line with its findings once a day.
         sync_tickets(db)
         categorize_missing(db)
+        # Yesterday as it ended, and any missing day of history rebuilt.
+        record_snapshots(db)
         db.commit()
         logger.info(
             "Daily run: %d risk acceptance(s) expired, %d open finding(s) rescored",

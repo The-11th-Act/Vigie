@@ -3,6 +3,7 @@ from app.models.extract import ApiToken, SavedExtract
 from app.models.preferences import ModuleSetting, RoleProfile, UserPreference
 from app.models.remediation import FindingRemediation, RemediationAction
 from app.models.scan import ScanJob, ScanStatus
+from app.models.snapshot import BacklogSnapshot
 from app.models.threat_intel import EpssScoreEntry, KevCatalogEntry, ThreatFeedStatus
 from app.models.ticket import RemediationTicket, TicketAuditLog, TicketFinding
 from app.models.user import User
@@ -31,6 +32,7 @@ __all__ = [
     "TicketFinding",
     "User",
     "ScanJob",
+    "BacklogSnapshot",
     "ScanStatus",
     "ThreatFeedStatus",
     "KevCatalogEntry",

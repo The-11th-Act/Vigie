@@ -185,6 +185,28 @@ from the user as the database knows them now: a tab missing from the sidebar
 does not leave its API open. Administrators always keep the Administration
 module, and the last administrator cannot be demoted.
 
+## Dashboards and trends
+
+The Dashboard has two views: **Posture** (where the estate stands now) and
+**Trends & remediation**, where a remediator lands.
+
+- `backlog_snapshots` keeps, per day and per owner team, the backlog as it
+  stood at the end of the day (UTC): open findings, high risk (>= 7), KEV,
+  overdue, open risk, new findings, and the day's fixes (count, on time,
+  total days to fix, risk removed). The daily pass records yesterday; on its
+  first run, or when an administrator calls
+  `POST /api/v1/dashboard/snapshots/rebuild`, it also rebuilds the last 90
+  days from detection and fix dates. Those days are flagged `estimated`: a
+  finding reopened since, or a score that moved, is not visible from today.
+- `GET /api/v1/dashboard/trends?days=90&owner_team=` returns one point per
+  day, for the estate or a team (`__none__`: hosts without a team).
+- `GET /api/v1/dashboard/performance?days=30&owner_team=` is computed from
+  the findings: fixes, share of deadlines kept, mean time to remediate
+  (overall and by business criticality), risk removed, open findings and
+  risk now against the start of the period, and each team's backlog,
+  fixes and tickets. Only real fixes count: an accepted risk or a false
+  positive is not a remediation.
+
 ## Categorization
 
 The **Categorization** module crosses open findings by the kind of software

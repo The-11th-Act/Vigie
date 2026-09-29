@@ -24,6 +24,17 @@ export const dashboardService = {
 
   getTopRisks: (limit = 10) =>
     api.get('/dashboard/top-risks', { params: { limit } }),
+
+  // Day by day, from the daily snapshots.
+  getTrends: (params = {}) =>
+    api.get('/dashboard/trends', { params }),
+
+  getPerformance: (params = {}) =>
+    api.get('/dashboard/performance', { params }),
+
+  // Admin: rebuild missing history now rather than at the next daily pass.
+  rebuildSnapshots: () =>
+    api.post('/dashboard/snapshots/rebuild'),
 }
 
 export const assetService = {

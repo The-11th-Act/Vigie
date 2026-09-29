@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useFetch } from '../hooks/useFetch';
 import { dashboardService } from '../services';
+import { useAuth } from '../auth/AuthContext';
+import DashboardTrends from './DashboardTrends';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, CartesianGrid } from 'recharts';
 import { AlertTriangle, Server, ShieldAlert, Activity, Clock, Flame } from 'lucide-react';
 
@@ -13,7 +15,7 @@ function describeFeed(feed) {
   return `${label}: ${when}${feed.stale ? ' (stale)' : ''}`;
 }
 
-export default function Dashboard() {
+function Posture() {
   const { data: stats, loading, error } = useFetch(() => dashboardService.getStats().then(r => r.data));
   const { data: topRisks, loading: topRisksLoading } = useFetch(() => dashboardService.getTopRisks(10).then(r => r.data));
 
@@ -128,6 +130,39 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+const VIEWS = [
+  { key: 'posture', label: 'Posture' },
+  { key: 'trends', label: 'Trends & remediation' },
+];
+
+// Two dashboards: where the estate stands, and how remediation is going. A
+// remediation team opens on the second.
+export default function Dashboard() {
+  const role = useAuth().user?.role;
+  const [view, setView] = useState(role === 'remediator' ? 'trends' : 'posture');
+
+  return (
+    <div>
+      <div role="tablist" style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem' }}>
+        {VIEWS.map(({ key, label }) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={view === key}
+            className={view === key ? 'button' : 'icon-button'}
+            onClick={() => setView(key)}
+            style={{ padding: '0.45rem 1rem', fontSize: '0.875rem' }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {view === 'posture' ? <Posture /> : <DashboardTrends />}
     </div>
   );
 }

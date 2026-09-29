@@ -430,7 +430,7 @@ Vigie priorise bien, mais elle parle CVE. Les équipes de remédiation, elles, t
 
 Cible : une barre latérale composée de modules (profil par rôle, ajusté par chaque utilisateur), et des tickets de remédiation gérés dans Vigie. Un connecteur Jira, ServiceNow ou GLPI viendra ensuite sur la même structure.
 
-Ordre retenu : 1 → 0 → 2 → 4 → 3 → 5 → 6 → 7. Faits : 1, 2, 3, 4 et 5.
+Ordre retenu : 1 → 0 → 2 → 4 → 3 → 5 → 6 → 7. Faits : 1 à 6.
 
 ## ✅ 1. Capturer les données de remédiation
 
@@ -485,8 +485,11 @@ Les parseurs jetaient tout ce que les scanners disent du correctif. Les fichiers
 - [x] La requête filtrée du backlog vit dans `app/services/findings.py` (écran, export, extractions) ; filtre `owner_team`
 - [ ] Format XLSX si les équipes le demandent
 
-## 6. Dashboards
-- [ ] Instantanés quotidiens du backlog (tendances), MTTR, respect des SLA, risque réduit, avancement des tickets par équipe
+## ✅ 6. Dashboards
+- [x] `backlog_snapshots` (migration 0018) par jour et par équipe, pris par le passage quotidien ; 90 jours reconstruits (estimés) au premier passage ou à la demande d'un admin
+- [x] Tendances, et performance sur une période : corrections, échéances tenues, MTTR global et par criticité, risque retiré, évolution du backlog, tableau par équipe avec ses tickets
+- [x] Deux vues : Posture et Tendances & remédiation (celle du remediator)
+- [ ] Métriques Prometheus correspondantes (MTTR, échéances tenues) si l'exploitation les veut dans Grafana
 
 ## 7. Connecteur de ticketing et webhooks
 - [ ] Interface `TicketConnector`, première implémentation, synchronisation du statut
