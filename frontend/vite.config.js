@@ -11,11 +11,18 @@ export default defineConfig({
     // modification du code applicatif invalide le cache des dependances.
     // Separer les vendors permet au navigateur de garder React et Recharts
     // en cache entre deux deploiements.
-    rollupOptions: {
+    // Vite 8 bundles with Rolldown, which only takes the function form.
+    rolldownOptions: {
       output: {
-        manualChunks: {
-          react: ['react', 'react-dom', 'react-router-dom'],
-          charts: ['recharts'],
+        // Module ids use forward slashes on every platform.
+        manualChunks(id) {
+          if (/\/node_modules\/(react|react-dom|react-router|react-router-dom|scheduler)\//.test(id)) {
+            return 'react'
+          }
+          if (/\/node_modules\/(recharts|recharts-scale|d3-[^/]+|victory-vendor)\//.test(id)) {
+            return 'charts'
+          }
+          return undefined
         },
       },
     },
