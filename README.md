@@ -157,6 +157,33 @@ replays the API suite against a real PostgreSQL, because SQLite says nothing abo
 VIGIE_TEST_DATABASE_URL=postgresql://user:pass@localhost:5432/vigie_test pytest tests/api
 ```
 
+## Modules and roles
+
+The application is split into modules (`app/core/modules.py`): Dashboard,
+Risk Backlog, Assets, Vulnerabilities, Scans and Administration. Which ones a
+user gets is decided in three layers:
+
+1. an administrator can switch a module off for the whole instance;
+2. each role has a profile, the modules it grants in their default order
+   (editable on the Administration screen, or reset to the built-in default);
+3. each user can reorder or hide the modules of their own profile
+   (Preferences). Hiding only removes the tab: the module stays usable.
+
+| Role | Default modules | Can decide risk |
+|---|---|---|
+| `admin` | all, Administration included | yes |
+| `analyst` | all but Administration | yes |
+| `remediator` | Dashboard, Risk Backlog, Assets | no |
+
+"Deciding risk" means accepting a risk, dismissing a false positive, editing an
+asset's criticality or exposure, or a CVE's score: a remediator marks fixes done
+but does not decide what is acceptable.
+
+Every route checks the module it belongs to on the server (`require_module`),
+from the user as the database knows them now: a tab missing from the sidebar
+does not leave its API open. Administrators always keep the Administration
+module, and the last administrator cannot be demoted.
+
 ## Health probes
 
 | Endpoint | Checks | Use it for |

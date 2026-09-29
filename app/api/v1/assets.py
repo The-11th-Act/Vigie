@@ -3,6 +3,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_or_404
+from app.core.modules import require_risk_decision
 from app.core.security import decode_token, require_admin
 from app.db.database import get_db
 from app.models.asset import Asset, Criticality
@@ -45,7 +46,13 @@ def get_assets(
     return {"total": total, "items": items}
 
 
-@router.post("/", response_model=AssetResponse, status_code=status.HTTP_201_CREATED)
+# Criticality and exposure weigh on every score: risk decisions.
+@router.post(
+    "/",
+    response_model=AssetResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_risk_decision)],
+)
 def create_asset(
     asset_in: AssetCreate,
     db: Session = Depends(get_db),
@@ -74,7 +81,11 @@ def get_asset(
     return get_or_404(db, Asset, asset_id)
 
 
-@router.put("/{asset_id}", response_model=AssetResponse)
+@router.put(
+    "/{asset_id}",
+    response_model=AssetResponse,
+    dependencies=[Depends(require_risk_decision)],
+)
 def update_asset(
     asset_id: int,
     asset_in: AssetUpdate,

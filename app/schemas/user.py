@@ -1,6 +1,6 @@
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
-VALID_ROLES = {"admin", "analyst"}
+VALID_ROLES = {"admin", "analyst", "remediator"}
 
 MIN_PASSWORD_LENGTH = 12
 # bcrypt silently truncates beyond 72 bytes; reject rather than mislead.

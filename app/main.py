@@ -12,9 +12,11 @@ from sqlalchemy.orm import Session
 from starlette.responses import JSONResponse, Response
 
 from app.api.v1 import (
+    admin,
     assets,
     auth,
     dashboard,
+    me,
     scans,
     threat_intel,
     users,
@@ -24,6 +26,7 @@ from app.core import metrics
 from app.core.bootstrap import bootstrap_admin_user
 from app.core.config import settings
 from app.core.logging import configure_logging, get_request_id, set_request_id
+from app.core.modules import require_module
 from app.core.security import CSRF_HEADER, SESSION_MODE_HEADER
 from app.db.database import SessionLocal, get_db
 
@@ -126,16 +129,34 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 
 app.include_router(auth.router, prefix=f"{settings.API_V1_STR}/auth", tags=["Auth"])
 app.include_router(users.router, prefix=f"{settings.API_V1_STR}/users", tags=["Users"])
+app.include_router(me.router, prefix=f"{settings.API_V1_STR}/me", tags=["Me"])
+app.include_router(admin.router, prefix=f"{settings.API_V1_STR}/admin", tags=["Admin"])
+# Each module's routes check that the user has it: a tab missing from the
+# sidebar would otherwise leave its API wide open.
 app.include_router(
-    dashboard.router, prefix=f"{settings.API_V1_STR}/dashboard", tags=["Dashboard"]
+    dashboard.router,
+    prefix=f"{settings.API_V1_STR}/dashboard",
+    tags=["Dashboard"],
+    dependencies=[Depends(require_module("dashboard"))],
 )
-app.include_router(assets.router, prefix=f"{settings.API_V1_STR}/assets", tags=["Assets"])
+app.include_router(
+    assets.router,
+    prefix=f"{settings.API_V1_STR}/assets",
+    tags=["Assets"],
+    dependencies=[Depends(require_module("assets"))],
+)
+# Serves three screens; each route names its own module.
 app.include_router(
     vulnerabilities.router,
     prefix=f"{settings.API_V1_STR}/vulnerabilities",
     tags=["Vulnerabilities"],
 )
-app.include_router(scans.router, prefix=f"{settings.API_V1_STR}/scans", tags=["Scans"])
+app.include_router(
+    scans.router,
+    prefix=f"{settings.API_V1_STR}/scans",
+    tags=["Scans"],
+    dependencies=[Depends(require_module("scans"))],
+)
 app.include_router(
     threat_intel.router,
     prefix=f"{settings.API_V1_STR}/threat-intel",

@@ -9,10 +9,12 @@ from sqlalchemy.orm import Session, contains_eager, joinedload, selectinload
 
 from app.api.deps import get_or_404
 from app.core.config import settings
+from app.core.modules import ROLE_REMEDIATOR, require_module, require_risk_decision
 from app.core.security import decode_token, require_admin
 from app.db.database import get_db
 from app.models.asset import Asset
 from app.models.remediation import FindingRemediation
+from app.models.user import User
 from app.models.vulnerability import (
     CLOSED_STATUSES,
     RISK_ORDER,
@@ -37,13 +39,19 @@ from app.services.rescoring import rescore_open_findings
 
 router = APIRouter()
 
+CATALOG = [Depends(require_module("vulnerabilities"))]
+BACKLOG = [Depends(require_module("backlog"))]
+ASSETS = [Depends(require_module("assets"))]
+# Editing a CVE's score changes the risk of every finding it has.
+CATALOG_EDIT = [*CATALOG, Depends(require_risk_decision)]
+
 MAX_LIMIT = 500
 
 # Statuses whose selection must be justified for audit purposes.
 STATUSES_REQUIRING_NOTE = {Status.false_positive, Status.risk_accepted}
 
 
-@router.get("/", response_model=PaginatedVulnerabilityResponse)
+@router.get("/", response_model=PaginatedVulnerabilityResponse, dependencies=CATALOG)
 def get_vulnerabilities(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=MAX_LIMIT),
@@ -79,7 +87,10 @@ def get_vulnerabilities(
 
 
 @router.post(
-    "/", response_model=VulnerabilityResponse, status_code=http_status.HTTP_201_CREATED
+    "/",
+    response_model=VulnerabilityResponse,
+    status_code=http_status.HTTP_201_CREATED,
+    dependencies=CATALOG_EDIT,
 )
 def create_vulnerability(
     vuln_in: VulnerabilityCreate,
@@ -102,7 +113,11 @@ def create_vulnerability(
     return db_vuln
 
 
-@router.put("/{vulnerability_id}", response_model=VulnerabilityResponse)
+@router.put(
+    "/{vulnerability_id}",
+    response_model=VulnerabilityResponse,
+    dependencies=CATALOG_EDIT,
+)
 def update_vulnerability(
     vulnerability_id: int,
     vuln_in: VulnerabilityUpdate,
@@ -129,7 +144,11 @@ def update_vulnerability(
     return vuln
 
 
-@router.delete("/{vulnerability_id}", status_code=http_status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{vulnerability_id}",
+    status_code=http_status.HTTP_204_NO_CONTENT,
+    dependencies=CATALOG,
+)
 def delete_vulnerability(
     vulnerability_id: int,
     db: Session = Depends(get_db),
@@ -206,7 +225,11 @@ def _findings_query(db: Session, filters: FindingFilters):
     return query
 
 
-@router.get("/findings", response_model=PaginatedAssetVulnerabilityResponse)
+@router.get(
+    "/findings",
+    response_model=PaginatedAssetVulnerabilityResponse,
+    dependencies=BACKLOG,
+)
 def get_findings(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=MAX_LIMIT),
@@ -226,7 +249,9 @@ def get_findings(
     return {"total": total, "items": items}
 
 
-@router.get("/findings/export.csv", response_class=StreamingResponse)
+@router.get(
+    "/findings/export.csv", response_class=StreamingResponse, dependencies=BACKLOG
+)
 def export_findings(
     filters: FindingFilters = Depends(finding_filters),
     db: Session = Depends(get_db),
@@ -245,7 +270,11 @@ def export_findings(
     )
 
 
-@router.get("/assets/{asset_id}", response_model=PaginatedAssetVulnerabilityResponse)
+@router.get(
+    "/assets/{asset_id}",
+    response_model=PaginatedAssetVulnerabilityResponse,
+    dependencies=ASSETS,
+)
 def get_asset_vulnerabilities(
     asset_id: int,
     skip: int = Query(0, ge=0),
@@ -284,8 +313,13 @@ def update_finding_status(
     update_in: AssetVulnerabilityUpdate,
     db: Session = Depends(get_db),
     payload: dict = Depends(decode_token),
+    user: User = Depends(require_module("backlog")),
 ):
     """Triage a finding: remediate it, accept the risk, or dismiss it."""
+    if user.role == ROLE_REMEDIATOR and update_in.status in STATUSES_REQUIRING_NOTE:
+        # Marking a fix done or undone is theirs; declaring the risk
+        # acceptable or the finding false is the analysts' call.
+        require_risk_decision(user)
     finding = get_or_404(db, AssetVulnerability, finding_id)
 
     if update_in.status in STATUSES_REQUIRING_NOTE and not update_in.status_note:
@@ -332,7 +366,9 @@ def update_finding_status(
 
 
 @router.get(
-    "/findings/{finding_id}/history", response_model=list[FindingAuditLogResponse]
+    "/findings/{finding_id}/history",
+    response_model=list[FindingAuditLogResponse],
+    dependencies=BACKLOG,
 )
 def get_finding_history(
     finding_id: int,

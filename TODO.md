@@ -430,7 +430,7 @@ Vigie priorise bien, mais elle parle CVE. Les équipes de remédiation, elles, t
 
 Cible : une barre latérale composée de modules (profil par rôle, ajusté par chaque utilisateur), et des tickets de remédiation gérés dans Vigie. Un connecteur Jira, ServiceNow ou GLPI viendra ensuite sur la même structure.
 
-Ordre retenu : 1 → 0 → 2 → 4 → 3 → 5 → 6 → 7.
+Ordre retenu : 1 → 0 → 2 → 4 → 3 → 5 → 6 → 7. Faits : 1 et 2.
 
 ## ✅ 1. Capturer les données de remédiation
 
@@ -442,6 +442,7 @@ Les parseurs jetaient tout ce que les scanners disent du correctif. Les fichiers
 - [x] CrowdStrike : `remediation.entities` quand Spotlight les renvoie développées
 - [x] Les liens d'une source sont remplacés à chaque scan : un cumulatif remplacé disparaît
 - [x] `remediations` dans les réponses de findings, colonnes `remediation` / `fixed_version` dans l'export CSV
+- [x] Colonne « Fix » dans le backlog : KB en badge, sinon le correctif et sa version cible
 - [ ] CrowdStrike : vérifier sur un vrai tenant que les entités de remédiation reviennent de `entities/vulnerabilities/v2`. Sinon, passer par l'endpoint `combined` avec `facet=remediation`
 - [ ] Remplacement des KB (supersedence) pour les sources qui ne donnent pas le KB par hôte : flux MSRC CVRF
 
@@ -450,12 +451,15 @@ Les parseurs jetaient tout ce que les scanners disent du correctif. Les fichiers
 - [ ] `.gitattributes` + `git add --renormalize` (voir « Plus tard »)
 - [ ] TanStack Query en remplacement de `useFetch` (T5), socle des nouveaux écrans
 
-## 2. Socle modulaire
-- [ ] Registre des modules (`dashboard`, `backlog`, `assets`, `categorization`, `remediation`, `extracts`, `scans`, `admin`)
-- [ ] Rôle `remediator` : voit et fait avancer les tickets, sans pouvoir accepter un risque ni déclarer un faux positif
-- [ ] Modules activés (admin), profils par rôle, préférences utilisateur (ordre, modules masqués) ; `GET /me/modules`
-- [ ] `require_module(...)` côté serveur : masquer un onglet ne vaut pas autorisation
-- [ ] Barre latérale construite depuis le registre, écrans Préférences et Administration
+## ✅ 2. Socle modulaire
+
+- [x] Registre des modules (`app/core/modules.py`) : `dashboard`, `backlog`, `assets`, `vulnerabilities`, `scans`, `admin`. Les modules Remédiation, Catégorisation et Extractions y entreront avec leur écran
+- [x] Rôle `remediator` : marque les correctifs faits, sans pouvoir accepter un risque, déclarer un faux positif, ni modifier la criticité ou l'exposition d'un asset ou le score d'un CVE
+- [x] Modules activés par l'admin, profils par rôle (JSON, défaut dans le code), préférences utilisateur (ordre, modules masqués), migration 0013 ; `GET /me/modules`, `PUT /me/preferences`, `/admin/modules`, `/admin/roles/{role}/modules`, `GET /users/`
+- [x] `require_module(...)` sur chaque route, depuis l'utilisateur en base : masquer un onglet ne vaut pas autorisation
+- [x] Barre latérale et routes construites depuis les modules accordés ; écrans Préférences et Administration
+- [x] Garde-fous : le module Administration ne peut être ni désactivé ni retiré aux admins ; le dernier admin ne peut pas être rétrogradé
+- [ ] Profil de rôle : l'écran Administration ajoute un module accordé en fin de liste ; réordonner un profil passe par l'API
 
 ## 4. Remédiation et tickets internes
 - [ ] Vue « Top correctifs » : risque cumulé fermé par action, assets, KEV, retards, échéance ; seau « Sans correctif identifié »

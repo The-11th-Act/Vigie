@@ -215,3 +215,38 @@ select option {
   background: #1a1a2e;
   color: var(--text-main);
 }
+
+/* Small secondary action next to a row: reorder, reset, cancel. */
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.3rem 0.5rem;
+  color: var(--text-main);
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.icon-button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.icon-button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.select {
+  padding: 0.4rem 0.5rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-main);
+  font-size: 0.8rem;
+  outline: none;
+  cursor: pointer;
+}

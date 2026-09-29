@@ -81,3 +81,34 @@ export const scanService = {
   list: (params = {}) =>
     api.get('/scans/', { params }),
 }
+
+export const meService = {
+  // The modules the sidebar shows, in the user's order (hidden ones flagged).
+  getModules: () =>
+    api.get('/me/modules'),
+
+  updatePreferences: (order, hidden) =>
+    api.put('/me/preferences', { order, hidden }),
+}
+
+export const adminService = {
+  getModules: () =>
+    api.get('/admin/modules'),
+
+  toggleModule: (key, enabled) =>
+    api.patch(`/admin/modules/${key}`, { enabled }),
+
+  setRoleProfile: (role, modules) =>
+    api.put(`/admin/roles/${role}/modules`, { modules }),
+
+  resetRoleProfile: (role) =>
+    api.delete(`/admin/roles/${role}/modules`),
+}
+
+export const userService = {
+  list: () =>
+    api.get('/users/'),
+
+  updateRole: (id, role) =>
+    api.patch(`/users/${id}/role`, { role }),
+}
