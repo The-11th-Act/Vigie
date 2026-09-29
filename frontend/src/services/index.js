@@ -123,4 +123,23 @@ export const remediationService = {
 
   exportHosts: (id) =>
     api.get(`/remediation/actions/${id}/hosts.csv`, { responseType: 'blob' }),
+
+  // One ticket per team owning the hosts; findings already ticketed stay put.
+  createTickets: (actionId) =>
+    api.post(`/remediation/actions/${actionId}/tickets`),
+
+  listTickets: (params = {}) =>
+    api.get('/remediation/tickets', { params }),
+
+  getTicket: (id) =>
+    api.get(`/remediation/tickets/${id}`),
+
+  updateTicket: (id, data) =>
+    api.patch(`/remediation/tickets/${id}`, data),
+
+  exportTicketHosts: (id) =>
+    api.get(`/remediation/tickets/${id}/hosts.csv`, { responseType: 'blob' }),
+
+  listTeams: () =>
+    api.get('/remediation/teams'),
 }

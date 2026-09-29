@@ -171,6 +171,9 @@ def remediation(
     fixed_version: str | None = None,
 ) -> dict[str, Any]:
     """One entry of a finding's ``remediations``, lengths already bounded."""
+    # Shown as a link: a scanner-supplied javascript: or data: URL is dropped.
+    if url and not url.strip().lower().startswith(("https://", "http://")):
+        url = None
     return {
         "kind": kind,
         "reference": reference[:MAX_REFERENCE_LENGTH],

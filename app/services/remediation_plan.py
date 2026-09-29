@@ -145,10 +145,13 @@ def unremediated_summary(db: Session) -> dict:
     }
 
 
-def action_hosts(db: Session, action_id: int) -> list[HostEntry]:
-    """Every host where the action still has open findings to close."""
+def action_hosts(
+    db: Session, action_id: int, finding_ids: list[int] | None = None
+) -> list[HostEntry]:
+    """Every host where the action still has open findings to close; only
+    among ``finding_ids`` when given (the findings of one ticket)."""
     now = datetime.now(UTC)
-    rows = (
+    query = (
         db.query(AssetVulnerability, Asset, Vulnerability, FindingRemediation)
         .join(FindingRemediation, FindingRemediation.finding_id == AssetVulnerability.id)
         .join(Asset, Asset.id == AssetVulnerability.asset_id)
@@ -158,8 +161,10 @@ def action_hosts(db: Session, action_id: int) -> list[HostEntry]:
             AssetVulnerability.status == Status.open,
         )
         .order_by(AssetVulnerability.risk_score.desc(), Asset.id)
-        .all()
     )
+    if finding_ids is not None:
+        query = query.filter(AssetVulnerability.id.in_(finding_ids))
+    rows = query.all()
 
     hosts: dict[int, HostEntry] = {}
     for finding, asset, vuln, link in rows:

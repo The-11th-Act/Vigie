@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.models.vulnerability import AssetVulnerability, FindingAuditLog, Status
 from app.services.rescoring import rescore_open_findings
+from app.services.tickets import sync_tickets
 
 SYSTEM_ACTOR = "system"
 
@@ -93,6 +94,8 @@ def reopen_accepted(db: Session, findings: list[AssetVulnerability], note_for) -
         db.flush()
         # Scores of closed findings are frozen; reopened, they must be current.
         rescore_open_findings(db, AssetVulnerability.id.in_([f.id for f in findings]))
+        # Back in the backlog: back in (or reopening) their tickets.
+        sync_tickets(db)
     return len(findings)
 
 

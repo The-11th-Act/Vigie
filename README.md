@@ -300,7 +300,25 @@ the nearest deadline, and the sum of their risk, which orders the list. A
 finding linked to the same fix by two scanners counts once. Open findings no
 scanner gave a fix for are counted apart. Each fix lists its hosts with their
 versions and CVEs (`/actions/{id}`), exportable as CSV for a deployment tool
-(`/actions/{id}/hosts.csv`). Scan files are not kept after ingestion, so
+(`/actions/{id}/hosts.csv`).
+
+**Tickets.** A fix is ticketed per team owning the hosts
+(`POST /remediation/actions/{id}/tickets`): each asset has an `owner_team`,
+set by hand or from `OWNER_TEAM_RULES` (subnet -> team, most specific
+prefix wins; applied to new hosts and to hosts without a team). The team
+moves its ticket to *in progress* or *deployed*; the scans decide the rest:
+
+- a ticket is **resolved** once every finding it holds is closed (fixed,
+  accepted or dismissed), and **reopens** if one comes back;
+- a new finding of the same fix on the same team's hosts joins the team's
+  open ticket;
+- cancelling (deciding not to fix) is an analyst's call and needs a note; the
+  findings of a cancelled ticket can go into a new one.
+
+Tickets follow the findings after every ingestion, triage decision, reopened
+risk acceptance and daily pass, with an append-only history. Each ticket
+exports its hosts as CSV and records an external reference and link, ready
+for a Jira, ServiceNow or GLPI connector. Scan files are not kept after ingestion, so
 findings imported before this existed gain their remediation on their next scan.
 
 ### CrowdStrike Falcon Spotlight

@@ -430,7 +430,7 @@ Vigie priorise bien, mais elle parle CVE. Les équipes de remédiation, elles, t
 
 Cible : une barre latérale composée de modules (profil par rôle, ajusté par chaque utilisateur), et des tickets de remédiation gérés dans Vigie. Un connecteur Jira, ServiceNow ou GLPI viendra ensuite sur la même structure.
 
-Ordre retenu : 1 → 0 → 2 → 4 → 3 → 5 → 6 → 7. Faits : 1, 2 et la vue « Top correctifs » de 4.
+Ordre retenu : 1 → 0 → 2 → 4 → 3 → 5 → 6 → 7. Faits : 1, 2 et 4 (avec l'équipe propriétaire de 3).
 
 ## ✅ 1. Capturer les données de remédiation
 
@@ -461,15 +461,17 @@ Les parseurs jetaient tout ce que les scanners disent du correctif. Les fichiers
 - [x] Garde-fous : le module Administration ne peut être ni désactivé ni retiré aux admins ; le dernier admin ne peut pas être rétrogradé
 - [ ] Profil de rôle : l'écran Administration ajoute un module accordé en fin de liste ; réordonner un profil passe par l'API
 
-## 4. Remédiation et tickets internes
+## ✅ 4. Remédiation et tickets internes
 - [x] Module `remediation` et vue « Top correctifs » : risque cumulé fermé par action (chaque finding compté une fois), hôtes, findings et CVE distincts, KEV, retards, échéance ; seau « Sans correctif identifié » ; hôtes d'un correctif avec leurs versions, export CSV
 - [x] Le rôle `remediator` ouvre sur Remédiation ; l'interface ne lui propose plus les décisions de risque (triage, édition d'asset)
-- [ ] Tickets par (action × `owner_team`), statut, priorité, échéance, historique ; champs `external_*` réservés au connecteur
-- [ ] Clôture automatique quand tous les findings sont fermés (acteur `system`), réouverture si l'un revient
-- [ ] Export de la liste d'hôtes d'un ticket (celle d'un correctif existe déjà)
+- [x] Tickets par (action × `owner_team`), migration 0015 : statuts open / in_progress / deployed (l'équipe), resolved (les scans), cancelled (un analyste, avec justification) ; historique ; référence et lien externes
+- [x] Résolution automatique quand tous les findings sont fermés, réouverture si l'un revient, rattachement des nouveaux findings au ticket ouvert de l'équipe (acteur `system`), après ingestion, triage, réouverture d'acceptation et passage quotidien
+- [x] Onglets Correctifs / Tickets, export des hôtes d'un ticket
+- [ ] Rattacher un finding dont l'hôte change d'équipe : il reste dans le ticket où il est entré
 
 ## 3. Contexte d'asset et catégorisation
-- [ ] `asset_type`, `environment`, `owner_team` ; groupes d'assets à règles (moitié de T7)
+- [x] `owner_team` (migration 0014), `OWNER_TEAM_RULES` par sous-réseau, filtre et saisie dans l'écran Assets
+- [ ] `asset_type`, `environment` ; groupes d'assets à règles (moitié de T7)
 - [ ] Matrice catégorie de vulnérabilité × type d'asset, avec descente vers les findings
 
 ## 5. Extractions API

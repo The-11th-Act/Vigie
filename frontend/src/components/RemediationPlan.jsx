@@ -1,62 +1,20 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, ExternalLink, Search } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, ExternalLink, Search, Ticket } from 'lucide-react';
 import { remediationService } from '../services';
 import { useFetch } from '../hooks/useFetch';
+import RemediationTickets from './RemediationTickets';
+import {
+  FixLabel,
+  HostsTable,
+  KINDS,
+  controlStyle,
+  download,
+  formatDate,
+  muted,
+  safeName,
+} from './RemediationShared';
 
 const PAGE_SIZE = 25;
-
-const KINDS = [
-  { value: 'kb', label: 'Microsoft KB' },
-  { value: 'vendor_fix', label: 'Vendor fix' },
-  { value: 'workaround', label: 'Workaround' },
-  { value: 'mitigation', label: 'Mitigation' },
-  { value: 'no_fix', label: 'No fix available' },
-];
-const KIND_LABELS = Object.fromEntries(KINDS.map((kind) => [kind.value, kind.label]));
-
-const controlStyle = {
-  padding: '0.6rem 0.75rem',
-  background: 'rgba(255,255,255,0.05)',
-  border: '1px solid var(--border)',
-  borderRadius: '8px',
-  color: 'var(--text-main)',
-  fontSize: '0.875rem',
-  outline: 'none',
-};
-
-const muted = { fontSize: '0.75rem', color: 'var(--text-muted)' };
-
-function formatDate(value) {
-  return value ? new Date(value).toLocaleDateString() : '-';
-}
-
-function FixLabel({ action }) {
-  if (action.kind === 'kb') {
-    return (
-      <div>
-        <span className="badge badge-low" style={{ fontFamily: 'monospace' }}>{action.reference}</span>
-        {action.title && <div style={{ ...muted, marginTop: '0.25rem' }}>{action.title}</div>}
-      </div>
-    );
-  }
-  return (
-    <div>
-      <div style={{ fontWeight: 600 }}>{action.title || action.reference}</div>
-      <div style={muted}>
-        {KIND_LABELS[action.kind] || action.kind} · {action.reference}
-      </div>
-    </div>
-  );
-}
-
-async function download(response, filename) {
-  const url = URL.createObjectURL(response.data);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  link.click();
-  URL.revokeObjectURL(url);
-}
 
 // The hosts still waiting for one fix, loaded when its row is opened.
 function ActionHosts({ actionId }) {
@@ -72,7 +30,7 @@ function ActionHosts({ actionId }) {
     setExportError(null);
     try {
       const res = await remediationService.exportHosts(action.id);
-      await download(res, `vigie-${action.reference.replace(/[^\w.-]/g, '_')}-hosts.csv`);
+      await download(res, `vigie-${safeName(action.reference)}-hosts.csv`);
     } catch (err) {
       setExportError(err.message || 'Export failed');
     }
@@ -96,58 +54,20 @@ function ActionHosts({ actionId }) {
         </div>
       </div>
       {exportError && <div className="error-message">Export failed: {exportError}</div>}
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>Host</th>
-            <th>Version</th>
-            <th>CVEs</th>
-            <th>Max risk</th>
-            <th>Deadline</th>
-          </tr>
-        </thead>
-        <tbody>
-          {hosts.map((host) => (
-            <tr key={host.asset_id}>
-              <td>
-                {host.hostname || host.ip_address}
-                <div style={muted}>
-                  {[host.hostname && host.ip_address, host.operating_system, host.business_criticality]
-                    .filter(Boolean)
-                    .join(' · ')}
-                  {host.internet_facing && ' · Exposed'}
-                </div>
-              </td>
-              <td style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>
-                {host.installed_versions.join(', ') || '-'}
-                {host.fixed_versions.length > 0 && ` → ${host.fixed_versions.join(', ')}`}
-              </td>
-              <td title={host.cves.join('\n')}>
-                {host.cves.length}
-                {host.in_kev && (
-                  <span className="badge badge-critical" style={{ marginLeft: '0.4rem' }}>KEV</span>
-                )}
-              </td>
-              <td>{host.max_risk.toFixed(2)}</td>
-              <td>
-                {formatDate(host.next_deadline)}
-                {host.overdue && <div style={{ ...muted, color: 'var(--high)' }}>Overdue</div>}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <HostsTable hosts={hosts} />
     </div>
   );
 }
 
-export default function RemediationPlan() {
+function FixesView({ onTicketsCreated }) {
   const [page, setPage] = useState(0);
   const [kind, setKind] = useState('');
   const [kevOnly, setKevOnly] = useState(false);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [openId, setOpenId] = useState(null);
+  const [ticketing, setTicketing] = useState(null);
+  const [message, setMessage] = useState(null);
 
   const searchTimer = useRef(null);
   useEffect(() => {
@@ -169,16 +89,32 @@ export default function RemediationPlan() {
     return res.data;
   }, [page, kind, kevOnly, debouncedSearch]);
 
-  const { data, loading, error } = useFetch(fetchActions, [page, kind, kevOnly, debouncedSearch]);
+  const { data, loading, error, refetch } = useFetch(fetchActions, [page, kind, kevOnly, debouncedSearch]);
   const totalPages = data ? Math.ceil(data.total / PAGE_SIZE) : 0;
+
+  const createTickets = async (item) => {
+    setTicketing(item.action.id);
+    setMessage(null);
+    try {
+      const res = await remediationService.createTickets(item.action.id);
+      const { created, added } = res.data;
+      const parts = [];
+      if (created.length) {
+        parts.push(`${created.length} ticket${created.length > 1 ? 's' : ''} created (${created.map((t) => t.owner_team || 'Unassigned').join(', ')})`);
+      }
+      if (added) parts.push(`${added} finding${added > 1 ? 's' : ''} added to existing tickets`);
+      setMessage({ ok: true, text: `${item.action.reference}: ${parts.join('; ')}.` });
+      refetch();
+      onTicketsCreated();
+    } catch (err) {
+      setMessage({ ok: false, text: err.response?.data?.detail || err.message || 'Could not create the tickets' });
+    } finally {
+      setTicketing(null);
+    }
+  };
 
   return (
     <div>
-      <h1>Remediation ({data?.total || 0} fixes)</h1>
-      <p style={{ color: 'var(--text-muted)', margin: '0.5rem 0 1.25rem' }}>
-        What to deploy, the fix removing the most open risk first. Open a fix for the hosts still waiting for it.
-      </p>
-
       <div style={{ marginBottom: '1rem', display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
         <div style={{ position: 'relative' }}>
           <Search size={16} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
@@ -216,6 +152,15 @@ export default function RemediationPlan() {
         </label>
       </div>
 
+      {message && (
+        <div
+          className={message.ok ? 'glass-panel' : 'error-message'}
+          style={{ marginBottom: '1rem', padding: '0.75rem 1rem', fontSize: '0.875rem' }}
+          role="status"
+        >
+          {message.text}
+        </div>
+      )}
       {loading && !data && <div className="loading">Loading fixes...</div>}
       {error && <div className="error-message">Error: {error}</div>}
 
@@ -232,19 +177,21 @@ export default function RemediationPlan() {
                   <th>Overdue</th>
                   <th title="Sum of the risk of the open findings it closes">Risk removed</th>
                   <th>Next deadline</th>
+                  <th title="Open findings already in a ticket">Tickets</th>
                   <th />
                 </tr>
               </thead>
               <tbody>
                 {data.items.length === 0 ? (
                   <tr>
-                    <td colSpan={8} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
+                    <td colSpan={9} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
                       No open fix matches. Fixes appear as scans report them.
                     </td>
                   </tr>
                 ) : (
                   data.items.map((item) => {
                     const open = openId === item.action.id;
+                    const untracked = item.findings - (item.tracked || 0);
                     return (
                       <React.Fragment key={item.action.id}>
                         <tr>
@@ -259,6 +206,22 @@ export default function RemediationPlan() {
                           <td style={{ fontWeight: 600 }}>{item.total_risk.toFixed(1)}</td>
                           <td>{formatDate(item.next_deadline)}</td>
                           <td>
+                            {untracked > 0 ? (
+                              <button
+                                type="button"
+                                className="icon-button"
+                                disabled={ticketing === item.action.id}
+                                onClick={() => createTickets(item)}
+                                title={`${untracked} open finding${untracked > 1 ? 's' : ''} in no ticket yet`}
+                                aria-label={`Create tickets for ${item.action.reference}`}
+                              >
+                                <Ticket size={14} /> {ticketing === item.action.id ? 'Creating...' : 'Create'}
+                              </button>
+                            ) : (
+                              <span style={muted}>All ticketed</span>
+                            )}
+                          </td>
+                          <td>
                             <button
                               type="button"
                               className="icon-button"
@@ -272,7 +235,7 @@ export default function RemediationPlan() {
                         </tr>
                         {open && (
                           <tr>
-                            <td colSpan={8}>
+                            <td colSpan={9}>
                               <ActionHosts actionId={item.action.id} />
                             </td>
                           </tr>
@@ -322,6 +285,46 @@ export default function RemediationPlan() {
             </div>
           )}
         </>
+      )}
+    </div>
+  );
+}
+
+const TABS = [
+  { key: 'fixes', label: 'Fixes' },
+  { key: 'tickets', label: 'Tickets' },
+];
+
+export default function RemediationPlan() {
+  const [tab, setTab] = useState('fixes');
+  // Bumped when tickets are created, so the tickets tab reloads when opened.
+  const [ticketsVersion, setTicketsVersion] = useState(0);
+
+  return (
+    <div>
+      <h1>Remediation</h1>
+      <p style={{ color: 'var(--text-muted)', margin: '0.5rem 0 1rem' }}>
+        What to deploy, the fix removing the most open risk first; tickets split it by the team owning the hosts.
+      </p>
+      <div role="tablist" style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem' }}>
+        {TABS.map(({ key, label }) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={tab === key}
+            className={tab === key ? 'button' : 'icon-button'}
+            onClick={() => setTab(key)}
+            style={{ padding: '0.45rem 1rem', fontSize: '0.875rem' }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {tab === 'fixes' ? (
+        <FixesView onTicketsCreated={() => setTicketsVersion((v) => v + 1)} />
+      ) : (
+        <RemediationTickets key={ticketsVersion} />
       )}
     </div>
   );

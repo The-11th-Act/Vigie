@@ -36,6 +36,7 @@ from app.schemas.vulnerability import (
 )
 from app.services.export import export_findings_csv
 from app.services.rescoring import rescore_open_findings
+from app.services.tickets import sync_tickets
 
 router = APIRouter()
 
@@ -359,6 +360,8 @@ def update_finding_status(
             accepted_until=accepted_until,
         )
     )
+    # A finding closed or reopened by hand moves its ticket like a scan would.
+    sync_tickets(db)
 
     db.commit()
     db.refresh(finding)

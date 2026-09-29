@@ -30,6 +30,7 @@ from app.services.asset_policy import (
 from app.services.remediation import apply_kev_sla, calculate_remediation_deadline
 from app.services.risk_scoring import RiskInputs, compute_risk
 from app.services.threat_intel import enrich_new_vulnerabilities
+from app.services.tickets import sync_tickets
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +116,8 @@ def ingest_findings(
     if scanned_addresses is not None:
         scope = covered_asset_ids | _asset_ids_at(db, scanned_addresses)
     auto_remediated = _close_unseen_findings(db, scan_source, seen_ids, scope, now)
+    # Closed, reopened or new findings move their remediation tickets.
+    sync_tickets(db, now)
     db.commit()
 
     result = IngestionResult(
