@@ -3,10 +3,10 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import bcrypt
 import jwt
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
-from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
 from app.core.api_tokens import authenticate as authenticate_api_token
@@ -16,7 +16,10 @@ from app.core.tokens import is_revoked
 from app.db.database import get_db
 from app.models.user import User
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# bcrypt only ever reads the first 72 bytes of a password; since bcrypt 5 it
+# refuses longer ones instead of silently truncating. Registration rejects
+# them too (schemas/user.py), so a longer password can never be right.
+BCRYPT_MAX_BYTES = 72
 # auto_error=False: a request may instead carry its token in the session
 # cookie (browser clients), so a missing header is not an error by itself.
 oauth2_scheme = OAuth2PasswordBearer(
@@ -89,11 +92,28 @@ def create_refresh_token(
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+    """Check a password against a bcrypt hash ($2b$, as passlib wrote them).
+
+    A password over 72 bytes is refused, after the same hashing work as any
+    other: the time taken must not tell a too-long password from a wrong one.
+    """
+    secret = plain_password.encode("utf-8")
+    too_long = len(secret) > BCRYPT_MAX_BYTES
+    try:
+        matches = bcrypt.checkpw(
+            secret[:BCRYPT_MAX_BYTES], hashed_password.encode("ascii")
+        )
+    except ValueError:
+        # A stored value that is not a bcrypt hash matches nothing.
+        return False
+    return matches and not too_long
 
 
 def get_password_hash(password: str) -> str:
-    return pwd_context.hash(password)
+    secret = password.encode("utf-8")
+    if len(secret) > BCRYPT_MAX_BYTES:
+        raise ValueError(f"password longer than {BCRYPT_MAX_BYTES} bytes")
+    return bcrypt.hashpw(secret, bcrypt.gensalt()).decode("ascii")
 
 
 def _decode(token: str, expected_type: str) -> dict:
@@ -213,7 +233,7 @@ def decode_refresh_token(token: str) -> dict:
 # Pre-computed hash of a throwaway password. Verifying against it costs the same
 # as verifying a real one, so an unknown username and a wrong password take
 # indistinguishable time — closing the user-enumeration side channel.
-_DUMMY_HASH = pwd_context.hash("timing-attack-mitigation-placeholder")
+_DUMMY_HASH = get_password_hash("timing-attack-mitigation-placeholder")
 
 
 def verify_password_constant_time(
@@ -221,9 +241,9 @@ def verify_password_constant_time(
 ) -> bool:
     """Verify a password, always doing the hashing work even for unknown users."""
     if hashed_password is None:
-        pwd_context.verify(plain_password, _DUMMY_HASH)
+        verify_password(plain_password, _DUMMY_HASH)
         return False
-    return pwd_context.verify(plain_password, hashed_password)
+    return verify_password(plain_password, hashed_password)
 
 
 def require_admin(

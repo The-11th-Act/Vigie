@@ -11,6 +11,10 @@ updates:
     groups:
       python-minor-patch:
         update-types: [minor, patch]
+    ignore:
+      # pydantic pins the exact pydantic-core it was built with: bumped alone,
+      # the lockfile no longer resolves. It moves with pydantic.
+      - dependency-name: pydantic-core
 
   - package-ecosystem: npm
     directory: /frontend

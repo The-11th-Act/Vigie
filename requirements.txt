@@ -13,8 +13,8 @@ psycopg2-binary>=2.9.0,<3.0.0
 pydantic[email]>=2.0.0,<3.0.0
 pydantic-settings>=2.2.0,<3.0.0
 PyJWT>=2.7.0,<3.0.0
-passlib[bcrypt]>=1.7.4,<2.0.0
-bcrypt<4.1
+# Used directly: passlib, unmaintained, broke with bcrypt 4.1 and later.
+bcrypt>=4.1.0,<6.0.0
 celery>=5.3.0,<6.0.0
 redis>=4.6.0,<7.0.0
 python-dotenv>=1.0.0,<2.0.0
