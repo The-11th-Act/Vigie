@@ -93,6 +93,11 @@ class Settings(BaseSettings):
     #   {"10.0.0.0/8": "Infrastructure", "10.20.0.0/16": "Workplace"}
     OWNER_TEAM_RULES: dict[str, str] = {}
 
+    # Subnet -> environment (production, staging...), applied to assets
+    # that have none; the most specific prefix wins. Example:
+    #   {"10.0.0.0/8": "production", "10.99.0.0/16": "staging"}
+    ENVIRONMENT_RULES: dict[str, str] = {}
+
     # Consecutive scans of a source in which a finding may go unseen before it
     # is closed as remediated. 0 disables automatic closure entirely.
     AUTO_REMEDIATE_AFTER_MISSES: int = 3

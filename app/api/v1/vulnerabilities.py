@@ -11,6 +11,7 @@ from app.core.config import settings
 from app.core.modules import ROLE_REMEDIATOR, require_module, require_risk_decision
 from app.core.security import decode_token, require_admin
 from app.db.database import get_db
+from app.models.asset import Criticality
 from app.models.remediation import FindingRemediation
 from app.models.user import User
 from app.models.vulnerability import (
@@ -172,6 +173,11 @@ def finding_filters(
     min_epss: float | None = Query(None, ge=0, le=1),
     internet_facing_only: bool = False,
     owner_team: str | None = Query(None, max_length=128),
+    category: str | None = Query(None, max_length=32),
+    asset_type: str | None = Query(None, max_length=16),
+    environment: str | None = Query(None, max_length=32),
+    business_criticality: Criticality | None = None,
+    internet_facing: bool | None = None,
 ) -> FindingFilters:
     """The backlog filters, shared by the listing and its CSV export so the
     file always holds exactly what the screen showed."""
@@ -183,6 +189,11 @@ def finding_filters(
         min_epss,
         internet_facing_only,
         owner_team,
+        category,
+        asset_type,
+        environment,
+        business_criticality,
+        internet_facing,
     )
 
 

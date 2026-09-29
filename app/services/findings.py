@@ -7,11 +7,16 @@ backlog screen shows for the same filters.
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session, contains_eager, selectinload
 
-from app.models.asset import Asset
+from app.models.asset import Asset, Criticality
 from app.models.remediation import FindingRemediation
 from app.models.vulnerability import AssetVulnerability, Status, Vulnerability
+from app.services.categorization import UNCATEGORIZED
+
+# Filter value for "not set" (no team, no environment, unknown type).
+NOT_SET = "__none__"
 
 
 @dataclass
@@ -23,6 +28,12 @@ class FindingFilters:
     min_epss: float | None = None
     internet_facing_only: bool = False
     owner_team: str | None = None
+    category: str | None = None
+    asset_type: str | None = None
+    environment: str | None = None
+    business_criticality: Criticality | None = None
+    # Exact match, unlike internet_facing_only: False selects internal hosts.
+    internet_facing: bool | None = None
 
 
 def findings_query(db: Session, filters: FindingFilters):
@@ -59,5 +70,27 @@ def findings_query(db: Session, filters: FindingFilters):
     if filters.internet_facing_only:
         query = query.filter(Asset.internet_facing.is_(True))
     if filters.owner_team:
-        query = query.filter(Asset.owner_team == filters.owner_team)
+        query = query.filter(_matches(Asset.owner_team, filters.owner_team))
+    if filters.asset_type:
+        query = query.filter(_matches(Asset.asset_type, filters.asset_type))
+    if filters.environment:
+        query = query.filter(_matches(Asset.environment, filters.environment))
+    if filters.business_criticality:
+        query = query.filter(Asset.business_criticality == filters.business_criticality)
+    if filters.internet_facing is not None:
+        query = query.filter(Asset.internet_facing.is_(filters.internet_facing))
+    if filters.category:
+        if filters.category in (UNCATEGORIZED, NOT_SET):
+            query = query.filter(
+                or_(
+                    AssetVulnerability.category.is_(None),
+                    AssetVulnerability.category == UNCATEGORIZED,
+                )
+            )
+        else:
+            query = query.filter(AssetVulnerability.category == filters.category)
     return query
+
+
+def _matches(column, value: str):
+    return column.is_(None) if value == NOT_SET else column == value

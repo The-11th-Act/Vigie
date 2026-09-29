@@ -160,8 +160,8 @@ VIGIE_TEST_DATABASE_URL=postgresql://user:pass@localhost:5432/vigie_test pytest 
 ## Modules and roles
 
 The application is split into modules (`app/core/modules.py`): Dashboard,
-Risk Backlog, Remediation, Assets, Vulnerabilities, Scans, API Extracts and
-Administration. Which ones a
+Risk Backlog, Remediation, Categorization, Assets, Vulnerabilities, Scans,
+API Extracts and Administration. Which ones a
 user gets is decided in three layers:
 
 1. an administrator can switch a module off for the whole instance;
@@ -184,6 +184,27 @@ Every route checks the module it belongs to on the server (`require_module`),
 from the user as the database knows them now: a tab missing from the sidebar
 does not leave its API open. Administrators always keep the Administration
 module, and the last administrator cannot be demoted.
+
+## Categorization
+
+The **Categorization** module crosses open findings by the kind of software
+they hit and the kind of host they sit on (`GET /api/v1/categorization/matrix`),
+with the findings of each cell behind it (`/categorization/findings`).
+
+- Findings fold into a fixed taxonomy (`app/services/categorization.py`):
+  operating system, browser, office, runtime, database, web server, network
+  device, remote access, other application. The finding's title decides
+  first, in a set order ("Microsoft Edge" is a browser before it is Windows,
+  ".NET" a runtime), then the scanner family; Nessus's "Windows" family,
+  which holds third-party programs, counts as an application. A precise
+  category is never overwritten by a vaguer one from another check.
+- Hosts are crossed by type (server, workstation, network device…, inferred
+  from the operating system until set by hand), environment
+  (`ENVIRONMENT_RULES`, subnet -> environment), business criticality, owner
+  team or Internet exposure.
+- Each cell counts findings, hosts, KEV and overdue findings, and sums the
+  open risk. Existing data was categorized by migration 0017; the daily pass
+  catches up any finding left without a category.
 
 ## API extracts and personal tokens
 

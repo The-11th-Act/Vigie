@@ -39,6 +39,10 @@ class Asset(Base):
     internet_facing: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=false(), nullable=False
     )
+    # What the host is (server, workstation, network...), inferred from its
+    # OS until set by hand; and where it runs (production, staging...).
+    asset_type: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
+    environment: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     # Team in charge of fixing this host: remediation tickets are split by it.
     owner_team: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     created_at: Mapped[DateTime] = mapped_column(

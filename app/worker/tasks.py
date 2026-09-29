@@ -9,6 +9,7 @@ from app.db.database import SessionLocal
 from app.models.scan import ScanJob, ScanStatus
 from app.parsers.nessus import parse_nessus_scan
 from app.parsers.openvas import parse_openvas_scan
+from app.services.categorization import categorize_missing
 from app.services.ingestion import ingest_findings
 from app.services.rescoring import rescore_open_findings
 from app.services.risk_acceptance import expire_risk_acceptances
@@ -172,6 +173,7 @@ def rescore_open_findings_task():
         changed = rescore_open_findings(db)
         # Safety net: every ticket in line with its findings once a day.
         sync_tickets(db)
+        categorize_missing(db)
         db.commit()
         logger.info(
             "Daily run: %d risk acceptance(s) expired, %d open finding(s) rescored",

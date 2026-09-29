@@ -6,6 +6,15 @@ import { Search, ChevronLeft, ChevronRight, Plus, Pencil, Trash2 } from 'lucide-
 
 const PAGE_SIZE = 20;
 const CRITICALITIES = ['Low', 'Medium', 'High', 'Critical'];
+// Mirrors ASSET_TYPES in app/services/categorization.py.
+export const ASSET_TYPES = {
+  server: 'Server',
+  workstation: 'Workstation',
+  network: 'Network device',
+  cloud: 'Cloud resource',
+  ot: 'OT / industrial',
+  other: 'Other',
+};
 
 const EMPTY_FORM = {
   ip_address: '',
@@ -14,6 +23,8 @@ const EMPTY_FORM = {
   business_criticality: 'Medium',
   internet_facing: false,
   owner_team: '',
+  asset_type: '',
+  environment: '',
 };
 
 const inputStyle = {
@@ -84,6 +95,8 @@ export default function AssetsList() {
       business_criticality: asset.business_criticality,
       internet_facing: Boolean(asset.internet_facing),
       owner_team: asset.owner_team || '',
+      asset_type: asset.asset_type || '',
+      environment: asset.environment || '',
     });
     setFormError(null);
   };
@@ -103,6 +116,9 @@ export default function AssetsList() {
           ...form,
           hostname: form.hostname || null,
           operating_system: form.operating_system || null,
+          // Left empty, the API infers the type from the OS.
+          asset_type: form.asset_type || null,
+          environment: form.environment || null,
         });
       } else {
         // The address is the asset's identity for ingestion, so editing only
@@ -114,6 +130,8 @@ export default function AssetsList() {
           internet_facing: form.internet_facing,
           // Empty clears it; the subnet rules only apply to new hosts.
           owner_team: form.owner_team || null,
+          asset_type: form.asset_type || null,
+          environment: form.environment || null,
         });
       }
       closeForm();
@@ -214,6 +232,31 @@ export default function AssetsList() {
                 style={inputStyle}
               />
             </label>
+            <label
+              title="Left empty, it is inferred from the operating system"
+              style={{display: 'flex', flexDirection: 'column', gap: '0.35rem', fontSize: '0.8rem', color: 'var(--text-muted)'}}
+            >
+              Asset type
+              <select
+                value={form.asset_type}
+                onChange={(e) => setForm({...form, asset_type: e.target.value})}
+                style={{...inputStyle, cursor: 'pointer'}}
+              >
+                <option value="">Infer from the OS</option>
+                {Object.entries(ASSET_TYPES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              </select>
+            </label>
+            <label style={{display: 'flex', flexDirection: 'column', gap: '0.35rem', fontSize: '0.8rem', color: 'var(--text-muted)'}}>
+              Environment
+              <input
+                type="text"
+                maxLength={32}
+                placeholder="production, staging..."
+                value={form.environment}
+                onChange={(e) => setForm({...form, environment: e.target.value})}
+                style={inputStyle}
+              />
+            </label>
             <label style={{display: 'flex', flexDirection: 'column', gap: '0.35rem', fontSize: '0.8rem', color: 'var(--text-muted)'}}>
               Business criticality
               <select
@@ -265,6 +308,7 @@ export default function AssetsList() {
                   <th>IP Address</th>
                   <th>Hostname</th>
                   <th>Operating System</th>
+                  <th>Type</th>
                   <th>Criticality</th>
                   <th>Team</th>
                   <th>Actions</th>
@@ -272,7 +316,7 @@ export default function AssetsList() {
               </thead>
               <tbody>
                 {data.items.length === 0 ? (
-                  <tr><td colSpan={7} style={{textAlign: 'center', padding: '2rem', color: 'var(--text-muted)'}}>No assets found</td></tr>
+                  <tr><td colSpan={8} style={{textAlign: 'center', padding: '2rem', color: 'var(--text-muted)'}}>No assets found</td></tr>
                 ) : (
                   data.items.map(asset => (
                     <tr key={asset.id}>
@@ -280,6 +324,12 @@ export default function AssetsList() {
                       <td style={{fontFamily: 'monospace'}}>{asset.ip_address}</td>
                       <td>{asset.hostname || '-'}</td>
                       <td>{asset.operating_system || '-'}</td>
+                      <td style={asset.asset_type ? undefined : {color: 'var(--text-muted)'}}>
+                        {ASSET_TYPES[asset.asset_type] || asset.asset_type || 'Unknown'}
+                        {asset.environment && (
+                          <div style={{fontSize: '0.75rem', color: 'var(--text-muted)'}}>{asset.environment}</div>
+                        )}
+                      </td>
                       <td>
                         <span className={`badge badge-${asset.business_criticality.toLowerCase()}`}>
                           {asset.business_criticality}

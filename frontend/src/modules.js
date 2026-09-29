@@ -1,5 +1,6 @@
 import {
   Database,
+  LayoutGrid,
   LayoutDashboard,
   ListOrdered,
   Server,
@@ -16,6 +17,7 @@ import VulnerabilitiesList from './components/VulnerabilitiesList';
 import ScanUpload from './components/ScanUpload';
 import AdminPanel from './components/AdminPanel';
 import Extracts from './components/Extracts';
+import Categorization from './components/Categorization';
 
 // Where each module the API knows (app/core/modules.py) lives in the app.
 // A key the API sends but this table lacks is ignored: a newer server never
@@ -24,6 +26,7 @@ export const MODULE_SCREENS = {
   dashboard: { path: '/dashboard', icon: LayoutDashboard, Component: Dashboard },
   backlog: { path: '/findings', icon: ListOrdered, Component: FindingsBacklog },
   remediation: { path: '/remediation', icon: Wrench, Component: RemediationPlan },
+  categorization: { path: '/categorization', icon: LayoutGrid, Component: Categorization },
   assets: { path: '/assets', icon: Server, Component: AssetsList },
   vulnerabilities: { path: '/vulnerabilities', icon: ShieldAlert, Component: VulnerabilitiesList },
   scans: { path: '/scans', icon: UploadCloud, Component: ScanUpload },

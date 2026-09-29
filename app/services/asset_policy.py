@@ -39,6 +39,13 @@ def owner_team_for(ip_address: str | None) -> str | None:
     return team[:128] or None
 
 
+def environment_for(ip_address: str | None) -> str | None:
+    """The environment of an address, from ENVIRONMENT_RULES; None if unmatched."""
+    value = _most_specific(settings.ENVIRONMENT_RULES, ip_address, "ENVIRONMENT_RULES")
+    value = str(value).strip() if value else ""
+    return value[:32] or None
+
+
 def _most_specific(rules: dict | None, ip_address: str | None, name: str):
     """The value of the most specific rule whose subnet holds the address.
 

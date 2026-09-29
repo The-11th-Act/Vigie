@@ -176,3 +176,12 @@ export const extractService = {
   revokeToken: (id) =>
     api.delete(`/extracts/tokens/${id}`),
 }
+
+export const categorizationService = {
+  matrix: (params = {}) =>
+    api.get('/categorization/matrix', { params }),
+
+  // The open findings of one cell of the matrix.
+  cellFindings: (params = {}) =>
+    api.get('/categorization/findings', { params }),
+}

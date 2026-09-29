@@ -430,7 +430,7 @@ Vigie priorise bien, mais elle parle CVE. Les équipes de remédiation, elles, t
 
 Cible : une barre latérale composée de modules (profil par rôle, ajusté par chaque utilisateur), et des tickets de remédiation gérés dans Vigie. Un connecteur Jira, ServiceNow ou GLPI viendra ensuite sur la même structure.
 
-Ordre retenu : 1 → 0 → 2 → 4 → 3 → 5 → 6 → 7. Faits : 1, 2, 4 et 5 (avec l'équipe propriétaire de 3).
+Ordre retenu : 1 → 0 → 2 → 4 → 3 → 5 → 6 → 7. Faits : 1, 2, 3, 4 et 5.
 
 ## ✅ 1. Capturer les données de remédiation
 
@@ -469,10 +469,14 @@ Les parseurs jetaient tout ce que les scanners disent du correctif. Les fichiers
 - [x] Onglets Correctifs / Tickets, export des hôtes d'un ticket
 - [ ] Rattacher un finding dont l'hôte change d'équipe : il reste dans le ticket où il est entré
 
-## 3. Contexte d'asset et catégorisation
+## ✅ 3. Contexte d'asset et catégorisation
 - [x] `owner_team` (migration 0014), `OWNER_TEAM_RULES` par sous-réseau, filtre et saisie dans l'écran Assets
-- [ ] `asset_type`, `environment` ; groupes d'assets à règles (moitié de T7)
-- [ ] Matrice catégorie de vulnérabilité × type d'asset, avec descente vers les findings
+- [x] `asset_type` (déduit de l'OS), `environment` (`ENVIRONMENT_RULES`), migration 0017 avec rattrapage de l'existant
+- [x] Taxonomie des findings (titre puis famille du scanner), stockée par finding, rattrapée au passage quotidien
+- [x] Module `categorization` : matrice catégorie × type, environnement, criticité, équipe ou exposition ; findings d'une case
+- [x] Filtres du backlog et des extractions : catégorie, type, environnement, criticité, exposition exacte, valeur « non renseignée » (`__none__`)
+- [ ] Groupes d'assets à règles en base (moitié restante de T7), et filtrage des listings par périmètre
+- [ ] Affiner la taxonomie sur un vrai export : les règles sont écrites d'après les titres documentés de Nessus et OpenVAS
 
 ## ✅ 5. Extractions API
 - [x] Jetons d'accès personnels (migration 0016) : SHA-256, lecture seule, expiration obligatoire, révocables, 20 actifs par utilisateur, inopérants sans le module `extracts`

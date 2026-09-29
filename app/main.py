@@ -15,6 +15,7 @@ from app.api.v1 import (
     admin,
     assets,
     auth,
+    categorization,
     dashboard,
     extracts,
     me,
@@ -146,6 +147,12 @@ app.include_router(
     prefix=f"{settings.API_V1_STR}/assets",
     tags=["Assets"],
     dependencies=[Depends(require_module("assets"))],
+)
+app.include_router(
+    categorization.router,
+    prefix=f"{settings.API_V1_STR}/categorization",
+    tags=["Categorization"],
+    dependencies=[Depends(require_module("categorization"))],
 )
 app.include_router(
     extracts.router,

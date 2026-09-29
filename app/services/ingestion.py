@@ -24,8 +24,14 @@ from app.models.vulnerability import (
 )
 from app.services.asset_policy import (
     criticality_for,
+    environment_for,
     exposure_for,
     owner_team_for,
+)
+from app.services.categorization import (
+    asset_type_for,
+    classify_finding,
+    more_specific,
 )
 from app.services.remediation import apply_kev_sla, calculate_remediation_deadline
 from app.services.risk_scoring import RiskInputs, compute_risk
@@ -110,6 +116,7 @@ def ingest_findings(
             for finding in findings
         ]
         _sync_remediations(db, findings, assocs, scan_source, now)
+        _categorize(findings, assocs)
         covered_asset_ids = {asset.id for asset in asset_cache.values()}
 
     scope = None
@@ -356,6 +363,8 @@ def _upsert_assets(
                 business_criticality=criticality_for(ip),
                 internet_facing=exposure_for(ip),
                 owner_team=owner_team_for(ip),
+                asset_type=asset_type_for(finding["operating_system"]),
+                environment=environment_for(ip),
             )
             db.add(asset)
             created += 1
@@ -369,6 +378,10 @@ def _upsert_assets(
             # A team rule added later still reaches hosts nobody assigned.
             if not asset.owner_team:
                 asset.owner_team = owner_team_for(ip)
+            if not asset.asset_type:
+                asset.asset_type = asset_type_for(asset.operating_system)
+            if not asset.environment:
+                asset.environment = environment_for(ip)
             # Matched by name on a new address: the host moved, so follow it.
             if hostname and asset.ip_address != ip:
                 logger.info(
@@ -561,6 +574,18 @@ def _sync_remediations(
             if action_id not in kept:
                 db.delete(link)
     db.flush()
+
+
+def _categorize(findings: list[dict[str, Any]], assocs: list[AssetVulnerability]) -> None:
+    """Kind of software each finding hits, from what this scan says of it.
+
+    A pair reported by several checks keeps the most specific answer: a
+    generic "application" never overwrites "browser".
+    """
+    for finding, assoc in zip(findings, assocs, strict=True):
+        families = [r.get("family") for r in finding.get("remediations") or []]
+        category = classify_finding(finding.get("title"), families)
+        assoc.category = more_specific(assoc.category, category)
 
 
 def _upsert_actions(

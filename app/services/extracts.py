@@ -26,6 +26,7 @@ from app.models.vulnerability import (
     Status,
     Vulnerability,
 )
+from app.services.categorization import ASSET_TYPES, VULN_CATEGORIES
 from app.services.export import (
     BATCH_SIZE,
     SPOOL_IN_MEMORY_BYTES,
@@ -92,6 +93,10 @@ def _finding_rows(db: Session, filters: dict, limit: int | None):
             min_epss=filters.get("min_epss"),
             internet_facing_only=filters.get("internet_facing_only", False),
             owner_team=filters.get("owner_team"),
+            category=filters.get("category"),
+            asset_type=filters.get("asset_type"),
+            environment=filters.get("environment"),
+            business_criticality=filters.get("business_criticality"),
         ),
     ).order_by(*RISK_ORDER)
     if limit is not None:
@@ -112,6 +117,8 @@ FINDINGS = Dataset(
         Column("asset", "Asset", lambda f: f.asset.hostname),
         Column("ip_address", "IP address", lambda f: f.asset.ip_address),
         Column("owner_team", "Owner team", lambda f: f.asset.owner_team),
+        Column("asset_type", "Asset type", lambda f: f.asset.asset_type),
+        Column("environment", "Environment", lambda f: f.asset.environment),
         Column(
             "business_criticality",
             "Business criticality",
@@ -120,6 +127,7 @@ FINDINGS = Dataset(
         Column("internet_facing", "Internet-facing", lambda f: f.asset.internet_facing),
         Column("cve_id", "CVE", lambda f: f.vulnerability.cve_id),
         Column("title", "Title", lambda f: f.vulnerability.title),
+        Column("category", "Category", lambda f: f.category),
         Column("remediation", "Fix", _remediation),
         Column(
             "fixed_version",
@@ -147,6 +155,15 @@ FINDINGS = Dataset(
         Filter("min_epss", "Minimum EPSS", "float", minimum=0, maximum=1),
         Filter("internet_facing_only", "Internet-facing only", "bool"),
         Filter("owner_team", "Owner team", "str"),
+        Filter("category", "Category", "enum", tuple(VULN_CATEGORIES)),
+        Filter("asset_type", "Asset type", "enum", tuple(ASSET_TYPES)),
+        Filter("environment", "Environment", "str"),
+        Filter(
+            "business_criticality",
+            "Business criticality",
+            "enum",
+            tuple(c.value for c in Criticality),
+        ),
     ),
     rows=_finding_rows,
 )
@@ -177,6 +194,10 @@ def _asset_rows(db: Session, filters: dict, limit: int | None):
         query = query.filter(Asset.owner_team == filters["owner_team"])
     if filters.get("internet_facing_only"):
         query = query.filter(Asset.internet_facing.is_(True))
+    if filters.get("asset_type"):
+        query = query.filter(Asset.asset_type == filters["asset_type"])
+    if filters.get("environment"):
+        query = query.filter(Asset.environment == filters["environment"])
     query = query.order_by(Asset.id)
     if limit is not None:
         query = query.limit(limit)
@@ -199,6 +220,8 @@ ASSETS = Dataset(
         ),
         Column("internet_facing", "Internet-facing", lambda r: r[0].internet_facing),
         Column("owner_team", "Owner team", lambda r: r[0].owner_team),
+        Column("asset_type", "Asset type", lambda r: r[0].asset_type),
+        Column("environment", "Environment", lambda r: r[0].environment),
         Column("open_findings", "Open findings", lambda r: r[1]),
         Column("max_risk", "Highest open risk", lambda r: r[2]),
         Column("created_at", "Created", lambda r: r[0].created_at),
@@ -207,6 +230,8 @@ ASSETS = Dataset(
         Filter("criticality", "Criticality", "enum", tuple(c.value for c in Criticality)),
         Filter("owner_team", "Owner team", "str"),
         Filter("internet_facing_only", "Internet-facing only", "bool"),
+        Filter("asset_type", "Asset type", "enum", tuple(ASSET_TYPES)),
+        Filter("environment", "Environment", "str"),
     ),
     rows=_asset_rows,
 )
