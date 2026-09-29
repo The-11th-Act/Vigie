@@ -5,9 +5,11 @@ import {
   Settings,
   ShieldAlert,
   UploadCloud,
+  Wrench,
 } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import FindingsBacklog from './components/FindingsBacklog';
+import RemediationPlan from './components/RemediationPlan';
 import AssetsList from './components/AssetsList';
 import VulnerabilitiesList from './components/VulnerabilitiesList';
 import ScanUpload from './components/ScanUpload';
@@ -19,6 +21,7 @@ import AdminPanel from './components/AdminPanel';
 export const MODULE_SCREENS = {
   dashboard: { path: '/dashboard', icon: LayoutDashboard, Component: Dashboard },
   backlog: { path: '/findings', icon: ListOrdered, Component: FindingsBacklog },
+  remediation: { path: '/remediation', icon: Wrench, Component: RemediationPlan },
   assets: { path: '/assets', icon: Server, Component: AssetsList },
   vulnerabilities: { path: '/vulnerabilities', icon: ShieldAlert, Component: VulnerabilitiesList },
   scans: { path: '/scans', icon: UploadCloud, Component: ScanUpload },

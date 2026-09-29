@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 
 import FindingsBacklog from './FindingsBacklog'
 import { vulnerabilityService } from '../services'
+import { AuthContext } from '../auth/AuthContext'
 
 vi.mock('../services', () => ({
   vulnerabilityService: { getFindings: vi.fn(), updateFinding: vi.fn(), exportFindings: vi.fn() },
@@ -33,6 +34,19 @@ async function selectStatus(user, label) {
 }
 
 describe('FindingsBacklog', () => {
+  it('does not offer a remediator the risk decisions', async () => {
+    mockOneFinding()
+    render(
+      <AuthContext.Provider value={{ user: { username: 'remy', role: 'remediator' } }}>
+        <FindingsBacklog />
+      </AuthContext.Provider>
+    )
+
+    const select = await screen.findByDisplayValue('Open')
+    const options = [...select.options].map((option) => option.value)
+    expect(options).toEqual(['Open', 'Remediated'])
+  })
+
   it('shows what to deploy rather than only the CVE', async () => {
     const kb = { reference: 'KB5034127', kind: 'kb', title: 'January rollup', url: null }
     vulnerabilityService.getFindings.mockResolvedValue({

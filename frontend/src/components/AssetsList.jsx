@@ -38,7 +38,10 @@ export default function AssetsList() {
 
   // Only hides controls: the API enforces the role on its own, from the
   // database.
-  const isAdmin = useAuth().user?.role === 'admin';
+  const role = useAuth().user?.role;
+  const isAdmin = role === 'admin';
+  // Criticality and exposure weigh on every score: a remediator reads them.
+  const canEdit = role !== 'remediator';
 
   // Debounce held in a ref rather than on `window`: a module-level global was
   // shared with every other list and leaked its timer between components.
@@ -144,10 +147,12 @@ export default function AssetsList() {
             style={{...inputStyle, paddingLeft: '2.25rem'}}
           />
         </div>
-        <button className="button" onClick={openCreate}>
-          <Plus size={16} />
-          New asset
-        </button>
+        {canEdit && (
+          <button className="button" onClick={openCreate}>
+            <Plus size={16} />
+            New asset
+          </button>
+        )}
       </div>
 
       {editing && (
@@ -269,13 +274,15 @@ export default function AssetsList() {
                       </td>
                       <td>
                         <div style={{display: 'flex', gap: '0.5rem'}}>
-                          <button
-                            onClick={() => openEdit(asset)}
-                            title="Edit"
-                            style={{background: 'none', border: '1px solid var(--border)', borderRadius: '6px', padding: '0.3rem 0.45rem', color: 'var(--text-main)', cursor: 'pointer'}}
-                          >
-                            <Pencil size={15} />
-                          </button>
+                          {canEdit && (
+                            <button
+                              onClick={() => openEdit(asset)}
+                              title="Edit"
+                              style={{background: 'none', border: '1px solid var(--border)', borderRadius: '6px', padding: '0.3rem 0.45rem', color: 'var(--text-main)', cursor: 'pointer'}}
+                            >
+                              <Pencil size={15} />
+                            </button>
+                          )}
                           {/* Deletion cascades to every finding, so it stays admin-only. */}
                           {isAdmin && (
                             <button

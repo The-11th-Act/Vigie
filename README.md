@@ -160,7 +160,7 @@ VIGIE_TEST_DATABASE_URL=postgresql://user:pass@localhost:5432/vigie_test pytest 
 ## Modules and roles
 
 The application is split into modules (`app/core/modules.py`): Dashboard,
-Risk Backlog, Assets, Vulnerabilities, Scans and Administration. Which ones a
+Risk Backlog, Remediation, Assets, Vulnerabilities, Scans and Administration. Which ones a
 user gets is decided in three layers:
 
 1. an administrator can switch a module off for the whole instance;
@@ -173,7 +173,7 @@ user gets is decided in three layers:
 |---|---|---|
 | `admin` | all, Administration included | yes |
 | `analyst` | all but Administration | yes |
-| `remediator` | Dashboard, Risk Backlog, Assets | no |
+| `remediator` | Remediation, Dashboard, Risk Backlog, Assets | no |
 
 "Deciding risk" means accepting a risk, dismissing a false positive, editing an
 asset's criticality or exposure, or a CVE's score: a remediator marks fixes done
@@ -291,7 +291,16 @@ what fixes it (`remediation_actions`, linked per finding and per source):
 Each source's links are replaced when it reports the finding again, so a
 superseded cumulative update disappears once the scanner asks for the next one.
 Findings carry them as `remediations`, and the CSV export adds `remediation`
-and `fixed_version` columns. Scan files are not kept after ingestion, so
+and `fixed_version` columns.
+
+The **Remediation** module folds the open backlog per fix
+(`GET /api/v1/remediation/actions`): each KB or fix with the hosts still
+missing it, the findings and distinct CVEs it closes, KEV and overdue counts,
+the nearest deadline, and the sum of their risk, which orders the list. A
+finding linked to the same fix by two scanners counts once. Open findings no
+scanner gave a fix for are counted apart. Each fix lists its hosts with their
+versions and CVEs (`/actions/{id}`), exportable as CSV for a deployment tool
+(`/actions/{id}/hosts.csv`). Scan files are not kept after ingestion, so
 findings imported before this existed gain their remediation on their next scan.
 
 ### CrowdStrike Falcon Spotlight

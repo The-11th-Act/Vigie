@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { vulnerabilityService } from '../services';
 import { useFetch } from '../hooks/useFetch';
+import { useAuth } from '../auth/AuthContext';
 import { ChevronLeft, ChevronRight, Download } from 'lucide-react';
 
 const PAGE_SIZE = 20;
@@ -93,6 +94,13 @@ function formatDate(value) {
 }
 
 export default function FindingsBacklog() {
+  // A remediator marks fixes done; deciding a risk is acceptable is not
+  // theirs, and the API refuses it. The current status stays listed.
+  const isRemediator = useAuth().user?.role === 'remediator';
+  const triageOptions = (finding) =>
+    isRemediator
+      ? STATUSES.filter((s) => !STATUSES_REQUIRING_NOTE.has(s) || s === finding.status)
+      : STATUSES;
   const [page, setPage] = useState(0);
   const [statusFilter, setStatusFilter] = useState('');
   const [minRisk, setMinRisk] = useState('');
@@ -400,7 +408,7 @@ export default function FindingsBacklog() {
                                 color: 'var(--text-main)', fontSize: '0.8rem', outline: 'none', cursor: 'pointer',
                               }}
                             >
-                              {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+                              {triageOptions(finding).map((s) => <option key={s} value={s}>{s}</option>)}
                             </select>
 
                             {isChanged && noteRequired && (

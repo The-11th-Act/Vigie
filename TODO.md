@@ -430,7 +430,7 @@ Vigie priorise bien, mais elle parle CVE. Les équipes de remédiation, elles, t
 
 Cible : une barre latérale composée de modules (profil par rôle, ajusté par chaque utilisateur), et des tickets de remédiation gérés dans Vigie. Un connecteur Jira, ServiceNow ou GLPI viendra ensuite sur la même structure.
 
-Ordre retenu : 1 → 0 → 2 → 4 → 3 → 5 → 6 → 7. Faits : 1 et 2.
+Ordre retenu : 1 → 0 → 2 → 4 → 3 → 5 → 6 → 7. Faits : 1, 2 et la vue « Top correctifs » de 4.
 
 ## ✅ 1. Capturer les données de remédiation
 
@@ -462,10 +462,11 @@ Les parseurs jetaient tout ce que les scanners disent du correctif. Les fichiers
 - [ ] Profil de rôle : l'écran Administration ajoute un module accordé en fin de liste ; réordonner un profil passe par l'API
 
 ## 4. Remédiation et tickets internes
-- [ ] Vue « Top correctifs » : risque cumulé fermé par action, assets, KEV, retards, échéance ; seau « Sans correctif identifié »
+- [x] Module `remediation` et vue « Top correctifs » : risque cumulé fermé par action (chaque finding compté une fois), hôtes, findings et CVE distincts, KEV, retards, échéance ; seau « Sans correctif identifié » ; hôtes d'un correctif avec leurs versions, export CSV
+- [x] Le rôle `remediator` ouvre sur Remédiation ; l'interface ne lui propose plus les décisions de risque (triage, édition d'asset)
 - [ ] Tickets par (action × `owner_team`), statut, priorité, échéance, historique ; champs `external_*` réservés au connecteur
 - [ ] Clôture automatique quand tous les findings sont fermés (acteur `system`), réouverture si l'un revient
-- [ ] Export de la liste d'hôtes d'un ticket (SCCM, WSUS, Ansible)
+- [ ] Export de la liste d'hôtes d'un ticket (celle d'un correctif existe déjà)
 
 ## 3. Contexte d'asset et catégorisation
 - [ ] `asset_type`, `environment`, `owner_team` ; groupes d'assets à règles (moitié de T7)

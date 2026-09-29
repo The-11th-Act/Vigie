@@ -112,3 +112,15 @@ export const userService = {
   updateRole: (id, role) =>
     api.patch(`/users/${id}/role`, { role }),
 }
+
+export const remediationService = {
+  // Open fixes, the one removing the most risk first.
+  listActions: (params = {}) =>
+    api.get('/remediation/actions', { params }),
+
+  getAction: (id) =>
+    api.get(`/remediation/actions/${id}`),
+
+  exportHosts: (id) =>
+    api.get(`/remediation/actions/${id}/hosts.csv`, { responseType: 'blob' }),
+}

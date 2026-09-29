@@ -35,6 +35,7 @@ class Module:
 MODULES = (
     Module("dashboard", "Dashboard"),
     Module("backlog", "Risk Backlog"),
+    Module("remediation", "Remediation"),
     Module("assets", "Assets"),
     Module("vulnerabilities", "Vulnerabilities"),
     Module("scans", "Scans"),
@@ -45,8 +46,16 @@ ADMIN_MODULE = "admin"
 
 DEFAULT_PROFILES: dict[str, list[str]] = {
     ROLE_ADMIN: [module.key for module in MODULES],
-    ROLE_ANALYST: ["dashboard", "backlog", "assets", "vulnerabilities", "scans"],
-    ROLE_REMEDIATOR: ["dashboard", "backlog", "assets"],
+    ROLE_ANALYST: [
+        "dashboard",
+        "backlog",
+        "remediation",
+        "assets",
+        "vulnerabilities",
+        "scans",
+    ],
+    # Their work starts from what to deploy, not from the CVE list.
+    ROLE_REMEDIATOR: ["remediation", "dashboard", "backlog", "assets"],
 }
 
 

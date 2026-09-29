@@ -17,6 +17,7 @@ from app.api.v1 import (
     auth,
     dashboard,
     me,
+    remediation,
     scans,
     threat_intel,
     users,
@@ -144,6 +145,12 @@ app.include_router(
     prefix=f"{settings.API_V1_STR}/assets",
     tags=["Assets"],
     dependencies=[Depends(require_module("assets"))],
+)
+app.include_router(
+    remediation.router,
+    prefix=f"{settings.API_V1_STR}/remediation",
+    tags=["Remediation"],
+    dependencies=[Depends(require_module("remediation"))],
 )
 # Serves three screens; each route names its own module.
 app.include_router(
