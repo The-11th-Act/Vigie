@@ -7,7 +7,7 @@ from celery.signals import setup_logging
 from app.core.config import settings
 from app.core.logging import configure_logging
 
-celery_app = Celery("tasks", broker=settings.REDIS_URL, backend=settings.REDIS_URL)
+celery_app = Celery("tasks", broker=settings.redis_url, backend=settings.redis_url)
 
 celery_app.conf.update(
     task_serializer="json",

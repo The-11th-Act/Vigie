@@ -17,7 +17,7 @@ from abc import ABC, abstractmethod
 
 import redis
 
-from app.core.config import settings
+from app.core.config import redacted, settings
 
 logger = logging.getLogger(__name__)
 
@@ -167,14 +167,15 @@ def get_store() -> KeyValueStore:
             return _store
         try:
             client = redis.Redis.from_url(
-                settings.REDIS_URL,
+                settings.redis_url,
                 socket_connect_timeout=1,
                 socket_timeout=1,
                 decode_responses=True,
             )
             client.ping()
             _store = RedisStore(client)
-            logger.info("Key-value store: Redis at %s", settings.REDIS_URL)
+            # Redacted: in production the URL carries the Redis password.
+            logger.info("Key-value store: Redis at %s", redacted(settings.redis_url))
         except Exception as exc:
             logger.warning(
                 "Redis unavailable (%s); falling back to a process-local store. "

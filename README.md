@@ -96,10 +96,29 @@ PostgreSQL and Redis on the host. See below for production.
 ### Running in production
 
 ```bash
-# 1. Fill in the [PROD] section of .env (REDIS_PASSWORD, BACKEND_CORS_ORIGINS, ...)
-# 2. Start the stack with the production overlay:
+# 1. Secrets, as files (Docker secrets), never in .env:
+sudo install -d -m 700 -o root -g root secrets
+python3 -c "import secrets; print(secrets.token_urlsafe(48))" | sudo tee secrets/secret_key >/dev/null
+python3 -c "import secrets; print(secrets.token_urlsafe(32))" | sudo tee secrets/postgres_password >/dev/null
+python3 -c "import secrets; print(secrets.token_urlsafe(32))" | sudo tee secrets/redis_password >/dev/null
+echo '{}' | sudo tee secrets/previous_secret_keys >/dev/null
+sudo chmod 444 secrets/*
+# 2. Fill in the [PROD] section of .env (POSTGRES_USER, BACKEND_CORS_ORIGINS, ...)
+# 3. Start the stack with the production overlay:
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 ```
+
+The signing key and the PostgreSQL and Redis passwords are mounted as Docker
+secrets in `/run/secrets` and read through `SECRET_KEY_FILE`,
+`DATABASE_PASSWORD_FILE`, `REDIS_PASSWORD_FILE` (and `POSTGRES_PASSWORD_FILE`,
+`PGPASSWORD_FILE` for the database and its backup): they appear neither in
+`.env` nor in `docker inspect`. The directory is root-only (0700) on the
+host; the files are world-readable (0444) so that each container (postgres,
+the application user, the backup) can read them once mounted. A missing
+file stops the stack from starting. `VIGIE_SECRETS_DIR` points elsewhere if
+needed. A value left in `.env` from before (`SECRET_KEY`...) is ignored in
+production: the overlay blanks it so the secret always wins. CI checks that
+no secret value shows in any container's environment or command.
 
 The containers never read `.env` themselves (it is kept out of the image): compose
 interpolates each setting from it and passes it on, through the `x-app-settings`

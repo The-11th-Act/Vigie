@@ -8,9 +8,29 @@
 # npm run dev, bases exposees sur l'hote). Rien de tout cela ne doit tourner
 # en production.
 #
-# Toute valeur ci-dessous provient de l'environnement, sans repli : compose
-# echoue au demarrage plutot que de lancer la plateforme avec un mot de passe
-# connu de tous.
+# Les secrets (cle de signature, mots de passe PostgreSQL et Redis) sont des
+# fichiers, montes en Docker secrets dans /run/secrets : ils n'apparaissent ni
+# dans le .env ni dans l'environnement des conteneurs (docker inspect). Un
+# fichier manquant fait echouer le demarrage : jamais de repli sur un mot de
+# passe connu de tous. Mise en place : README, "Running in production".
+#
+# Le reste de la configuration vient du .env, sans repli pour ce qui doit
+# etre choisi (utilisateur et base PostgreSQL, origines CORS).
+
+secrets:
+  # Repertoire en 0700 appartenant a root sur l'hote ; fichiers en 0444 pour
+  # que chaque conteneur (postgres, appuser, sauvegarde) puisse les lire une
+  # fois montes, sans que personne d'autre sur l'hote n'y accede.
+  secret_key:
+    file: ${VIGIE_SECRETS_DIR:-./secrets}/secret_key
+  postgres_password:
+    file: ${VIGIE_SECRETS_DIR:-./secrets}/postgres_password
+  redis_password:
+    file: ${VIGIE_SECRETS_DIR:-./secrets}/redis_password
+  # Cles retirees encore acceptees pendant une rotation, en JSON ({} hors
+  # rotation). Seule l'API verifie les tokens. docs/EXPLOITATION.md.
+  previous_secret_keys:
+    file: ${VIGIE_SECRETS_DIR:-./secrets}/previous_secret_keys
 
 services:
   db:
@@ -21,8 +41,12 @@ services:
     ports: !override []
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      # L'image refuse POSTGRES_PASSWORD et POSTGRES_PASSWORD_FILE ensemble :
+      # la valeur de developpement du fichier de base est retiree.
+      POSTGRES_PASSWORD: !reset null
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
       POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+    secrets: [postgres_password]
     restart: unless-stopped
     deploy:
       resources:
@@ -33,13 +57,22 @@ services:
     ports: !override []
     # Un Redis sans mot de passe accessible depuis le reseau, c'est une
     # execution de commandes a distance offerte (CONFIG SET dir/dbfilename).
-    command: >
-      redis-server
-      --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
-      --maxmemory 512mb
-      --maxmemory-policy noeviction
+    # Le mot de passe est lu dans le secret au demarrage. Relance par le
+    # script d'entree de l'image, qui abandonne root pour l'utilisateur
+    # redis : un `sh -c` seul ferait tourner Redis en root.
+    command:
+      - sh
+      - -c
+      - >-
+        exec docker-entrypoint.sh redis-server
+        --requirepass "$$(cat /run/secrets/redis_password)"
+        --maxmemory 512mb
+        --maxmemory-policy noeviction
+    secrets: [redis_password]
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      test:
+        - CMD-SHELL
+        - REDISCLI_AUTH="$$(cat /run/secrets/redis_password)" redis-cli ping | grep -q PONG
       interval: 10s
       timeout: 5s
       retries: 5
@@ -51,9 +84,15 @@ services:
 
   migrate:
     environment:
-      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required}
       - ENVIRONMENT=production
-      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      # Secrets lus dans /run/secrets (convention *_FILE), jamais dans
+      # l'environnement : `docker inspect` ne les montre pas. SECRET_KEY vide :
+      # une ancienne valeur restee dans le .env ne l'emporte pas sur le secret.
+      - SECRET_KEY=
+      - SECRET_KEY_FILE=/run/secrets/secret_key
+      - DATABASE_PASSWORD_FILE=/run/secrets/postgres_password
+      - DATABASE_URL=postgresql://${POSTGRES_USER}@db:5432/${POSTGRES_DB}
+    secrets: [secret_key, postgres_password]
     restart: "no"
 
   web:
@@ -77,10 +116,16 @@ services:
     # L'API n'est joignable que par le frontend Nginx, sur le reseau interne.
     ports: !override []
     environment:
-      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required}
       - ENVIRONMENT=production
-      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
-      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      # Secrets lus dans /run/secrets (convention *_FILE), jamais dans
+      # l'environnement : `docker inspect` ne les montre pas. SECRET_KEY vide :
+      # une ancienne valeur restee dans le .env ne l'emporte pas sur le secret.
+      - SECRET_KEY=
+      - SECRET_KEY_FILE=/run/secrets/secret_key
+      - DATABASE_PASSWORD_FILE=/run/secrets/postgres_password
+      - DATABASE_URL=postgresql://${POSTGRES_USER}@db:5432/${POSTGRES_DB}
+      - REDIS_PASSWORD_FILE=/run/secrets/redis_password
+      - REDIS_URL=redis://redis:6379/0
       - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-60}
       - BACKEND_CORS_ORIGINS=${BACKEND_CORS_ORIGINS:?BACKEND_CORS_ORIGINS is required, e.g. ["https://vigie.example.com"]}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
@@ -90,6 +135,9 @@ services:
       - ADMIN_USERNAME=
       - ADMIN_EMAIL=
       - ADMIN_PASSWORD=
+      - PREVIOUS_SECRET_KEYS=
+      - PREVIOUS_SECRET_KEYS_FILE=/run/secrets/previous_secret_keys
+    secrets: [secret_key, previous_secret_keys, postgres_password, redis_password]
     healthcheck:
       # /ready et non /health : inclut Redis et la presence d'un worker
       # Celery, donc un noeud incapable d'ingerer un scan est retire du
@@ -122,11 +170,18 @@ services:
     volumes: !override
       - scan_uploads:/var/lib/vigie/scans
     environment:
-      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required}
       - ENVIRONMENT=production
-      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
-      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      # Secrets lus dans /run/secrets (convention *_FILE), jamais dans
+      # l'environnement : `docker inspect` ne les montre pas. SECRET_KEY vide :
+      # une ancienne valeur restee dans le .env ne l'emporte pas sur le secret.
+      - SECRET_KEY=
+      - SECRET_KEY_FILE=/run/secrets/secret_key
+      - DATABASE_PASSWORD_FILE=/run/secrets/postgres_password
+      - DATABASE_URL=postgresql://${POSTGRES_USER}@db:5432/${POSTGRES_DB}
+      - REDIS_PASSWORD_FILE=/run/secrets/redis_password
+      - REDIS_URL=redis://redis:6379/0
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    secrets: [secret_key, postgres_password, redis_password]
     healthcheck:
       test: ["CMD-SHELL", "celery -A app.worker.celery_app inspect ping -d celery@$$HOSTNAME || exit 1"]
       interval: 60s
@@ -147,11 +202,18 @@ services:
     # deux fois.
     volumes: !override []
     environment:
-      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required}
       - ENVIRONMENT=production
-      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
-      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      # Secrets lus dans /run/secrets (convention *_FILE), jamais dans
+      # l'environnement : `docker inspect` ne les montre pas. SECRET_KEY vide :
+      # une ancienne valeur restee dans le .env ne l'emporte pas sur le secret.
+      - SECRET_KEY=
+      - SECRET_KEY_FILE=/run/secrets/secret_key
+      - DATABASE_PASSWORD_FILE=/run/secrets/postgres_password
+      - DATABASE_URL=postgresql://${POSTGRES_USER}@db:5432/${POSTGRES_DB}
+      - REDIS_PASSWORD_FILE=/run/secrets/redis_password
+      - REDIS_URL=redis://redis:6379/0
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    secrets: [secret_key, postgres_password, redis_password]
     restart: unless-stopped
     read_only: true
     tmpfs:
@@ -211,7 +273,7 @@ services:
     environment:
       PGHOST: db
       PGUSER: ${POSTGRES_USER:?POSTGRES_USER is required}
-      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      PGPASSWORD_FILE: /run/secrets/postgres_password
       PGDATABASE: ${POSTGRES_DB:?POSTGRES_DB is required}
       # Cle publique age : le serveur chiffre, seule la cle privee, gardee
       # hors de la plateforme, dechiffre.
@@ -219,6 +281,7 @@ services:
       BACKUP_ALLOW_UNENCRYPTED: ${BACKUP_ALLOW_UNENCRYPTED:-false}
       BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-24}
       BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+    secrets: [postgres_password]
     volumes:
       - ${BACKUP_VOLUME:-backups}:/backups
     depends_on:

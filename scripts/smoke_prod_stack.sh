@@ -47,12 +47,21 @@ if [ -e .env ]; then
   exit 2
 fi
 CREATED_ENV=1
+
+# Secrets : des fichiers montés en Docker secrets, comme en production,
+# jamais dans le .env. Répertoire en 0700, fichiers lisibles une fois montés.
+SECRETS="$WORK/secrets"
+install -d -m 700 "$SECRETS"
+openssl rand -base64 48 | tr -d '\n' > "$SECRETS/secret_key"
+echo "smoke-$(openssl rand -hex 12)" > "$SECRETS/postgres_password"
+echo "smoke-$(openssl rand -hex 12)" > "$SECRETS/redis_password"
+echo '{}' > "$SECRETS/previous_secret_keys"
+chmod 444 "$SECRETS"/*
+
 cat > .env <<EOF
-SECRET_KEY=$(openssl rand -base64 48 | tr -d '\n')
+VIGIE_SECRETS_DIR=$SECRETS
 POSTGRES_USER=vigie
-POSTGRES_PASSWORD=smoke-$(openssl rand -hex 12)
 POSTGRES_DB=vigie
-REDIS_PASSWORD=smoke-$(openssl rand -hex 12)
 BACKEND_CORS_ORIGINS=["https://vigie.example.com"]
 # Réglages métier : leur effet est vérifié plus bas, dans chaque conteneur.
 CRITICALITY_RULES={"203.0.113.0/24":"Critical"}
@@ -159,6 +168,20 @@ echo "Scan ingéré par le worker via le volume partagé."
 [ "$("${COMPOSE[@]}" logs --no-color --no-log-prefix web | grep -c '^{')" -gt 0 ] \
   || fail "l'API n'écrit pas ses logs en JSON"
 echo "ok - logs JSON, request_id propagé de l'API au worker ($UPLOAD_ID)"
+
+# Aucun secret dans ce que `docker inspect` montre : environnement et
+# commande de chaque conteneur. Redis n'y voit que "$(cat ...)".
+for service in db redis migrate web worker beat backup; do
+  cid=$("${COMPOSE[@]}" ps -a -q "$service")
+  [ -n "$cid" ] || continue
+  config=$(docker inspect "$cid" --format '{{json .Config.Env}} {{json .Config.Cmd}}')
+  for secret in "$SECRETS"/*; do
+    if grep -qF -- "$(cat "$secret")" <<<"$config"; then
+      fail "le secret $(basename "$secret") est visible dans docker inspect ($service)"
+    fi
+  done
+done
+echo "ok - aucun secret dans l'environnement ni la commande des conteneurs"
 
 # --- Import KEV par l'API, puis lecture du backlog -------------------------
 cat > "$WORK/kev.json" <<'JSON'

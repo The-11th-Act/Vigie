@@ -23,6 +23,8 @@ venv/
 env/
 .env
 !.env.example
+# Docker secrets of a production host (docker-compose.prod.yml).
+secrets/
 *.db
 *.sqlite
 .idea/

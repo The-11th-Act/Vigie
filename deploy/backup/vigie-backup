@@ -10,10 +10,18 @@
 # ressemble jamais à une sauvegarde valide. La rétention ne s'applique qu'après
 # un succès, et ne peut donc pas supprimer la dernière sauvegarde restante.
 #
-# Connexion : variables libpq standard (PGHOST, PGUSER, PGPASSWORD, PGDATABASE).
+# Connexion : variables libpq standard (PGHOST, PGUSER, PGPASSWORD, PGDATABASE),
+# ou PGPASSWORD_FILE pour un mot de passe tenu dans un fichier.
 # Sortie standard : le chemin du fichier écrit, et rien d'autre.
 
 set -euo pipefail
+
+# Mot de passe lu dans un fichier (Docker secret, PGPASSWORD_FILE) plutot que
+# dans l'environnement : libpq ne connait que PGPASSWORD et .pgpass.
+if [ -n "${PGPASSWORD_FILE:-}" ] && [ -z "${PGPASSWORD:-}" ]; then
+  PGPASSWORD="$(cat "${PGPASSWORD_FILE}")"
+  export PGPASSWORD
+fi
 
 BACKUP_DIR="${BACKUP_DIR:-/backups}"
 RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-14}"

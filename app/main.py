@@ -266,7 +266,7 @@ def _check_redis() -> str:
     import redis
 
     client = redis.Redis.from_url(
-        settings.REDIS_URL, socket_connect_timeout=1, socket_timeout=1
+        settings.redis_url, socket_connect_timeout=1, socket_timeout=1
     )
     try:
         client.ping()

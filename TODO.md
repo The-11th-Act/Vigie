@@ -264,7 +264,12 @@ ci-dessous avec la mention *(items 5-18)*.
 Les secrets viennent d'un `.env` sur disque, sans coffre ni rotation. Changer `SECRET_KEY`
 invalide d'un coup tous les tokens émis : pas de `kid`, pas de période de recouvrement.
 
-- [ ] Sortir les secrets du fichier (Docker secrets, SOPS, ou coffre managé)
+- [x] Sortir les secrets du fichier : Docker secrets en production (clé de
+      signature, clés retirées, mots de passe PostgreSQL et Redis), lus par la
+      convention `*_FILE` ; absents du `.env` et de `docker inspect`, vérifié
+      par le test de la pile de production *(30/09/2026)*
+- [ ] Coffre managé (Vault, SOPS) si l'hébergement l'impose : `*_FILE` suffit à
+      le brancher (fichier rendu par l'agent du coffre)
 - [x] `kid` dans l'en-tête JWT + acceptation de N clés (`SECRET_KEY_ID`,
       `PREVIOUS_SECRET_KEYS`), pour tourner la clé sans déconnecter tout le monde
       *(26/09/2026)*

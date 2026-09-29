@@ -14,21 +14,36 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
+# Contenu des fichiers de secrets factices : il ne doit apparaître nulle
+# part dans la configuration fusionnée.
+FAKE_SECRETS = {
+    "secret_key": "fake-secret-key-must-stay-in-its-file-0123456789",
+    "postgres_password": "fake-postgres-password-in-its-file",
+    "redis_password": "fake-redis-password-in-its-file",
+    "previous_secret_keys": '{"k0": "fake-retired-key-in-its-file-0123456789"}',
+}
+_SECRETS_DIR = Path(tempfile.mkdtemp(prefix="vigie-secrets-"))
+for _name, _value in FAKE_SECRETS.items():
+    (_SECRETS_DIR / _name).write_text(_value, encoding="utf-8")
+
 # Valeurs factices : la surcouche exige ces variables sans repli, donc la
-# fusion échoue si elles manquent. Aucune n'est un secret.
+# fusion échoue si elles manquent. Les secrets, eux, sont des fichiers.
 FAKE_ENV = {
-    "SECRET_KEY": "test-secret-key-not-used-in-production-0123456789",
     "POSTGRES_USER": "vigie",
-    "POSTGRES_PASSWORD": "test-password",
     "POSTGRES_DB": "vigie",
-    "REDIS_PASSWORD": "test-redis-password",
     "BACKEND_CORS_ORIGINS": '["https://vigie.example.com"]',
+    "VIGIE_SECRETS_DIR": str(_SECRETS_DIR),
+    # Comme sur un hôte migré qui aurait gardé ses anciennes variables.
+    "SECRET_KEY": "leftover-secret-key-from-an-old-env-file-0123456789",
+    "POSTGRES_PASSWORD": "leftover-postgres-password",
+    "REDIS_PASSWORD": "leftover-redis-password",
 }
 
 pytestmark = pytest.mark.skipif(
@@ -121,11 +136,12 @@ class TestProductionOverlay:
         assert web[target] == worker[target]
 
     def test_every_service_that_needs_the_broker_has_its_password(self, prod_services):
-        """Redis exige un mot de passe en production : un service resté sur
-        l'URL de développement ne pourrait plus parler au broker."""
+        """Redis exige un mot de passe en production : un service sans lui ne
+        pourrait plus parler au broker. Il le lit dans son secret."""
         for name in ("web", "worker", "beat"):
-            redis_url = prod_services[name]["environment"]["REDIS_URL"]
-            assert redis_url.startswith("redis://:"), name
+            env = prod_services[name]["environment"]
+            assert env["REDIS_PASSWORD_FILE"] == "/run/secrets/redis_password", name
+            assert "redis_password" in _secret_names(prod_services[name]), name
 
     def test_the_scheduler_is_not_probed_like_the_api(self, prod_services):
         """Le HEALTHCHECK de l'image interroge l'API sur :8000, que beat ne sert
@@ -177,6 +193,61 @@ ONLY_ON = {
 }
 
 
+def _secret_names(service: dict) -> set[str]:
+    return {secret["source"] for secret in service.get("secrets", [])}
+
+
+class TestSecrets:
+    """Les secrets sont des fichiers montés (Docker secrets) : absents du .env,
+    de l'environnement des conteneurs et donc de `docker inspect`."""
+
+    def test_no_secret_value_in_the_configuration(self, prod_config):
+        for value in FAKE_SECRETS.values():
+            assert value not in prod_config
+        # Ni les anciennes valeurs restées dans l'environnement de l'hôte.
+        for name in ("SECRET_KEY", "POSTGRES_PASSWORD", "REDIS_PASSWORD"):
+            assert FAKE_ENV[name] not in prod_config, name
+
+    @pytest.mark.parametrize("service", ["migrate", "web", "worker", "beat"])
+    def test_the_application_reads_them_from_files(self, prod_services, service):
+        env = prod_services[service]["environment"]
+        assert env["SECRET_KEY_FILE"] == "/run/secrets/secret_key"
+        assert env["DATABASE_PASSWORD_FILE"] == "/run/secrets/postgres_password"
+        assert env["SECRET_KEY"] == ""
+        assert "@db:5432" in env["DATABASE_URL"]
+        assert ":" not in env["DATABASE_URL"].split("//", 1)[1].split("@", 1)[0]
+        assert {"secret_key", "postgres_password"} <= _secret_names(
+            prod_services[service]
+        )
+
+    def test_retired_keys_only_reach_the_api(self, prod_services):
+        web = prod_services["web"]
+        assert web["environment"]["PREVIOUS_SECRET_KEYS"] == ""
+        assert "previous_secret_keys" in _secret_names(web)
+        for name in ("worker", "beat", "migrate"):
+            assert "previous_secret_keys" not in _secret_names(prod_services[name])
+
+    def test_the_database_and_its_backup_too(self, prod_services):
+        db = prod_services["db"]["environment"]
+        assert "POSTGRES_PASSWORD" not in db
+        assert db["POSTGRES_PASSWORD_FILE"] == "/run/secrets/postgres_password"
+        backup = prod_services["backup"]["environment"]
+        assert "PGPASSWORD" not in backup
+        assert backup["PGPASSWORD_FILE"] == "/run/secrets/postgres_password"
+
+    def test_redis_does_not_run_as_root(self, prod_services):
+        """Relancé par le script d'entrée de l'image, qui passe à l'utilisateur
+        redis ; un `sh -c` seul aurait gardé root."""
+        command = " ".join(prod_services["redis"]["command"])
+        assert "exec docker-entrypoint.sh redis-server" in command
+
+    def test_they_come_from_the_secrets_directory(self, prod_config):
+        parsed = json.loads(_merged_prod_config("--format", "json"))["secrets"]
+        assert set(parsed) == set(FAKE_SECRETS)
+        for secret in parsed.values():
+            assert Path(secret["file"]).parent == _SECRETS_DIR
+
+
 class TestSettingsReachTheContainers:
     """En production, un conteneur ne lit pas le .env : il est exclu de l'image
     et aucun code source n'est monté. Un réglage n'arrive que s'il est câblé
@@ -193,7 +264,12 @@ class TestSettingsReachTheContainers:
             if owner != service:
                 expected -= scoped
 
-        missing = expected - set(prod_services[service]["environment"])
+        # Un secret est câblé par son fichier (NAME_FILE) plutôt que par sa valeur.
+        environment = set(prod_services[service]["environment"])
+        wired = environment | {
+            name.removesuffix("_FILE") for name in environment if name.endswith("_FILE")
+        }
+        missing = expected - wired
         assert not missing, (
             f"{sorted(missing)} n'atteint pas le service {service} : ajouter la "
             "variable à x-app-settings (ou au service) dans docker-compose.yml."

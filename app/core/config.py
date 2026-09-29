@@ -1,6 +1,10 @@
+import json
+import os
 import secrets
 import warnings
+from pathlib import Path
 from typing import Literal
+from urllib.parse import quote, urlsplit, urlunsplit
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -21,6 +25,45 @@ def sqlalchemy_url(url: str) -> str:
         if url.startswith(bare):
             return POSTGRES_DRIVER_PREFIX + url[len(bare) :]
     return url
+
+
+def with_password(url: str, password: str | None) -> str:
+    """``url`` with ``password`` put in, unless it already carries one.
+
+    Lets a deployment keep the password out of the URL (a Docker secret, read
+    through DATABASE_PASSWORD_FILE) while the URL itself stays plain config.
+    """
+    if not password:
+        return url
+    parts = urlsplit(url)
+    if parts.password or not parts.hostname:
+        return url
+    user = quote(parts.username or "", safe="")
+    host = parts.netloc.rsplit("@", 1)[-1]
+    netloc = f"{user}:{quote(password, safe='')}@{host}"
+    return urlunsplit(parts._replace(netloc=netloc))
+
+
+def redacted(url: str) -> str:
+    """``url`` fit for a log line: the password replaced by ***."""
+    parts = urlsplit(url)
+    if not parts.password:
+        return url
+    host = parts.netloc.rsplit("@", 1)[-1]
+    return urlunsplit(parts._replace(netloc=f"{parts.username or ''}:***@{host}"))
+
+
+# Settings that may come from a file named by NAME_FILE instead of NAME itself:
+# the convention of the official images, used with Docker or Kubernetes
+# secrets, so that no secret sits in an environment `docker inspect` shows.
+FILE_SETTINGS = (
+    "SECRET_KEY",
+    "PREVIOUS_SECRET_KEYS",
+    "DATABASE_PASSWORD",
+    "REDIS_PASSWORD",
+    "CROWDSTRIKE_CLIENT_SECRET",
+    "ADMIN_PASSWORD",
+)
 
 
 # Any SECRET_KEY at or below this length is trivially brute-forceable.
@@ -64,6 +107,11 @@ class Settings(BaseSettings):
 
     DATABASE_URL: str = "postgresql://vigie_user:vigie_password@localhost:5432/vigie"
     REDIS_URL: str = "redis://localhost:6379/0"
+    # Put into DATABASE_URL / REDIS_URL when those carry none: in production
+    # they come from Docker secrets (DATABASE_PASSWORD_FILE...), and the
+    # URLs stay plain configuration.
+    DATABASE_PASSWORD: str | None = None
+    REDIS_PASSWORD: str | None = None
     BACKEND_CORS_ORIGINS: list[str] = [
         "http://localhost:5173",
         "http://localhost:3000",
@@ -184,7 +232,33 @@ class Settings(BaseSettings):
 
     @property
     def sqlalchemy_database_url(self) -> str:
-        return sqlalchemy_url(self.DATABASE_URL)
+        return sqlalchemy_url(with_password(self.DATABASE_URL, self.DATABASE_PASSWORD))
+
+    @property
+    def redis_url(self) -> str:
+        return with_password(self.REDIS_URL, self.REDIS_PASSWORD)
+
+    @model_validator(mode="before")
+    @classmethod
+    def read_secret_files(cls, data):
+        """Fill a setting from the file NAME_FILE names, when NAME is unset."""
+        if not isinstance(data, dict):
+            return data
+        for name in FILE_SETTINGS:
+            path = os.environ.get(f"{name}_FILE")
+            if not path or data.get(name) not in (None, ""):
+                continue
+            try:
+                value = Path(path).read_text(encoding="utf-8").strip()
+            except OSError as exc:
+                # The path, never the content, in the message.
+                raise ValueError(
+                    f"{name}_FILE: cannot read {path} ({exc.strerror})"
+                ) from None
+            if name == "PREVIOUS_SECRET_KEYS":
+                value = json.loads(value) if value else {}
+            data[name] = value
+        return data
 
     @field_validator("BACKEND_CORS_ORIGINS")
     @classmethod

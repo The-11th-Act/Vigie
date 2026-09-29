@@ -77,7 +77,7 @@ services:
     container_name: vigie_migrate
     command: alembic upgrade head
     environment:
-      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required - see .env.example}
+      - SECRET_KEY=${SECRET_KEY:-}
       - ENVIRONMENT=${ENVIRONMENT:-development}
       - DATABASE_URL=postgresql://${POSTGRES_USER:-vigie_user}:${POSTGRES_PASSWORD:-vigie_password}@db:5432/${POSTGRES_DB:-vigie}
     depends_on:
@@ -97,9 +97,10 @@ services:
       - "8000:8000"
     environment:
       <<: *app-settings
-      # SECRET_KEY has no default on purpose: compose fails fast if .env is
-      # missing rather than silently booting with a publicly known key.
-      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required - see .env.example}
+      # SECRET_KEY has no default on purpose: the application refuses to start
+      # without one (from .env here, from a Docker secret in production) rather
+      # than boot with a publicly known key.
+      SECRET_KEY: ${SECRET_KEY:-}
       ENVIRONMENT: ${ENVIRONMENT:-development}
       DATABASE_URL: postgresql://${POSTGRES_USER:-vigie_user}:${POSTGRES_PASSWORD:-vigie_password}@db:5432/${POSTGRES_DB:-vigie}
       REDIS_URL: redis://redis:6379/0
@@ -140,7 +141,7 @@ services:
       - scan_uploads:/var/lib/vigie/scans
     environment:
       <<: *app-settings
-      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required - see .env.example}
+      SECRET_KEY: ${SECRET_KEY:-}
       ENVIRONMENT: ${ENVIRONMENT:-development}
       DATABASE_URL: postgresql://${POSTGRES_USER:-vigie_user}:${POSTGRES_PASSWORD:-vigie_password}@db:5432/${POSTGRES_DB:-vigie}
       REDIS_URL: redis://redis:6379/0
@@ -172,7 +173,7 @@ services:
       # The schedule itself is built from these settings (which jobs, at what
       # hour), so the scheduler needs them as much as the worker does.
       <<: *app-settings
-      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required - see .env.example}
+      SECRET_KEY: ${SECRET_KEY:-}
       ENVIRONMENT: ${ENVIRONMENT:-development}
       DATABASE_URL: postgresql://${POSTGRES_USER:-vigie_user}:${POSTGRES_PASSWORD:-vigie_password}@db:5432/${POSTGRES_DB:-vigie}
       REDIS_URL: redis://redis:6379/0

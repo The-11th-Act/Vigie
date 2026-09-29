@@ -219,6 +219,15 @@ jobs:
 
       - uses: docker/setup-buildx-action@v4
 
+      # Temoins dans le contexte de build : sans eux, le controle "ni secret ni
+      # environnement local" plus bas passait sur un checkout propre, ou ces
+      # fichiers n'existent pas, et ne prouvait rien.
+      - name: Secrets temoins dans le contexte de build
+        run: |
+          echo "SECRET_KEY=canary-must-not-reach-the-image" > .env
+          mkdir -p secrets
+          echo "canary-must-not-reach-the-image" > secrets/secret_key
+
       - name: Build de l'image API
         uses: docker/build-push-action@v7
         with:
@@ -278,7 +287,7 @@ jobs:
       - name: L'image ne doit contenir ni secret ni environnement local
         run: |
           set -euo pipefail
-          for path in /app/.env /app/venv /app/.git /app/test.db; do
+          for path in /app/.env /app/secrets /app/venv /app/.git /app/test.db; do
             if docker run --rm --entrypoint sh vigie-api:ci -c "[ -e $path ]"; then
               echo "::error::$path est present dans l'image"
               exit 1
@@ -377,15 +386,19 @@ jobs:
         env:
           SECRET_KEY: ci-secret-key-not-used-anywhere-0123456789abcdef
 
+      # Les secrets de production sont des fichiers (Docker secrets) : des
+      # fichiers factices suffisent a fusionner la configuration.
       - name: Compose de production
         run: |
+          mkdir -p /tmp/vigie-secrets
+          for name in secret_key previous_secret_keys postgres_password redis_password; do
+            echo "ci-fake-$name" > "/tmp/vigie-secrets/$name"
+          done
           docker compose -f docker-compose.yml -f docker-compose.prod.yml config > /tmp/prod.yml
         env:
-          SECRET_KEY: ci-secret-key-not-used-anywhere-0123456789abcdef
+          VIGIE_SECRETS_DIR: /tmp/vigie-secrets
           POSTGRES_USER: vigie
-          POSTGRES_PASSWORD: ci-password
           POSTGRES_DB: vigie
-          REDIS_PASSWORD: ci-redis-password
           BACKEND_CORS_ORIGINS: '["https://vigie.example.com"]'
 
       # La surcouche de production doit reellement neutraliser les reglages de
@@ -406,13 +419,24 @@ jobs:
             echo "::error::le frontend tourne encore avec le serveur de developpement"
             exit 1
           fi
+          if grep -q "ci-fake-" /tmp/prod.yml; then
+            echo "::error::le contenu d'un secret apparait dans la configuration"
+            exit 1
+          fi
           if grep -q "type: bind" /tmp/prod.yml; then
             echo "::error::un bind mount subsiste en production"
             exit 1
           fi
           # Verifications positives : l'absence d'un reglage de developpement ne
           # prouve pas que le reglage de production a bien ete applique.
-          for expected in "ENVIRONMENT: production" "requirepass" "/ready"; do
+          expected_settings=(
+            "ENVIRONMENT: production"
+            "requirepass"
+            "/ready"
+            "SECRET_KEY_FILE: /run/secrets/secret_key"
+            "POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password"
+          )
+          for expected in "${expected_settings[@]}"; do
             if ! grep -q -- "$expected" /tmp/prod.yml; then
               echo "::error::attendu mais absent de la configuration : $expected"
               exit 1

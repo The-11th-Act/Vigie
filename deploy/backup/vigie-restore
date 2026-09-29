@@ -15,6 +15,13 @@
 
 set -euo pipefail
 
+# Mot de passe lu dans un fichier (Docker secret, PGPASSWORD_FILE) plutot que
+# dans l'environnement : libpq ne connait que PGPASSWORD et .pgpass.
+if [ -n "${PGPASSWORD_FILE:-}" ] && [ -z "${PGPASSWORD:-}" ]; then
+  PGPASSWORD="$(cat "${PGPASSWORD_FILE}")"
+  export PGPASSWORD
+fi
+
 log() { echo "[vigie-restore] $*" >&2; }
 
 file="${1:-}"
