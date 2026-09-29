@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.core.security import decode_token, require_admin
 from app.db.database import get_db
 from app.models.asset import Asset
+from app.models.remediation import FindingRemediation
 from app.models.vulnerability import (
     CLOSED_STATUSES,
     RISK_ORDER,
@@ -180,6 +181,9 @@ def _findings_query(db: Session, filters: FindingFilters):
             contains_eager(AssetVulnerability.vulnerability),
             contains_eager(AssetVulnerability.asset),
             selectinload(AssetVulnerability.detections),
+            selectinload(AssetVulnerability.remediations).joinedload(
+                FindingRemediation.action
+            ),
         )
     )
 
@@ -259,6 +263,9 @@ def get_asset_vulnerabilities(
             contains_eager(AssetVulnerability.vulnerability),
             joinedload(AssetVulnerability.asset),
             selectinload(AssetVulnerability.detections),
+            selectinload(AssetVulnerability.remediations).joinedload(
+                FindingRemediation.action
+            ),
         )
         .filter(AssetVulnerability.asset_id == asset_id)
     )

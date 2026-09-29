@@ -421,3 +421,59 @@ lançait les images une par une. Le faire a révélé trois défauts, corrigés 
 - [ ] Webhooks
 - [ ] `.gitattributes` pour fixer les fins de ligne (le dépôt mélange CRLF et LF dans
       l'arbre de travail ; à faire avec un `git add --renormalize` dédié)
+
+---
+
+# Modules et remédiation (29/09/2026)
+
+Vigie priorise bien, mais elle parle CVE. Les équipes de remédiation, elles, travaillent en KB, patch ou version cible : « déployer KB5034441 sur 42 serveurs », pas « traiter 312 CVE ». L'interface est aussi la même pour tous.
+
+Cible : une barre latérale composée de modules (profil par rôle, ajusté par chaque utilisateur), et des tickets de remédiation gérés dans Vigie. Un connecteur Jira, ServiceNow ou GLPI viendra ensuite sur la même structure.
+
+Ordre retenu : 1 → 0 → 2 → 4 → 3 → 5 → 6 → 7.
+
+## ✅ 1. Capturer les données de remédiation
+
+Les parseurs jetaient tout ce que les scanners disent du correctif. Les fichiers de scan étant supprimés après ingestion, rien ne se rattrape : seuls les scans postérieurs portent des KB.
+
+- [x] `remediation_actions` (une ligne par KB ou par correctif) et `finding_remediations` (lien par finding et par source, avec versions installée et corrigée), migration 0012
+- [x] Nessus : le KB manquant d'après `plugin_output` (le rollup d'un Server 2019 ne doit pas renvoyer vers le KB de Windows 11), sinon `xref MSKB`, sinon le titre ; hors Microsoft, le plugin (`nessus:<id>`) ; « Installed / Fixed version »
+- [x] OpenVAS : `solution@type` ou `tags`, KB nommé dans la NVT, sinon l'OID
+- [x] CrowdStrike : `remediation.entities` quand Spotlight les renvoie développées
+- [x] Les liens d'une source sont remplacés à chaque scan : un cumulatif remplacé disparaît
+- [x] `remediations` dans les réponses de findings, colonnes `remediation` / `fixed_version` dans l'export CSV
+- [ ] CrowdStrike : vérifier sur un vrai tenant que les entités de remédiation reviennent de `entities/vulnerabilities/v2`. Sinon, passer par l'endpoint `combined` avec `facet=remediation`
+- [ ] Remplacement des KB (supersedence) pour les sources qui ne donnent pas le KB par hôte : flux MSRC CVRF
+
+## 0. Remise à plat
+- [ ] Trier les PR Dependabot ouvertes (vite 8, vitest 5, plugin-react 6, bcrypt 5, node 26, nginx 1.31 ; vérifier que postgres 18 est bien ignoré)
+- [ ] `.gitattributes` + `git add --renormalize` (voir « Plus tard »)
+- [ ] TanStack Query en remplacement de `useFetch` (T5), socle des nouveaux écrans
+
+## 2. Socle modulaire
+- [ ] Registre des modules (`dashboard`, `backlog`, `assets`, `categorization`, `remediation`, `extracts`, `scans`, `admin`)
+- [ ] Rôle `remediator` : voit et fait avancer les tickets, sans pouvoir accepter un risque ni déclarer un faux positif
+- [ ] Modules activés (admin), profils par rôle, préférences utilisateur (ordre, modules masqués) ; `GET /me/modules`
+- [ ] `require_module(...)` côté serveur : masquer un onglet ne vaut pas autorisation
+- [ ] Barre latérale construite depuis le registre, écrans Préférences et Administration
+
+## 4. Remédiation et tickets internes
+- [ ] Vue « Top correctifs » : risque cumulé fermé par action, assets, KEV, retards, échéance ; seau « Sans correctif identifié »
+- [ ] Tickets par (action × `owner_team`), statut, priorité, échéance, historique ; champs `external_*` réservés au connecteur
+- [ ] Clôture automatique quand tous les findings sont fermés (acteur `system`), réouverture si l'un revient
+- [ ] Export de la liste d'hôtes d'un ticket (SCCM, WSUS, Ansible)
+
+## 3. Contexte d'asset et catégorisation
+- [ ] `asset_type`, `environment`, `owner_team` ; groupes d'assets à règles (moitié de T7)
+- [ ] Matrice catégorie de vulnérabilité × type d'asset, avec descente vers les findings
+
+## 5. Extractions API
+- [ ] Jetons d'accès personnels (hachés, en lecture, avec expiration, révocables)
+- [ ] Constructeur d'extraction (jeu, filtres, colonnes, CSV ou JSON, aperçu, `curl` équivalent) et extractions enregistrées
+
+## 6. Dashboards
+- [ ] Instantanés quotidiens du backlog (tendances), MTTR, respect des SLA, risque réduit, avancement des tickets par équipe
+
+## 7. Connecteur de ticketing et webhooks
+- [ ] Interface `TicketConnector`, première implémentation, synchronisation du statut
+- [ ] Webhooks sortants

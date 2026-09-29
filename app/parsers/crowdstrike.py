@@ -19,7 +19,16 @@ from typing import Any
 import requests
 
 from app.core.http_retry import backoff_seconds, retry_after_seconds
-from app.parsers.utils import clean_text, is_valid_cve, normalize_severity, safe_float
+from app.models.remediation import RemediationKind
+from app.parsers.utils import (
+    clean_text,
+    is_valid_cve,
+    kb_reference,
+    kb_references_in,
+    normalize_severity,
+    remediation,
+    safe_float,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -250,7 +259,7 @@ def _normalize(entity: dict[str, Any]) -> dict[str, Any] | None:
     cvss_score = safe_float(cve.get("base_score"))
     description = clean_text(cve.get("description"))
 
-    return {
+    finding = {
         "ip_address": ip_address,
         "hostname": clean_text(host.get("hostname")),
         "operating_system": clean_text(host.get("os_version")),
@@ -264,6 +273,52 @@ def _normalize(entity: dict[str, Any]) -> dict[str, Any] | None:
         # folds them into the enum and falls back to the CVSS band when absent.
         "severity": normalize_severity(cve.get("severity"), cvss_score),
     }
+    # Only with the remediation details expanded: an entity carrying nothing
+    # but remediation ids says nothing usable, and must not erase what an
+    # earlier sync recorded.
+    entities = (entity.get("remediation") or {}).get("entities")
+    if isinstance(entities, list):
+        finding["remediations"] = _remediations(entities, entity.get("apps") or [])
+    return finding
+
+
+def _remediations(
+    entities: list[dict[str, Any]], apps: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Spotlight's recommended actions, keyed by KB when they name one."""
+    installed = next(
+        (
+            clean_text(app.get("product_name_version"))
+            for app in apps
+            if isinstance(app, dict) and app.get("product_name_version")
+        ),
+        None,
+    )
+    remediations = []
+    for item in entities:
+        if not isinstance(item, dict):
+            continue
+        title = clean_text(item.get("title")) or clean_text(item.get("action"))
+        kb = kb_reference(item.get("reference")) or next(
+            iter(kb_references_in(title)), None
+        )
+        if kb:
+            kind, reference = RemediationKind.kb, kb
+        elif item.get("id"):
+            kind, reference = RemediationKind.vendor_fix, f"crowdstrike:{item['id']}"
+        else:
+            continue
+        remediations.append(
+            remediation(
+                kind.value,
+                reference,
+                title=title,
+                solution=item.get("action"),
+                url=item.get("link"),
+                installed_version=installed,
+            )
+        )
+    return remediations
 
 
 def _title_for(cve_id: str, description: str | None) -> str:

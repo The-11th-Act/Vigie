@@ -1,15 +1,22 @@
 import logging
+import re
 from typing import Any
 
 from defusedxml import ElementTree as ET
 from defusedxml.common import DefusedXmlException
 
+from app.models.remediation import RemediationKind
 from app.parsers.utils import (
     ParsedScan,
     clean_text,
+    first_url,
     is_valid_cve,
+    kb_reference,
+    kb_references_in,
     normalize_severity,
+    remediation,
     safe_float,
+    versions_in,
 )
 
 logger = logging.getLogger(__name__)
@@ -24,6 +31,17 @@ NESSUS_SEVERITY_MAP = {
 }
 
 MAX_DESCRIPTION_LENGTH = 10_000
+
+# Rollup plugins list the updates *this host* is missing as bare numbers:
+#   The remote host is missing one of the following rollup KBs :
+#     - 5034439
+#     - 5034441
+MISSING_KB_BLOCK = re.compile(r"KBs?\s*:\s*((?:\s*-\s*\d{6,8})+)", re.IGNORECASE)
+
+NO_FIX = re.compile(
+    r"no known (solution|fix|patch)|there is no (solution|fix|patch)|will not (be )?fixed",
+    re.IGNORECASE,
+)
 
 
 def parse_nessus_report(xml_content: bytes) -> list[dict[str, Any]]:
@@ -92,6 +110,7 @@ def parse_nessus_scan(xml_content: bytes) -> ParsedScan:
                 MAX_DESCRIPTION_LENGTH,
             )
             title = clean_text(item.attrib.get("pluginName")) or "Vulnerability"
+            remediations = _remediations(item, title)
 
             for cve_el in cve_elements:
                 cve_id = clean_text(cve_el.text)
@@ -109,6 +128,7 @@ def parse_nessus_scan(xml_content: bytes) -> ParsedScan:
                         "description": description,
                         "cvss_score": cvss_score,
                         "severity": severity,
+                        "remediations": remediations,
                     }
                 )
 
@@ -118,3 +138,78 @@ def parse_nessus_scan(xml_content: bytes) -> ParsedScan:
         len(scan.scanned_addresses),
     )
     return scan
+
+
+def _text(item, tag: str) -> str | None:
+    element = item.find(tag)
+    return element.text if element is not None else None
+
+
+def _missing_kbs(output: str | None) -> list[str]:
+    """The KBs the plugin output says this host lacks.
+
+    Preferred over the plugin's cross-references, which list the update for
+    every Windows version the plugin covers: a Server 2019 host must not be
+    told to install the Windows 11 update.
+    """
+    kbs = kb_references_in(output)
+    for block in MISSING_KB_BLOCK.findall(output or ""):
+        kbs.extend(f"KB{number}" for number in re.findall(r"\d{6,8}", block))
+    return list(dict.fromkeys(kbs))
+
+
+def _remediations(item, title: str) -> list[dict[str, Any]]:
+    """How to fix a ReportItem, as the remediation team will act on it.
+
+    A Microsoft update is keyed by its KB, so every plugin asking for it lands
+    on the same action. Anything else is keyed by the plugin: one plugin is one
+    upgrade instruction ("Upgrade to Apache 2.4.58 or later").
+    """
+    output = _text(item, "plugin_output")
+    solution = clean_text(_text(item, "solution"))
+    if solution and solution.lower() == "n/a":
+        solution = None
+    family = item.attrib.get("pluginFamily")
+    url = first_url(_text(item, "see_also"))
+    installed, fixed = versions_in(output)
+
+    kbs = _missing_kbs(output)
+    if not kbs:
+        kbs = [
+            kb for kb in (kb_reference(xref.text) for xref in item.findall("xref")) if kb
+        ]
+    if not kbs:
+        kbs = kb_references_in(title)
+    if kbs:
+        return [
+            remediation(
+                RemediationKind.kb.value,
+                kb,
+                title=title,
+                solution=solution,
+                url=url,
+                family=family,
+                installed_version=installed,
+                fixed_version=fixed,
+            )
+            for kb in dict.fromkeys(kbs)
+        ]
+
+    plugin_id = clean_text(item.attrib.get("pluginID"))
+    if not plugin_id:
+        return []
+    kind = RemediationKind.vendor_fix
+    if solution and NO_FIX.search(solution):
+        kind = RemediationKind.no_fix
+    return [
+        remediation(
+            kind.value,
+            f"nessus:{plugin_id}",
+            title=title,
+            solution=solution,
+            url=url,
+            family=family,
+            installed_version=installed,
+            fixed_version=fixed,
+        )
+    ]

@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Query
 
+from app.models.remediation import RemediationKind
 from app.models.vulnerability import Status
 from app.services.remediation import is_overdue
 from app.services.risk_scoring import RiskInputs, explain_risk, risk_level
@@ -29,6 +30,8 @@ COLUMNS = (
     "internet_facing",
     "cve_id",
     "title",
+    "remediation",
+    "fixed_version",
     "cvss",
     "epss",
     "in_kev",
@@ -98,6 +101,8 @@ def _row(finding, now: datetime) -> list:
         _yes_no(asset.internet_facing) if asset else None,
         vuln.cve_id if vuln else None,
         vuln.title if vuln else None,
+        _remediation(finding),
+        _joined(link.fixed_version for link in finding.remediations),
         vuln.cvss_score if vuln else None,
         vuln.epss_score if vuln else None,
         _yes_no(vuln.in_kev) if vuln else None,
@@ -112,6 +117,23 @@ def _row(finding, now: datetime) -> list:
         ", ".join(detection.source for detection in finding.detections),
         "; ".join(factor["label"] for factor in factors),
     ]
+
+
+def _remediation(finding) -> str:
+    """What to deploy, as the remediation team names it: the KB number of a
+    Microsoft update, otherwise the scanner's fix title."""
+    labels = []
+    for link in finding.remediations:
+        action = link.action
+        if action.kind == RemediationKind.kb.value:
+            labels.append(action.reference)
+        else:
+            labels.append(action.title or action.reference)
+    return _joined(labels)
+
+
+def _joined(values) -> str:
+    return "; ".join(dict.fromkeys(value for value in values if value))
 
 
 def _chunks(spool) -> Iterator[bytes]:

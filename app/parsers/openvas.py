@@ -4,17 +4,31 @@ from typing import Any
 from defusedxml import ElementTree as ET
 from defusedxml.common import DefusedXmlException
 
+from app.models.remediation import RemediationKind
 from app.parsers.utils import (
     ParsedScan,
     clean_text,
     is_valid_cve,
+    kb_references_in,
     normalize_severity,
+    remediation,
     safe_float,
+    versions_in,
 )
 
 logger = logging.getLogger(__name__)
 
 MAX_DESCRIPTION_LENGTH = 10_000
+
+# GVM solution types, onto what the remediation team is asked to do.
+SOLUTION_KINDS = {
+    "vendorfix": RemediationKind.vendor_fix,
+    "workaround": RemediationKind.workaround,
+    "mitigation": RemediationKind.mitigation,
+    "nonavailable": RemediationKind.no_fix,
+    "noneavailable": RemediationKind.no_fix,
+    "willnotfix": RemediationKind.no_fix,
+}
 
 
 def _extract_cve_ids(nvt_el) -> list[str]:
@@ -116,6 +130,8 @@ def parse_openvas_scan(xml_content: bytes) -> ParsedScan:
             MAX_DESCRIPTION_LENGTH,
         )
 
+        remediations = _remediations(nvt_el, title, description)
+
         for cve_id in cve_ids:
             results.append(
                 {
@@ -127,6 +143,7 @@ def parse_openvas_scan(xml_content: bytes) -> ParsedScan:
                     "description": description,
                     "cvss_score": cvss_score,
                     "severity": severity,
+                    "remediations": remediations,
                 }
             )
 
@@ -136,3 +153,62 @@ def parse_openvas_scan(xml_content: bytes) -> ParsedScan:
         len(scan.scanned_addresses),
     )
     return scan
+
+
+def _solution(nvt_el) -> tuple[str | None, str | None]:
+    """The solution text and type of an NVT.
+
+    Recent GVM reports carry a ``<solution type="VendorFix">`` element; older
+    ones pack both into the ``<tags>`` string (``|solution=...|solution_type=``).
+    """
+    solution_el = nvt_el.find("solution")
+    if solution_el is not None:
+        return clean_text(solution_el.text), solution_el.attrib.get("type")
+
+    tags: dict[str, str] = {}
+    tags_el = nvt_el.find("tags")
+    tags_text = tags_el.text if tags_el is not None else None
+    for part in (tags_text or "").split("|"):
+        key, _, value = part.partition("=")
+        tags[key.strip()] = value
+    return clean_text(tags.get("solution")), tags.get("solution_type")
+
+
+def _remediations(nvt_el, title: str, description: str | None) -> list[dict[str, Any]]:
+    """How to fix an NVT result: its KB when it names one, otherwise the NVT.
+
+    One NVT is one fix instruction, so the NVT's OID keys the action; a
+    Microsoft update is keyed by its KB, shared with the other scanners.
+    """
+    solution, solution_type = _solution(nvt_el)
+    kind = SOLUTION_KINDS.get(
+        (solution_type or "").strip().lower(), RemediationKind.vendor_fix
+    )
+    family_el = nvt_el.find("family")
+    family = family_el.text if family_el is not None else None
+    url = next(
+        (
+            ref.attrib.get("id")
+            for ref in nvt_el.findall(".//refs/ref")
+            if (ref.attrib.get("type") or "").lower() == "url"
+        ),
+        None,
+    )
+    installed, fixed = versions_in(description)
+    details = {
+        "title": title,
+        "solution": solution,
+        "url": url,
+        "family": family,
+        "installed_version": installed,
+        "fixed_version": fixed,
+    }
+
+    kbs = kb_references_in(title) or kb_references_in(solution)
+    if kbs and kind == RemediationKind.vendor_fix:
+        return [remediation(RemediationKind.kb.value, kb, **details) for kb in kbs]
+
+    oid = clean_text(nvt_el.attrib.get("oid"))
+    if not oid:
+        return []
+    return [remediation(kind.value, f"openvas:{oid}", **details)]

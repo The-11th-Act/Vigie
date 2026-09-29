@@ -1,4 +1,5 @@
 from app.models.asset import Asset
+from app.models.remediation import FindingRemediation, RemediationAction
 from app.models.scan import ScanJob, ScanStatus
 from app.models.threat_intel import EpssScoreEntry, KevCatalogEntry, ThreatFeedStatus
 from app.models.user import User
@@ -15,6 +16,8 @@ __all__ = [
     "AssetVulnerability",
     "FindingAuditLog",
     "FindingDetection",
+    "FindingRemediation",
+    "RemediationAction",
     "User",
     "ScanJob",
     "ScanStatus",

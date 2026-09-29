@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
 from app.models.asset import Asset
+from app.models.remediation import FindingRemediation, RemediationAction
 from app.models.vulnerability import (
     AssetVulnerability,
     FindingDetection,
@@ -88,9 +89,22 @@ def ingest_findings(
         # Flush so freshly created rows get their primary keys before we link them.
         db.flush()
 
-        new_links, reopened, seen_ids = _upsert_associations(
+        new_links, reopened, assoc_cache = _upsert_associations(
             db, findings, asset_cache, vuln_cache, scan_source, now, trusted_hostnames
         )
+        # Flushed by _upsert_associations, so the new rows now have ids and can
+        # be excluded from the stale sweep along with the ones already known.
+        seen_ids = {a.id for a in assoc_cache.values() if a.id is not None}
+        assocs = [
+            assoc_cache[
+                (
+                    asset_cache[_asset_key(finding, trusted_hostnames)].id,
+                    vuln_cache[finding["cve_id"]].id,
+                )
+            ]
+            for finding in findings
+        ]
+        _sync_remediations(db, findings, assocs, scan_source, now)
         covered_asset_ids = {asset.id for asset in asset_cache.values()}
 
     scope = None
@@ -473,11 +487,108 @@ def _upsert_associations(
         db.add_all(new_assocs[i : i + CHUNK_SIZE])
         db.flush()
 
-    # Flushed above, so the new rows now have ids and can be excluded from the
-    # stale sweep along with the ones that were already known.
-    seen_ids = {assoc.id for assoc in assoc_cache.values() if assoc.id is not None}
+    return len(new_assocs), reopened, assoc_cache
 
-    return len(new_assocs), reopened, seen_ids
+
+def _sync_remediations(
+    db: Session,
+    findings: list[dict[str, Any]],
+    assocs: list[AssetVulnerability],
+    scan_source: str,
+    now: datetime,
+) -> None:
+    """Replace this source's remediation links on the findings it reported.
+
+    ``assocs[i]`` is the finding row of ``findings[i]``. Replaced rather than
+    added to: a cumulative update is superseded every month, and a host still
+    missing January's fixes is asked for February's rollup, not both. A finding
+    whose parser said nothing about remediation (key absent) is left alone; one
+    reported with an empty list loses this source's links.
+    """
+    wanted: dict[int, dict[str, dict[str, Any]]] = {}
+    for finding, assoc in zip(findings, assocs, strict=True):
+        entries = finding.get("remediations")
+        if entries is None:
+            continue
+        # One (asset, CVE) can come from several plugins of the same file.
+        per_finding = wanted.setdefault(assoc.id, {})
+        for entry in entries:
+            per_finding.setdefault(entry["reference"], entry)
+    if not wanted:
+        return
+
+    actions = _upsert_actions(
+        db, [entry for entries in wanted.values() for entry in entries.values()]
+    )
+
+    existing: dict[int, dict[int, FindingRemediation]] = {}
+    ids = list(wanted)
+    for i in range(0, len(ids), CHUNK_SIZE):
+        rows = db.query(FindingRemediation).filter(
+            FindingRemediation.finding_id.in_(ids[i : i + CHUNK_SIZE]),
+            FindingRemediation.source == scan_source,
+        )
+        for link in rows:
+            existing.setdefault(link.finding_id, {})[link.action_id] = link
+
+    for finding_id, entries in wanted.items():
+        current = existing.get(finding_id, {})
+        kept = set()
+        for entry in entries.values():
+            action = actions[entry["reference"]]
+            kept.add(action.id)
+            link = current.get(action.id)
+            if link is None:
+                link = FindingRemediation(
+                    finding_id=finding_id, action_id=action.id, source=scan_source
+                )
+                db.add(link)
+            link.installed_version = entry.get("installed_version")
+            link.fixed_version = entry.get("fixed_version")
+            link.last_seen_at = now
+        for action_id, link in current.items():
+            if action_id not in kept:
+                db.delete(link)
+    db.flush()
+
+
+def _upsert_actions(
+    db: Session, entries: list[dict[str, Any]]
+) -> dict[str, RemediationAction]:
+    """The action row of every reference, created on first sight.
+
+    An existing action only has its gaps filled: the same KB is named by several
+    plugins, and the first description should not flip with each new report.
+    """
+    references = list({entry["reference"] for entry in entries})
+    actions: dict[str, RemediationAction] = {}
+    for i in range(0, len(references), CHUNK_SIZE):
+        rows = db.query(RemediationAction).filter(
+            RemediationAction.reference.in_(references[i : i + CHUNK_SIZE])
+        )
+        actions.update({action.reference: action for action in rows})
+
+    for entry in entries:
+        action = actions.get(entry["reference"])
+        if action is None:
+            action = RemediationAction(
+                reference=entry["reference"],
+                kind=entry["kind"],
+                title=entry.get("title"),
+                solution=entry.get("solution"),
+                url=entry.get("url"),
+                family=entry.get("family"),
+            )
+            db.add(action)
+            actions[action.reference] = action
+            continue
+        for field in ("title", "solution", "url", "family"):
+            if getattr(action, field) is None and entry.get(field):
+                setattr(action, field, entry[field])
+
+    # The links about to be written need the new actions' ids.
+    db.flush()
+    return actions
 
 
 def _apply_score(

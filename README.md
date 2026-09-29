@@ -248,6 +248,25 @@ Misses are counted per source (`finding_detections`): a finding reported by
 Nessus and OpenVAS closes only once both have stopped reporting it, and each
 finding lists the scanners that see it.
 
+### Remediation actions
+
+Remediation teams work in patches, not CVEs, so every finding also records
+what fixes it (`remediation_actions`, linked per finding and per source):
+
+- a Microsoft update is keyed by its KB (`KB5034441`), so every plugin and
+  every scanner asking for it lands on the same action. For Nessus rollups, the
+  KB comes from the plugin output, which names the update *this* host lacks,
+  rather than from the cross-references, which list every Windows version's;
+- anything else is keyed by the scanner's check (`nessus:<plugin id>`,
+  `openvas:<oid>`), with the vendor's solution and, per host, the installed and
+  fixed versions.
+
+Each source's links are replaced when it reports the finding again, so a
+superseded cumulative update disappears once the scanner asks for the next one.
+Findings carry them as `remediations`, and the CSV export adds `remediation`
+and `fixed_version` columns. Scan files are not kept after ingestion, so
+findings imported before this existed gain their remediation on their next scan.
+
 ### CrowdStrike Falcon Spotlight
 Set `CROWDSTRIKE_CLIENT_ID` / `CROWDSTRIKE_CLIENT_SECRET`, adjust
 `CROWDSTRIKE_BASE_URL` to your region, and set `CROWDSTRIKE_SYNC_ENABLED=true`;
