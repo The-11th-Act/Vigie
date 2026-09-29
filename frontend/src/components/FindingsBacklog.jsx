@@ -44,6 +44,49 @@ function kevTitle(vuln) {
   return parts.join(' · ');
 }
 
+// One entry per action: two sources prescribing the same KB show it once.
+function remediationsOf(finding) {
+  const byReference = new Map();
+  for (const link of finding.remediations || []) {
+    const current = byReference.get(link.action.reference);
+    if (!current || (!current.fixed_version && link.fixed_version)) {
+      byReference.set(link.action.reference, link);
+    }
+  }
+  return [...byReference.values()];
+}
+
+function RemediationCell({ finding }) {
+  const links = remediationsOf(finding);
+  if (links.length === 0) {
+    return <span style={{ color: 'var(--text-muted)' }}>-</span>;
+  }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', maxWidth: 260 }}>
+      {links.map(({ action, fixed_version: fixedVersion }) => {
+        const label = action.kind === 'kb' ? action.reference : action.title || action.reference;
+        const detail = [action.title, fixedVersion && `Fixed in ${fixedVersion}`]
+          .filter(Boolean)
+          .join(' · ');
+        return (
+          <div key={action.reference} title={detail || undefined} style={{ fontSize: '0.8rem' }}>
+            {action.kind === 'kb' ? (
+              <span className="badge badge-low" style={{ fontFamily: 'monospace' }}>{label}</span>
+            ) : (
+              <span style={{ display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {action.kind === 'no_fix' ? 'No fix available' : label}
+              </span>
+            )}
+            {fixedVersion && (
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>→ {fixedVersion}</div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function formatDate(value) {
   if (!value) return '-';
   return new Date(value).toLocaleDateString();
@@ -254,6 +297,7 @@ export default function FindingsBacklog() {
                 <tr>
                   <th>Asset</th>
                   <th>CVE</th>
+                  <th>Fix</th>
                   <th>Risk</th>
                   <th>Deadline</th>
                   <th>Status</th>
@@ -263,7 +307,7 @@ export default function FindingsBacklog() {
               <tbody>
                 {data.items.length === 0 ? (
                   <tr>
-                    <td colSpan={6} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
+                    <td colSpan={7} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
                       No findings match these filters
                     </td>
                   </tr>
@@ -308,6 +352,9 @@ export default function FindingsBacklog() {
                           <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', maxWidth: 320, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                             {finding.vulnerability?.title}
                           </div>
+                        </td>
+                        <td>
+                          <RemediationCell finding={finding} />
                         </td>
                         <td>
                           <span

@@ -33,6 +33,36 @@ async function selectStatus(user, label) {
 }
 
 describe('FindingsBacklog', () => {
+  it('shows what to deploy rather than only the CVE', async () => {
+    const kb = { reference: 'KB5034127', kind: 'kb', title: 'January rollup', url: null }
+    vulnerabilityService.getFindings.mockResolvedValue({
+      data: {
+        total: 1,
+        items: [
+          {
+            ...FINDING,
+            remediations: [
+              // Two sources asking for the same KB: shown once.
+              { source: 'nessus', installed_version: null, fixed_version: null, action: kb },
+              { source: 'openvas', installed_version: null, fixed_version: null, action: kb },
+              {
+                source: 'nessus',
+                installed_version: '3.0.2',
+                fixed_version: '3.0.13',
+                action: { reference: 'nessus:1', kind: 'vendor_fix', title: 'OpenSSL < 3.0.13', url: null },
+              },
+            ],
+          },
+        ],
+      },
+    })
+    render(<FindingsBacklog />)
+
+    expect(await screen.findAllByText('KB5034127')).toHaveLength(1)
+    expect(screen.getByText('OpenSSL < 3.0.13')).toBeInTheDocument()
+    expect(screen.getByText('→ 3.0.13')).toBeInTheDocument()
+  })
+
   it('renders a risk-ranked finding with its asset and CVE', async () => {
     mockOneFinding()
     render(<FindingsBacklog />)
