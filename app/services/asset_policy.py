@@ -24,23 +24,43 @@ def criticality_for(ip_address: str | None) -> Criticality:
     be overridden by a narrow ``10.0.5.0/24`` for the payment segment. Anything
     unmatched — or unparseable — falls back to Medium rather than guessing.
     """
-    rules = settings.CRITICALITY_RULES or {}
+    level = _most_specific(settings.CRITICALITY_RULES, ip_address, "CRITICALITY_RULES")
+    return _as_criticality(level)
+
+
+def owner_team_for(ip_address: str | None) -> str | None:
+    """The team in charge of an address, from OWNER_TEAM_RULES; None if unmatched.
+
+    It decides which team a remediation ticket goes to, so an address no rule
+    covers stays unassigned rather than landing on a guessed team.
+    """
+    team = _most_specific(settings.OWNER_TEAM_RULES, ip_address, "OWNER_TEAM_RULES")
+    team = str(team).strip() if team else ""
+    return team[:128] or None
+
+
+def _most_specific(rules: dict | None, ip_address: str | None, name: str):
+    """The value of the most specific rule whose subnet holds the address.
+
+    A broad ``10.0.0.0/8`` default can so be overridden by a narrow
+    ``10.0.5.0/24``. Unparseable rules and addresses match nothing.
+    """
     if not rules or not ip_address:
-        return DEFAULT_CRITICALITY
+        return None
 
     try:
         address = ipaddress.ip_address(ip_address.strip())
     except ValueError:
-        return DEFAULT_CRITICALITY
+        return None
 
     best_match: ipaddress._BaseNetwork | None = None
-    best_level: str | None = None
+    best_value = None
 
-    for cidr, level in rules.items():
+    for cidr, value in rules.items():
         try:
             network = ipaddress.ip_network(cidr, strict=False)
         except ValueError:
-            logger.warning("Ignoring malformed CIDR in CRITICALITY_RULES: %r", cidr)
+            logger.warning("Ignoring malformed CIDR in %s: %r", name, cidr)
             continue
 
         if address.version != network.version or address not in network:
@@ -48,9 +68,9 @@ def criticality_for(ip_address: str | None) -> Criticality:
 
         if best_match is None or network.prefixlen > best_match.prefixlen:
             best_match = network
-            best_level = level
+            best_value = value
 
-    return _as_criticality(best_level)
+    return best_value
 
 
 def exposure_for(ip_address: str | None) -> bool:

@@ -14,6 +14,7 @@ from app.schemas.asset import (
     AssetUpdate,
     PaginatedAssetResponse,
 )
+from app.services.asset_policy import owner_team_for
 from app.services.rescoring import rescore_open_findings
 
 router = APIRouter()
@@ -27,6 +28,7 @@ def get_assets(
     limit: int = Query(100, ge=1, le=MAX_LIMIT),
     search: str | None = None,
     criticality: Criticality | None = None,
+    owner_team: str | None = Query(None, max_length=128),
     db: Session = Depends(get_db),
     payload: dict = Depends(decode_token),
 ):
@@ -39,6 +41,8 @@ def get_assets(
         )
     if criticality:
         query = query.filter(Asset.business_criticality == criticality)
+    if owner_team:
+        query = query.filter(Asset.owner_team == owner_team)
 
     total = query.count()
     items = query.order_by(Asset.id.desc()).offset(skip).limit(limit).all()
@@ -66,6 +70,8 @@ def create_asset(
         )
 
     db_asset = Asset(**asset_in.model_dump())
+    if db_asset.owner_team is None:
+        db_asset.owner_team = owner_team_for(db_asset.ip_address)
     db.add(db_asset)
     db.commit()
     db.refresh(db_asset)

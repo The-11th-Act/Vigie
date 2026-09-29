@@ -13,6 +13,7 @@ const EMPTY_FORM = {
   operating_system: '',
   business_criticality: 'Medium',
   internet_facing: false,
+  owner_team: '',
 };
 
 const inputStyle = {
@@ -82,6 +83,7 @@ export default function AssetsList() {
       operating_system: asset.operating_system || '',
       business_criticality: asset.business_criticality,
       internet_facing: Boolean(asset.internet_facing),
+      owner_team: asset.owner_team || '',
     });
     setFormError(null);
   };
@@ -110,6 +112,8 @@ export default function AssetsList() {
           operating_system: form.operating_system || null,
           business_criticality: form.business_criticality,
           internet_facing: form.internet_facing,
+          // Empty clears it; the subnet rules only apply to new hosts.
+          owner_team: form.owner_team || null,
         });
       }
       closeForm();
@@ -197,6 +201,19 @@ export default function AssetsList() {
                 style={inputStyle}
               />
             </label>
+            <label
+              title="Remediation tickets go to this team. Left empty on a new asset, the subnet rules decide."
+              style={{display: 'flex', flexDirection: 'column', gap: '0.35rem', fontSize: '0.8rem', color: 'var(--text-muted)'}}
+            >
+              Owner team
+              <input
+                type="text"
+                maxLength={128}
+                value={form.owner_team}
+                onChange={(e) => setForm({...form, owner_team: e.target.value})}
+                style={inputStyle}
+              />
+            </label>
             <label style={{display: 'flex', flexDirection: 'column', gap: '0.35rem', fontSize: '0.8rem', color: 'var(--text-muted)'}}>
               Business criticality
               <select
@@ -249,12 +266,13 @@ export default function AssetsList() {
                   <th>Hostname</th>
                   <th>Operating System</th>
                   <th>Criticality</th>
+                  <th>Team</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {data.items.length === 0 ? (
-                  <tr><td colSpan={6} style={{textAlign: 'center', padding: '2rem', color: 'var(--text-muted)'}}>No assets found</td></tr>
+                  <tr><td colSpan={7} style={{textAlign: 'center', padding: '2rem', color: 'var(--text-muted)'}}>No assets found</td></tr>
                 ) : (
                   data.items.map(asset => (
                     <tr key={asset.id}>
@@ -271,6 +289,9 @@ export default function AssetsList() {
                             Exposed
                           </span>
                         )}
+                      </td>
+                      <td style={asset.owner_team ? undefined : {color: 'var(--text-muted)'}}>
+                        {asset.owner_team || 'Unassigned'}
                       </td>
                       <td>
                         <div style={{display: 'flex', gap: '0.5rem'}}>

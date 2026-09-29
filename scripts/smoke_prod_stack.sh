@@ -57,6 +57,7 @@ BACKEND_CORS_ORIGINS=["https://vigie.example.com"]
 # Réglages métier : leur effet est vérifié plus bas, dans chaque conteneur.
 CRITICALITY_RULES={"203.0.113.0/24":"Critical"}
 INTERNET_FACING_SUBNETS=["203.0.113.0/24"]
+OWNER_TEAM_RULES={"203.0.113.0/24":"Perimeter"}
 KEV_SLA_DAYS=7
 THREAT_INTEL_ENABLED=true
 EOF
@@ -165,6 +166,7 @@ check() {
 # Réglages lus par le worker à l'ingestion :
 check "CRITICALITY_RULES atteint le worker" .asset.business_criticality Critical
 check "INTERNET_FACING_SUBNETS atteint le worker" .asset.internet_facing true
+check "OWNER_TEAM_RULES atteint le worker" .asset.owner_team Perimeter
 # 6.0 x 1.5 (Critical) x min(1.5, 1.3 x 1.2) = 13.5 -> 10.0
 check "le score tient compte du KEV et de l'exposition" ".risk_score == 10" true
 # Réglage lu par l'API lors de l'import (resserrement de l'échéance) :

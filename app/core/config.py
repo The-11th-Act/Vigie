@@ -87,6 +87,12 @@ class Settings(BaseSettings):
     # later choice is never overwritten. Example: ["203.0.113.0/24", "10.99.0.0/16"]
     INTERNET_FACING_SUBNETS: list[str] = []
 
+    # Subnet -> team in charge of fixing what is found there, applied to
+    # assets that have none. The most specific matching prefix wins; it
+    # decides which team a remediation ticket goes to. Example:
+    #   {"10.0.0.0/8": "Infrastructure", "10.20.0.0/16": "Workplace"}
+    OWNER_TEAM_RULES: dict[str, str] = {}
+
     # Consecutive scans of a source in which a finding may go unseen before it
     # is closed as remediated. 0 disables automatic closure entirely.
     AUTO_REMEDIATE_AFTER_MISSES: int = 3

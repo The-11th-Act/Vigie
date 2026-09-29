@@ -39,6 +39,8 @@ class Asset(Base):
     internet_facing: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=false(), nullable=False
     )
+    # Team in charge of fixing this host: remediation tickets are split by it.
+    owner_team: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     created_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

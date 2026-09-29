@@ -73,3 +73,42 @@ describe('AssetsList — Internet exposure', () => {
     expect(await screen.findByText('Exposed')).toBeInTheDocument()
   })
 })
+
+describe('AssetsList — owner team and roles', () => {
+  it('sends the team when editing, and clears it when emptied', async () => {
+    mockAssets({ ...ASSET, owner_team: 'Network' })
+    assetService.update.mockResolvedValue({ data: {} })
+    const user = userEvent.setup()
+    render(<AssetsList />)
+
+    await user.click(await screen.findByTitle('Edit'))
+    const team = screen.getByLabelText(/owner team/i)
+    expect(team).toHaveValue('Network')
+    await user.clear(team)
+    await user.click(screen.getByRole('button', { name: /^save$/i }))
+
+    await waitFor(() => {
+      expect(assetService.update).toHaveBeenCalledWith(3, expect.objectContaining({ owner_team: null }))
+    })
+  })
+
+  it('shows unassigned hosts', async () => {
+    mockAssets(ASSET)
+    render(<AssetsList />)
+
+    expect(await screen.findByText('Unassigned')).toBeInTheDocument()
+  })
+
+  it('offers a remediator no edit', async () => {
+    mockAssets(ASSET)
+    render(
+      <AuthContext.Provider value={{ user: { username: 'remy', role: 'remediator' }, loading: false }}>
+        <AssetsList />
+      </AuthContext.Provider>,
+    )
+
+    expect(await screen.findByText('edge-01')).toBeInTheDocument()
+    expect(screen.queryByTitle('Edit')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /new asset/i })).not.toBeInTheDocument()
+  })
+})

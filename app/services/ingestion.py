@@ -22,7 +22,11 @@ from app.models.vulnerability import (
     Status,
     Vulnerability,
 )
-from app.services.asset_policy import criticality_for, exposure_for
+from app.services.asset_policy import (
+    criticality_for,
+    exposure_for,
+    owner_team_for,
+)
 from app.services.remediation import apply_kev_sla, calculate_remediation_deadline
 from app.services.risk_scoring import RiskInputs, compute_risk
 from app.services.threat_intel import enrich_new_vulnerabilities
@@ -348,6 +352,7 @@ def _upsert_assets(
                 operating_system=finding["operating_system"],
                 business_criticality=criticality_for(ip),
                 internet_facing=exposure_for(ip),
+                owner_team=owner_team_for(ip),
             )
             db.add(asset)
             created += 1
@@ -358,6 +363,9 @@ def _upsert_assets(
                 asset.hostname = finding["hostname"]
             if not asset.operating_system and finding["operating_system"]:
                 asset.operating_system = finding["operating_system"]
+            # A team rule added later still reaches hosts nobody assigned.
+            if not asset.owner_team:
+                asset.owner_team = owner_team_for(ip)
             # Matched by name on a new address: the host moved, so follow it.
             if hostname and asset.ip_address != ip:
                 logger.info(
