@@ -2,8 +2,10 @@ from datetime import timedelta
 
 from celery import Celery
 from celery.schedules import crontab
+from celery.signals import setup_logging
 
 from app.core.config import settings
+from app.core.logging import configure_logging
 
 celery_app = Celery("tasks", broker=settings.REDIS_URL, backend=settings.REDIS_URL)
 
@@ -14,6 +16,17 @@ celery_app.conf.update(
     timezone="UTC",
     enable_utc=True,
 )
+
+
+@setup_logging.connect
+def _use_application_logging(**_kwargs) -> None:
+    """Log like the API: same format (text or JSON), request id on every line.
+
+    With a receiver on this signal, Celery leaves logging alone instead of
+    installing its own format, which dropped the request id carried from the
+    API to the task.
+    """
+    configure_logging()
 
 
 def build_beat_schedule() -> dict:

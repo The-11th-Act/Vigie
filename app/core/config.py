@@ -1,5 +1,6 @@
 import secrets
 import warnings
+from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -116,6 +117,8 @@ class Settings(BaseSettings):
     KEV_SLA_DAYS: int = Field(default=14, ge=0)
 
     LOG_LEVEL: str = "INFO"
+    # "text" for a terminal, "json" for a log collector (one document per line).
+    LOG_FORMAT: Literal["text", "json"] = "text"
 
     # All three required together: bootstraps (or promotes) the first admin
     # account on startup. Left unset, no admin is created automatically.

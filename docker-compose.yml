@@ -12,6 +12,7 @@
 # unnoticed: in development, the bind-mounted .env hid the gap.
 x-app-settings: &app-settings
   LOG_LEVEL: ${LOG_LEVEL:-}
+  LOG_FORMAT: ${LOG_FORMAT:-}
   SECRET_KEY_ID: ${SECRET_KEY_ID:-}
   AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-}
   ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-}

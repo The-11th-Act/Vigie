@@ -411,7 +411,12 @@ the beat scheduler then pulls open findings every
   overdue KEV findings, and `vigie_threat_feed_last_success_timestamp_seconds`
   per feed (0 until first applied — alert on `time() - value > 2 * 86400`).
 - Every response carries an `X-Request-ID`; an inbound one is reused, and the
-  id is propagated to Celery tasks and stamped on every log line.
+  id is propagated to Celery tasks and stamped on every log line, the
+  worker's and uvicorn's included (they are routed through the application's
+  handler). `LOG_FORMAT=json` writes one JSON document per line (time, level,
+  logger, request_id, message, extras, exception) for a log collector; the
+  production stack test checks that the worker's ingestion line carries the
+  id of the upload request.
 - Failed logins are throttled per IP and per account (`LOGIN_MAX_ATTEMPTS`,
   `LOGIN_LOCKOUT_SECONDS`). Access tokens can be revoked via
   `POST /api/v1/auth/logout`; refresh tokens rotate on use.

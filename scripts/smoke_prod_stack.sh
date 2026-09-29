@@ -60,6 +60,7 @@ INTERNET_FACING_SUBNETS=["203.0.113.0/24"]
 OWNER_TEAM_RULES={"203.0.113.0/24":"Perimeter"}
 ENVIRONMENT_RULES={"203.0.113.0/24":"production"}
 KEV_SLA_DAYS=7
+LOG_FORMAT=json
 THREAT_INTEL_ENABLED=true
 EOF
 
@@ -135,8 +136,10 @@ cat > "$WORK/report.nessus" <<'XML'
 </Report></NessusClientData_v2>
 XML
 
-TASK=$(curl -fsS "${AUTH[@]}" -F scan_type=nessus -F "file=@$WORK/report.nessus" \
+TASK=$(curl -fsS "${AUTH[@]}" -D "$WORK/upload.headers" \
+  -F scan_type=nessus -F "file=@$WORK/report.nessus" \
   "$API/scans/upload" | jq -r .task_id) || fail "upload refusé"
+UPLOAD_ID=$(tr -d '\r' < "$WORK/upload.headers" | sed -n 's/^[Xx]-[Rr]equest-[Ii][Dd]: //p')
 
 for _ in $(seq 1 60); do
   STATUS=$(curl -fsS "${AUTH[@]}" "$API/scans/status/$TASK" | jq -r .status)
@@ -146,6 +149,16 @@ for _ in $(seq 1 60); do
 done
 [ "$STATUS" = "Success" ] || fail "le scan n'a jamais été traité (statut : $STATUS)"
 echo "Scan ingéré par le worker via le volume partagé."
+
+# LOG_FORMAT=json atteint les conteneurs, et l'id de la requête d'upload
+# suit le scan jusqu'au worker : sa ligne d'ingestion le porte.
+"${COMPOSE[@]}" logs --no-color --no-log-prefix worker | grep '^{' \
+  | jq -e --arg id "$UPLOAD_ID" \
+    'select(.request_id == $id and (.message | contains("Ingested")))' >/dev/null \
+  || fail "pas de ligne JSON d'ingestion portant l'id $UPLOAD_ID dans les logs du worker"
+[ "$("${COMPOSE[@]}" logs --no-color --no-log-prefix web | grep -c '^{')" -gt 0 ] \
+  || fail "l'API n'écrit pas ses logs en JSON"
+echo "ok - logs JSON, request_id propagé de l'API au worker ($UPLOAD_ID)"
 
 # --- Import KEV par l'API, puis lecture du backlog -------------------------
 cat > "$WORK/kev.json" <<'JSON'

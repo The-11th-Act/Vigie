@@ -286,7 +286,7 @@ un usage réglementaire.
 
 ### D9 (suite). Observabilité
 - [x] `X-Request-ID` lu par l'API et propagé jusqu'aux tâches Celery *(items 5-18)*
-- [ ] Logs au format JSON : chaque ligne porte le `request_id`, mais en texte
+- [x] Logs au format JSON (`LOG_FORMAT=json`), worker et uvicorn compris, `request_id` vérifié de l'API au worker par le test de la pile de production *(30/09/2026)*
 - [x] Métriques Prometheus : latence API, débit d'ingestion, taille du backlog, retards SLA
       *(items 5-18)*
 - [x] Handler d'exception global : erreur normalisée, aucune stacktrace fuitée *(items 5-18)*
