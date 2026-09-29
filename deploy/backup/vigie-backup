@@ -10,6 +10,10 @@
 # ressemble jamais à une sauvegarde valide. La rétention ne s'applique qu'après
 # un succès, et ne peut donc pas supprimer la dernière sauvegarde restante.
 #
+# Copie hors site : avec BACKUP_REMOTE (une destination rclone, configurée
+# par le fichier RCLONE_CONFIG), chaque sauvegarde, déjà chiffrée, y est
+# copiée ; un échec de copie fait échouer la sauvegarde (code 3).
+#
 # Connexion : variables libpq standard (PGHOST, PGUSER, PGPASSWORD, PGDATABASE),
 # ou PGPASSWORD_FILE pour un mot de passe tenu dans un fichier.
 # Sortie standard : le chemin du fichier écrit, et rien d'autre.
@@ -64,6 +68,26 @@ if [ "${RETENTION_DAYS}" -gt 0 ]; then
     -mtime +"${RETENTION_DAYS}" -print -delete | while read -r removed; do
     log "rétention : ${removed} supprimé"
   done
+fi
+
+# Une sauvegarde sur le disque de la base disparaît avec lui. Le fichier
+# copié est celui qui vient d'être écrit, déjà chiffré : le stockage distant
+# ne voit que du chiffré.
+if [ -n "${BACKUP_REMOTE:-}" ]; then
+  remote="${BACKUP_REMOTE%/}"
+  base="$(basename "${target}")"
+  if ! rclone copyto --retries 3 --low-level-retries 5 "${target}" "${remote}/${base}"; then
+    log "copie hors site ÉCHOUÉE vers ${remote} (la sauvegarde locale est conservée)"
+    exit 3
+  fi
+  # Lu par le healthcheck : une copie hors site récente.
+  date -u +%Y-%m-%dT%H:%M:%SZ > "${BACKUP_DIR}/.offsite-ok"
+  log "copie hors site : ${remote}/${base}"
+  remote_days="${BACKUP_REMOTE_RETENTION_DAYS:-90}"
+  if [ "${remote_days}" -gt 0 ]; then
+    rclone delete --min-age "${remote_days}d" --include "vigie-*.dump*" "${remote}" \
+      || log "rétention hors site : échec (sans effet sur la sauvegarde)"
+  fi
 fi
 
 echo "${target}"

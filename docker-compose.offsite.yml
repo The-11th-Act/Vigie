@@ -1,0 +1,25 @@
+# Copie hors site des sauvegardes (point D8), en option.
+#
+# Usage :
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+#     -f docker-compose.offsite.yml up -d
+#
+# Chaque sauvegarde, deja chiffree avec age, est copiee par rclone vers
+# BACKUP_REMOTE ("offsite:vigie-backups" par exemple). La destination est
+# decrite dans un rclone.conf, identifiants compris : c'est un secret, monte
+# comme les autres depuis le repertoire des secrets. Un echec de copie rend
+# le service unhealthy. Mise en place : docs/SAUVEGARDE.md.
+
+secrets:
+  rclone_conf:
+    file: ${VIGIE_SECRETS_DIR:-./secrets}/rclone.conf
+
+services:
+  backup:
+    environment:
+      BACKUP_REMOTE: ${BACKUP_REMOTE:?BACKUP_REMOTE is required, e.g. offsite:vigie-backups}
+      BACKUP_REMOTE_RETENTION_DAYS: ${BACKUP_REMOTE_RETENTION_DAYS:-90}
+      RCLONE_CONFIG: /run/secrets/rclone_conf
+      # Le systeme de fichiers est en lecture seule : cache sur le tmpfs.
+      RCLONE_CACHE_DIR: /tmp/rclone
+    secrets: [postgres_password, rclone_conf]

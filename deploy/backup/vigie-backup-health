@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Healthcheck du service de sauvegarde : une sauvegarde récente existe et,
+# avec BACKUP_REMOTE, sa copie hors site a réussi récemment elle aussi. Une
+# copie distante qui échoue en silence laisserait croire à une protection
+# qu'on n'a plus.
+
+set -euo pipefail
+
+max_minutes=$(( ${BACKUP_INTERVAL_HOURS:-24} * 120 ))
+
+find /backups -maxdepth 1 -name 'vigie-*.dump*' ! -name '*.partial' \
+  -mmin -"${max_minutes}" | grep -q .
+
+if [ -n "${BACKUP_REMOTE:-}" ]; then
+  find /backups -maxdepth 1 -name '.offsite-ok' -mmin -"${max_minutes}" | grep -q .
+fi

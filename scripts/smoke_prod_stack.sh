@@ -21,6 +21,18 @@ API="$BASE/api/v1"
 ADMIN_PASSWORD="Smoke-Admin-Passw0rd!2026"
 WORK="$(mktemp -d)"
 
+# Copie hors site : la surcouche réelle, avec pour destination un répertoire
+# de l'hôte (backend rclone « local ») plutôt qu'un stockage objet, pour
+# vérifier le chemin complet sans service externe.
+install -d -m 777 "$WORK/offsite"
+cat > "$WORK/offsite-target.yml" <<EOF
+services:
+  backup:
+    volumes:
+      - "$WORK/offsite:/offsite"
+EOF
+COMPOSE+=(-f docker-compose.offsite.yml -f "$WORK/offsite-target.yml")
+
 fail() {
   echo "::error::$*"
   echo "----- état des conteneurs -----"
@@ -56,10 +68,12 @@ openssl rand -base64 48 | tr -d '\n' > "$SECRETS/secret_key"
 echo "smoke-$(openssl rand -hex 12)" > "$SECRETS/postgres_password"
 echo "smoke-$(openssl rand -hex 12)" > "$SECRETS/redis_password"
 echo '{}' > "$SECRETS/previous_secret_keys"
+printf '[offsite]\ntype = local\n' > "$SECRETS/rclone.conf"
 chmod 444 "$SECRETS"/*
 
 cat > .env <<EOF
 VIGIE_SECRETS_DIR=$SECRETS
+BACKUP_REMOTE=offsite:/offsite
 POSTGRES_USER=vigie
 POSTGRES_DB=vigie
 BACKEND_CORS_ORIGINS=["https://vigie.example.com"]
@@ -175,7 +189,9 @@ for service in db redis migrate web worker beat backup; do
   cid=$("${COMPOSE[@]}" ps -a -q "$service")
   [ -n "$cid" ] || continue
   config=$(docker inspect "$cid" --format '{{json .Config.Env}} {{json .Config.Cmd}}')
-  for secret in "$SECRETS"/*; do
+  # Les valeurs secretes elles-memes ; {} ou une config rclone de test
+  # pourraient apparaitre par hasard.
+  for secret in "$SECRETS/secret_key" "$SECRETS/postgres_password" "$SECRETS/redis_password"; do
     if grep -qF -- "$(cat "$secret")" <<<"$config"; then
       fail "le secret $(basename "$secret") est visible dans docker inspect ($service)"
     fi
@@ -230,6 +246,14 @@ BACKUP_FILE=$("${COMPOSE[@]}" exec -T backup vigie-backup | tail -n 1)
 [[ "$BACKUP_FILE" == /backups/vigie-*.dump.age ]] \
   || fail "sauvegarde à la demande : chemin inattendu « $BACKUP_FILE »"
 echo "ok - sauvegarde chiffrée écrite : $BACKUP_FILE"
+
+OFFSITE_COPY="$WORK/offsite/$(basename "$BACKUP_FILE")"
+[ -s "$OFFSITE_COPY" ] || fail "la sauvegarde n'a pas été copiée hors site"
+cmp -s <("${COMPOSE[@]}" exec -T backup cat "$BACKUP_FILE") "$OFFSITE_COPY" \
+  || fail "la copie hors site diffère de la sauvegarde"
+"${COMPOSE[@]}" exec -T backup vigie-backup-health \
+  || fail "le healthcheck de sauvegarde échoue malgré la copie hors site"
+echo "ok - copie hors site identique, healthcheck vert : $(basename "$BACKUP_FILE")"
 
 STARTUP_BACKUPS=$("${COMPOSE[@]}" exec -T backup sh -c 'ls /backups/*.dump.age | wc -l')
 [ "$STARTUP_BACKUPS" -ge 2 ] || fail "le service n'a pas fait de sauvegarde au démarrage"

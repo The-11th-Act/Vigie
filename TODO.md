@@ -286,8 +286,10 @@ un usage réglementaire.
 - [x] Restauration testée et documentée : `docs/SAUVEGARDE.md`, rejouée à chaque
       commit par le job CI de bout en bout (sauvegarde, base détruite,
       restauration, vérification par l'API)
-- [ ] Copie hors site : le service écrit sur un volume local ou un chemin
-      monté (`BACKUP_VOLUME`) ; l'envoi vers un stockage objet reste à faire
+- [x] Copie hors site : surcouche `docker-compose.offsite.yml`, rclone vers
+      S3 / Azure / SFTP…, identifiants en Docker secret, rétention distante,
+      healthcheck qui exige une copie récente ; vérifiée par le test de la
+      pile de production (copie identique au bit près) *(30/09/2026)*
 
 ### D9 (suite). Observabilité
 - [x] `X-Request-ID` lu par l'API et propagé jusqu'aux tâches Celery *(items 5-18)*

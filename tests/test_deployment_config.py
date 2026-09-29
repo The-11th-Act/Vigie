@@ -28,6 +28,9 @@ FAKE_SECRETS = {
     "postgres_password": "fake-postgres-password-in-its-file",
     "redis_password": "fake-redis-password-in-its-file",
     "previous_secret_keys": '{"k0": "fake-retired-key-in-its-file-0123456789"}',
+    "rclone.conf": (
+        "[offsite]\ntype = s3\nsecret_access_key = fake-offsite-key-in-its-file\n"
+    ),
 }
 _SECRETS_DIR = Path(tempfile.mkdtemp(prefix="vigie-secrets-"))
 for _name, _value in FAKE_SECRETS.items():
@@ -243,9 +246,55 @@ class TestSecrets:
 
     def test_they_come_from_the_secrets_directory(self, prod_config):
         parsed = json.loads(_merged_prod_config("--format", "json"))["secrets"]
-        assert set(parsed) == set(FAKE_SECRETS)
+        assert set(parsed) == set(FAKE_SECRETS) - {"rclone.conf"}
         for secret in parsed.values():
             assert Path(secret["file"]).parent == _SECRETS_DIR
+
+
+@pytest.fixture(scope="module")
+def offsite_backup() -> dict:
+    env = dict(os.environ)
+    env.update(FAKE_ENV)
+    env["BACKUP_REMOTE"] = "offsite:vigie-backups"
+    result = subprocess.run(
+        [
+            "docker",
+            "compose",
+            "-f",
+            "docker-compose.yml",
+            "-f",
+            "docker-compose.prod.yml",
+            "-f",
+            "docker-compose.offsite.yml",
+            "config",
+            "--format",
+            "json",
+        ],
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+        env=env,
+    )
+    if result.returncode != 0:
+        pytest.skip(f"docker compose config indisponible : {result.stderr[:200]}")
+    assert "fake-offsite-key" not in result.stdout
+    return json.loads(result.stdout)["services"]["backup"]
+
+
+class TestOffsiteCopy:
+    """La copie hors site est une surcouche : ses identifiants sont un secret de
+    plus, jamais une variable."""
+
+    def test_the_backup_copies_offsite(self, offsite_backup):
+        env = offsite_backup["environment"]
+        assert env["BACKUP_REMOTE"] == "offsite:vigie-backups"
+        assert env["RCLONE_CONFIG"] == "/run/secrets/rclone_conf"
+        assert {"postgres_password", "rclone_conf"} <= _secret_names(offsite_backup)
+
+    def test_nothing_without_the_overlay(self, prod_services):
+        env = prod_services["backup"]["environment"]
+        assert "BACKUP_REMOTE" not in env
+        assert "rclone_conf" not in _secret_names(prod_services["backup"])
 
 
 class TestSettingsReachTheContainers:

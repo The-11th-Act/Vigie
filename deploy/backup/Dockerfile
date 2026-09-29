@@ -6,7 +6,7 @@
 FROM postgres:15-alpine@sha256:f7d23353e1b15400d22ebe31189f4d314b87a4c129cc400c8c2d8d4ca127bf81
 
 # age : chiffrement asymétrique des sauvegardes (https://age-encryption.org).
-RUN apk add --no-cache age
+RUN apk add --no-cache age rclone
 
 # gosu sert au point d'entree de l'image postgres pour quitter root ; ce
 # service n'utilise pas ce point d'entree et tourne deja en postgres. Le
@@ -14,9 +14,9 @@ RUN apk add --no-cache age
 # qu'apporter des failles signalees par Trivy sans jamais s'executer.
 RUN rm -f /usr/local/bin/gosu
 
-COPY vigie-backup vigie-restore vigie-backup-loop /usr/local/bin/
+COPY vigie-backup vigie-restore vigie-backup-loop vigie-backup-health /usr/local/bin/
 RUN chmod 0755 /usr/local/bin/vigie-backup /usr/local/bin/vigie-restore \
-        /usr/local/bin/vigie-backup-loop \
+        /usr/local/bin/vigie-backup-loop /usr/local/bin/vigie-backup-health \
     && mkdir -p /backups \
     && chown postgres:postgres /backups
 
@@ -27,8 +27,7 @@ WORKDIR /backups
 # Sain tant qu'une sauvegarde de moins de deux intervalles existe : une
 # sauvegarde manquée passe, deux d'affilée rendent le conteneur « unhealthy ».
 HEALTHCHECK --interval=5m --timeout=10s --start-period=10m --retries=1 \
-    CMD find /backups -maxdepth 1 -name 'vigie-*.dump*' ! -name '*.partial' \
-        -mmin -$(( ${BACKUP_INTERVAL_HOURS:-24} * 120 )) | grep -q .
+    CMD vigie-backup-health
 
 # Le point d'entrée de l'image postgres démarrerait un serveur : on le retire.
 ENTRYPOINT []
