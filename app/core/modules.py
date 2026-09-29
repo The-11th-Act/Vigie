@@ -39,6 +39,7 @@ MODULES = (
     Module("assets", "Assets"),
     Module("vulnerabilities", "Vulnerabilities"),
     Module("scans", "Scans"),
+    Module("extracts", "API Extracts"),
     Module("admin", "Administration", admin_only=True),
 )
 MODULES_BY_KEY = {module.key: module for module in MODULES}
@@ -53,9 +54,10 @@ DEFAULT_PROFILES: dict[str, list[str]] = {
         "assets",
         "vulnerabilities",
         "scans",
+        "extracts",
     ],
     # Their work starts from what to deploy, not from the CVE list.
-    ROLE_REMEDIATOR: ["remediation", "dashboard", "backlog", "assets"],
+    ROLE_REMEDIATOR: ["remediation", "dashboard", "backlog", "assets", "extracts"],
 }
 
 

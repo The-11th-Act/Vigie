@@ -16,6 +16,7 @@ from app.api.v1 import (
     assets,
     auth,
     dashboard,
+    extracts,
     me,
     remediation,
     scans,
@@ -145,6 +146,12 @@ app.include_router(
     prefix=f"{settings.API_V1_STR}/assets",
     tags=["Assets"],
     dependencies=[Depends(require_module("assets"))],
+)
+app.include_router(
+    extracts.router,
+    prefix=f"{settings.API_V1_STR}/extracts",
+    tags=["Extracts"],
+    dependencies=[Depends(require_module("extracts"))],
 )
 app.include_router(
     remediation.router,

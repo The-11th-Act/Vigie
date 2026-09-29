@@ -9,6 +9,8 @@ from fastapi.security import OAuth2PasswordBearer
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
+from app.core.api_tokens import authenticate as authenticate_api_token
+from app.core.api_tokens import is_api_token
 from app.core.config import settings
 from app.core.tokens import is_revoked
 from app.db.database import get_db
@@ -150,15 +152,22 @@ def _verification_key(token: str) -> str | None:
     return settings.PREVIOUS_SECRET_KEYS.get(kid)
 
 
-def decode_token(request: Request, bearer: str | None = Depends(oauth2_scheme)) -> dict:
+def decode_token(
+    request: Request,
+    bearer: str | None = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+) -> dict:
     """The access token's claims, from the Bearer header or the session cookie.
 
     A cookie is sent by the browser on its own, so a cookie-authenticated
     request that changes something must also prove it comes from our page
     (require_csrf). A Bearer token cannot be attached by another site, so it
-    needs no such proof.
+    needs no such proof. A personal API token (app/core/api_tokens.py) is a
+    Bearer too, read-only.
     """
     if bearer:
+        if is_api_token(bearer):
+            return authenticate_api_token(request, bearer, db)
         return decode_access_token(bearer)
 
     cookie = request.cookies.get(ACCESS_COOKIE)

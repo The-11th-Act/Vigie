@@ -1,4 +1,3 @@
-from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -12,7 +11,6 @@ from app.core.config import settings
 from app.core.modules import ROLE_REMEDIATOR, require_module, require_risk_decision
 from app.core.security import decode_token, require_admin
 from app.db.database import get_db
-from app.models.asset import Asset
 from app.models.remediation import FindingRemediation
 from app.models.user import User
 from app.models.vulnerability import (
@@ -35,6 +33,7 @@ from app.schemas.vulnerability import (
     VulnerabilityUpdate,
 )
 from app.services.export import export_findings_csv
+from app.services.findings import FindingFilters, findings_query
 from app.services.rescoring import rescore_open_findings
 from app.services.tickets import sync_tickets
 
@@ -165,16 +164,6 @@ def delete_vulnerability(
     db.commit()
 
 
-@dataclass
-class FindingFilters:
-    status_filter: Status | None
-    min_risk: float | None
-    overdue_only: bool
-    kev_only: bool
-    min_epss: float | None
-    internet_facing_only: bool
-
-
 def finding_filters(
     status_filter: Status | None = None,
     min_risk: float | None = Query(None, ge=0, le=10),
@@ -182,48 +171,19 @@ def finding_filters(
     kev_only: bool = False,
     min_epss: float | None = Query(None, ge=0, le=1),
     internet_facing_only: bool = False,
+    owner_team: str | None = Query(None, max_length=128),
 ) -> FindingFilters:
     """The backlog filters, shared by the listing and its CSV export so the
     file always holds exactly what the screen showed."""
     return FindingFilters(
-        status_filter, min_risk, overdue_only, kev_only, min_epss, internet_facing_only
+        status_filter,
+        min_risk,
+        overdue_only,
+        kev_only,
+        min_epss,
+        internet_facing_only,
+        owner_team,
     )
-
-
-def _findings_query(db: Session, filters: FindingFilters):
-    # Explicit joins rather than joinedload: the filters and the ranking read
-    # the vulnerability and the asset, which a joinedload alias cannot offer.
-    query = (
-        db.query(AssetVulnerability)
-        .join(AssetVulnerability.vulnerability)
-        .join(AssetVulnerability.asset)
-        .options(
-            contains_eager(AssetVulnerability.vulnerability),
-            contains_eager(AssetVulnerability.asset),
-            selectinload(AssetVulnerability.detections),
-            selectinload(AssetVulnerability.remediations).joinedload(
-                FindingRemediation.action
-            ),
-        )
-    )
-
-    if filters.status_filter:
-        query = query.filter(AssetVulnerability.status == filters.status_filter)
-    if filters.min_risk is not None:
-        query = query.filter(AssetVulnerability.risk_score >= filters.min_risk)
-    if filters.overdue_only:
-        query = query.filter(
-            AssetVulnerability.status == Status.open,
-            AssetVulnerability.remediation_deadline.isnot(None),
-            AssetVulnerability.remediation_deadline < datetime.now(UTC),
-        )
-    if filters.kev_only:
-        query = query.filter(Vulnerability.in_kev.is_(True))
-    if filters.min_epss is not None:
-        query = query.filter(Vulnerability.epss_score >= filters.min_epss)
-    if filters.internet_facing_only:
-        query = query.filter(Asset.internet_facing.is_(True))
-    return query
 
 
 @router.get(
@@ -244,7 +204,7 @@ def get_findings(
     from. Without this endpoint the platform stored a risk score nobody could
     order by.
     """
-    query = _findings_query(db, filters)
+    query = findings_query(db, filters)
     total = query.count()
     items = query.order_by(*RISK_ORDER).offset(skip).limit(limit).all()
     return {"total": total, "items": items}
@@ -260,7 +220,7 @@ def export_findings(
 ):
     """The filtered backlog as CSV, worst first, every row: what gets pasted
     into a remediation ticket or a report, without scraping the screen."""
-    chunks = export_findings_csv(_findings_query(db, filters).order_by(*RISK_ORDER))
+    chunks = export_findings_csv(findings_query(db, filters).order_by(*RISK_ORDER))
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M")
     return StreamingResponse(
         chunks,

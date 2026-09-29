@@ -143,3 +143,36 @@ export const remediationService = {
   listTeams: () =>
     api.get('/remediation/teams'),
 }
+
+export const extractService = {
+  datasets: () =>
+    api.get('/extracts/datasets'),
+
+  // A preview is the same extract, as JSON and cut short.
+  preview: (dataset, params) =>
+    api.get(`/extracts/${dataset}`, { params: { ...params, format: 'json', limit: 20 } }),
+
+  download: (dataset, params) =>
+    api.get(`/extracts/${dataset}`, { params, responseType: 'blob' }),
+
+  listSaved: () =>
+    api.get('/extracts/saved'),
+
+  save: (data) =>
+    api.post('/extracts/saved', data),
+
+  deleteSaved: (id) =>
+    api.delete(`/extracts/saved/${id}`),
+
+  runSaved: (id) =>
+    api.get(`/extracts/saved/${id}/run`, { responseType: 'blob' }),
+
+  listTokens: () =>
+    api.get('/extracts/tokens'),
+
+  createToken: (name, expiresInDays) =>
+    api.post('/extracts/tokens', { name, expires_in_days: expiresInDays }),
+
+  revokeToken: (id) =>
+    api.delete(`/extracts/tokens/${id}`),
+}

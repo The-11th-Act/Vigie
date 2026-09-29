@@ -18,6 +18,7 @@ ANALYST_MODULES = [
     "assets",
     "vulnerabilities",
     "scans",
+    "extracts",
 ]
 
 
@@ -77,7 +78,13 @@ class TestDefaults:
 
     def test_a_remediator_has_a_short_list(self, client, act_as):
         act_as("remediator")
-        assert my_modules(client) == ["remediation", "dashboard", "backlog", "assets"]
+        assert my_modules(client) == [
+            "remediation",
+            "dashboard",
+            "backlog",
+            "assets",
+            "extracts",
+        ]
 
     def test_a_module_outside_the_role_is_refused_by_the_server(self, client, act_as):
         """Hiding the tab is not enough: the API behind it must say no."""
@@ -192,6 +199,7 @@ class TestPreferences:
             "remediation",
             "assets",
             "vulnerabilities",
+            "extracts",
         ]
         assert [m["key"] for m in modules if m["hidden"]] == ["vulnerabilities"]
 

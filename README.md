@@ -160,7 +160,8 @@ VIGIE_TEST_DATABASE_URL=postgresql://user:pass@localhost:5432/vigie_test pytest 
 ## Modules and roles
 
 The application is split into modules (`app/core/modules.py`): Dashboard,
-Risk Backlog, Remediation, Assets, Vulnerabilities, Scans and Administration. Which ones a
+Risk Backlog, Remediation, Assets, Vulnerabilities, Scans, API Extracts and
+Administration. Which ones a
 user gets is decided in three layers:
 
 1. an administrator can switch a module off for the whole instance;
@@ -173,7 +174,7 @@ user gets is decided in three layers:
 |---|---|---|
 | `admin` | all, Administration included | yes |
 | `analyst` | all but Administration | yes |
-| `remediator` | Remediation, Dashboard, Risk Backlog, Assets | no |
+| `remediator` | Remediation, Dashboard, Risk Backlog, Assets, API Extracts | no |
 
 "Deciding risk" means accepting a risk, dismissing a false positive, editing an
 asset's criticality or exposure, or a CVE's score: a remediator marks fixes done
@@ -183,6 +184,32 @@ Every route checks the module it belongs to on the server (`require_module`),
 from the user as the database knows them now: a tab missing from the sidebar
 does not leave its API open. Administrators always keep the Administration
 module, and the last administrator cannot be demoted.
+
+## API extracts and personal tokens
+
+The **API Extracts** module exports datasets as CSV or JSON: findings (the
+risk backlog), fixes to deploy, remediation tickets, assets and the CVE
+catalogue, each only to users whose role has the module behind it.
+
+```bash
+curl -H "Authorization: Bearer $VIGIE_TOKEN" \
+  "https://vigie.example.com/api/v1/extracts/findings?format=csv&kev_only=true&columns=cve_id,asset,remediation"
+```
+
+- `GET /api/v1/extracts/datasets` lists the datasets you can extract, with
+  their columns and typed filters. Every other query parameter of an extract
+  is a filter; an unknown or malformed one is refused (422) rather than
+  silently exporting everything. `limit` cuts a preview.
+- Saved extracts (`POST /api/v1/extracts/saved`) give a stable URL,
+  `/api/v1/extracts/saved/{id}/run`, for a reporting tool (Power BI, Excel).
+- **Personal tokens** (`POST /api/v1/extracts/tokens`) authenticate scripts
+  without a password: `vigie_pat_…`, shown once, stored as a SHA-256, with a
+  mandatory lifetime (at most 365 days) and 20 active per user. They are
+  read-only (any other method is refused), act with their owner's current
+  role and modules, and stop working when revoked, expired, or when the
+  owner's role loses the API Extracts module.
+- Values starting with `= + - @` are neutralised in CSV, as in the backlog
+  export; files are streamed from a temporary file.
 
 ## Health probes
 

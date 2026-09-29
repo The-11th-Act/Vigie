@@ -1,4 +1,5 @@
 from app.models.asset import Asset
+from app.models.extract import ApiToken, SavedExtract
 from app.models.preferences import ModuleSetting, RoleProfile, UserPreference
 from app.models.remediation import FindingRemediation, RemediationAction
 from app.models.scan import ScanJob, ScanStatus
@@ -14,6 +15,8 @@ from app.models.vulnerability import (
 
 __all__ = [
     "Asset",
+    "ApiToken",
+    "SavedExtract",
     "Vulnerability",
     "AssetVulnerability",
     "FindingAuditLog",
