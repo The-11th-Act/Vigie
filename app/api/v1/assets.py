@@ -18,6 +18,7 @@ from app.schemas.asset import (
 from app.services.asset_policy import environment_for, owner_team_for
 from app.services.categorization import asset_type_for
 from app.services.rescoring import rescore_open_findings
+from app.services.tickets import sync_tickets
 
 router = APIRouter()
 
@@ -123,6 +124,10 @@ def update_asset(
     # either invalidates every score already computed for this asset's findings.
     if changes.keys() & {"business_criticality", "internet_facing"}:
         rescore_open_findings(db, AssetVulnerability.asset_id == asset.id)
+    # The host's open findings follow it to its new team's ticket now, not at
+    # the next daily pass.
+    if "owner_team" in changes:
+        sync_tickets(db)
 
     db.commit()
     db.refresh(asset)

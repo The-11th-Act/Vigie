@@ -186,6 +186,68 @@ class TestFollowingTheScans:
         assert by_team(client, status="all")["Workplace"]["status"] == "resolved"
 
 
+class TestAHostChangingTeam:
+    """A finding follows its host to its new team's ticket: the old team no
+    longer sees the host (scopes), the new one would not see the work."""
+
+    def _move(self, client, db_session, ip, team):
+        asset = db_session.query(Asset).filter_by(ip_address=ip).one()
+        response = client.put(f"/api/v1/assets/{asset.id}", json={"owner_team": team})
+        assert response.status_code == 200, response.text
+
+    def test_it_joins_the_new_team_ticket(self, client, db_session, estate):
+        create(client, estate)
+
+        self._move(client, db_session, "10.0.0.2", "Workplace")
+
+        teams = by_team(client)
+        assert teams["Servers"]["metrics"]["hosts_open"] == 1
+        assert teams["Workplace"]["metrics"]["hosts_open"] == 2
+        history = client.get(
+            f"/api/v1/remediation/tickets/{teams['Servers']['id']}"
+        ).json()["history"]
+        assert history[0]["username"] == "system"
+        assert "Workplace" in history[0]["note"]
+
+    def test_a_ticket_left_empty_is_cancelled(self, client, db_session, estate):
+        create(client, estate)
+
+        self._move(client, db_session, "10.0.1.1", "Servers")
+
+        workplace = by_team(client, status="all")["Workplace"]
+        assert workplace["status"] == "cancelled"
+        assert by_team(client)["Servers"]["metrics"]["hosts_open"] == 3
+
+    def test_without_a_ticket_there_it_waits_to_be_ticketed(
+        self, client, db_session, estate
+    ):
+        create(client, estate)
+
+        self._move(client, db_session, "10.0.0.2", "Lab")
+
+        assert by_team(client)["Servers"]["metrics"]["hosts_open"] == 1
+        assert "Lab" not in by_team(client)
+        assert create(client, estate).status_code == 201
+        assert by_team(client)["Lab"]["metrics"]["hosts_open"] == 1
+
+    def test_a_closed_finding_stays_with_the_team_that_fixed_it(
+        self, client, db_session, estate
+    ):
+        create(client, estate)
+        asset = db_session.query(Asset).filter_by(ip_address="10.0.0.2").one()
+        [finding_row] = db_session.query(AssetVulnerability).filter_by(asset_id=asset.id)
+        client.patch(
+            f"/api/v1/vulnerabilities/findings/{finding_row.id}",
+            json={"status": "Remediated"},
+        )
+
+        self._move(client, db_session, "10.0.0.2", "Workplace")
+
+        servers = by_team(client)["Servers"]
+        assert servers["metrics"]["hosts_total"] == 2
+        assert servers["metrics"]["hosts_open"] == 1
+
+
 class TestMovingATicket:
     def ticket(self, client, estate, team="Servers"):
         create(client, estate)

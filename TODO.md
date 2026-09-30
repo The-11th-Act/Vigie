@@ -524,7 +524,7 @@ Les parseurs jetaient tout ce que les scanners disent du correctif. Les fichiers
 - [x] Tickets par (action × `owner_team`), migration 0015 : statuts open / in_progress / deployed (l'équipe), resolved (les scans), cancelled (un analyste, avec justification) ; historique ; référence et lien externes
 - [x] Résolution automatique quand tous les findings sont fermés, réouverture si l'un revient, rattachement des nouveaux findings au ticket ouvert de l'équipe (acteur `system`), après ingestion, triage, réouverture d'acceptation et passage quotidien
 - [x] Onglets Correctifs / Tickets, export des hôtes d'un ticket
-- [ ] Rattacher un finding dont l'hôte change d'équipe : il reste dans le ticket où il est entré
+- [x] Rattacher un finding dont l'hôte change d'équipe : il reste dans le ticket où il est entré *(30/09/2026 : un finding ouvert quitte le ticket de l'ancienne équipe, tracé dans son historique, et rejoint celui de la nouvelle s'il existe, sinon redevient à ticketer ; un finding fermé reste à l'équipe qui l'a corrigé ; un ticket vidé ainsi est annulé ; synchronisation dès le changement d'équipe dans l'écran Assets)*
 
 ## ✅ 3. Contexte d'asset et catégorisation
 - [x] `owner_team` (migration 0014), `OWNER_TEAM_RULES` par sous-réseau, filtre et saisie dans l'écran Assets

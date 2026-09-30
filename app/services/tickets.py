@@ -39,6 +39,8 @@ class SyncResult:
     attached: int = 0
     resolved: int = 0
     reopened: int = 0
+    moved: int = 0
+    cancelled: int = 0
 
 
 def ticket_title(action: RemediationAction, team: str | None) -> str:
@@ -162,6 +164,11 @@ def sync_tickets(db: Session, now: datetime | None = None) -> SyncResult:
     # the caller must reach the database before they are counted.
     db.flush()
 
+    # 0. A finding whose host now belongs to another team leaves its former
+    #    team's ticket; step 2 hands it to the new team's, if it has one.
+    released = _release_moved_findings(db)
+    result.moved = sum(released.values())
+
     open_count = func.sum(case((AssetVulnerability.status == Status.open, 1), else_=0))
     counts = {
         row.ticket_id: (row.total, row.open or 0)
@@ -230,10 +237,22 @@ def sync_tickets(db: Session, now: datetime | None = None) -> SyncResult:
             counts[joined.id] = (total + 1, opened + 1)
             result.attached += 1
 
-    # 3. Nothing left open: the scans confirm the work is done.
+    # 3. Nothing left open: the scans confirm the work is done. Nothing left
+    #    at all, because every host moved away: the team has nothing to do.
     for ticket in active:
         total, opened = counts.get(ticket.id, (0, 0))
-        if total and not opened:
+        if not total and ticket.id in released:
+            _log(
+                db,
+                ticket,
+                ticket.status,
+                TicketStatus.cancelled.value,
+                "Every host of this ticket moved to another team.",
+                None,
+            )
+            ticket.status = TicketStatus.cancelled.value
+            result.cancelled += 1
+        elif total and not opened:
             _log(
                 db,
                 ticket,
@@ -247,14 +266,59 @@ def sync_tickets(db: Session, now: datetime | None = None) -> SyncResult:
             result.resolved += 1
 
     db.flush()
-    if result.attached or result.resolved or result.reopened:
+    if result.attached or result.resolved or result.reopened or result.moved:
         logger.info(
-            "Tickets: %d finding(s) attached, %d resolved, %d reopened",
+            "Tickets: %d finding(s) attached, %d moved with their host, "
+            "%d resolved, %d reopened, %d cancelled",
             result.attached,
+            result.moved,
             result.resolved,
             result.reopened,
+            result.cancelled,
         )
     return result
+
+
+def _release_moved_findings(db: Session) -> dict[int, int]:
+    """Take out of their ticket the open findings of a host that changed team.
+
+    Their ticket is the former team's, which no longer sees the host (scopes)
+    and has no reason to deploy there. A closed finding stays where it was:
+    it was fixed while the host was that team's. Resolved tickets are covered
+    too, or a finding coming back would reopen the former team's ticket.
+    Returns the number of findings taken out, per ticket.
+    """
+    rows = (
+        db.query(TicketFinding, RemediationTicket, Asset.owner_team)
+        .join(RemediationTicket, RemediationTicket.id == TicketFinding.ticket_id)
+        .join(AssetVulnerability, AssetVulnerability.id == TicketFinding.finding_id)
+        .join(Asset, Asset.id == AssetVulnerability.asset_id)
+        .filter(
+            RemediationTicket.status.in_(
+                [*ACTIVE_TICKET_STATUSES, TicketStatus.resolved.value]
+            ),
+            AssetVulnerability.status == Status.open,
+            func.coalesce(Asset.owner_team, "")
+            != func.coalesce(RemediationTicket.owner_team, ""),
+        )
+        .order_by(RemediationTicket.id)
+        .all()
+    )
+    moved: dict[int, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    tickets: dict[int, RemediationTicket] = {}
+    for link, ticket, team in rows:
+        db.delete(link)
+        moved[ticket.id][team or UNASSIGNED] += 1
+        tickets[ticket.id] = ticket
+    for ticket_id, teams in moved.items():
+        ticket = tickets[ticket_id]
+        note = "; ".join(
+            f"{count} finding(s) moved with their host to {team}"
+            for team, count in sorted(teams.items())
+        )
+        _log(db, ticket, ticket.status, ticket.status, note, None)
+    db.flush()
+    return {ticket_id: sum(teams.values()) for ticket_id, teams in moved.items()}
 
 
 def ticket_metrics(db: Session, ticket_ids: list[int]) -> dict[int, dict]:
