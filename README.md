@@ -185,6 +185,7 @@ pytest                         # configuration lives in pyproject.toml
 pytest --cov                   # with coverage
 ruff check .                   # lint
 black --check .                # formatting
+mypy                           # types (app/ and scripts/), blocking in CI
 cd frontend && npm run test    # frontend tests
 cd frontend && npm run lint    # frontend lint
 ```

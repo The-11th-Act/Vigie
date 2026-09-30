@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from sqlalchemy import JSON, DateTime, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -28,14 +30,14 @@ class ApiToken(Base):
         String(64), unique=True, index=True, nullable=False
     )
     scope: Mapped[str] = mapped_column(String(16), nullable=False)
-    created_at: Mapped[DateTime] = mapped_column(
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
-    expires_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=False)
-    last_used_at: Mapped[DateTime | None] = mapped_column(
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_used_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    revoked_at: Mapped[DateTime | None] = mapped_column(
+    revoked_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
 
@@ -56,6 +58,6 @@ class SavedExtract(Base):
     columns: Mapped[list] = mapped_column(JSON, nullable=False)
     filters: Mapped[dict] = mapped_column(JSON, nullable=False)
     format: Mapped[str] = mapped_column(String(8), nullable=False)
-    created_at: Mapped[DateTime] = mapped_column(
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

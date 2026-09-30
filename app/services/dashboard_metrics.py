@@ -37,7 +37,7 @@ def _aware(value: datetime) -> datetime:
     return value if value.tzinfo else value.replace(tzinfo=UTC)
 
 
-def _team_key(team: str | None) -> str:
+def _team_key(team: str) -> str:
     """The snapshot key of a team filter: "" for hosts without a team."""
     return "" if team == NOT_SET else team
 
@@ -83,11 +83,11 @@ def _team_filter(query, team: str | None):
     return query.filter(Asset.owner_team == team)
 
 
-def _rate(part: int, whole: int) -> float | None:
+def _rate(part: float, whole: float) -> float | None:
     return round(part / whole * 100, 1) if whole else None
 
 
-def _mean(total: float, count: int) -> float | None:
+def _mean(total: float, count: float) -> float | None:
     return round(total / count, 1) if count else None
 
 

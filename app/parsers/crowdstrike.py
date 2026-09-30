@@ -259,7 +259,7 @@ def _normalize(entity: dict[str, Any]) -> dict[str, Any] | None:
     cvss_score = safe_float(cve.get("base_score"))
     description = clean_text(cve.get("description"))
 
-    finding = {
+    finding: dict[str, Any] = {
         "ip_address": ip_address,
         "hostname": clean_text(host.get("hostname")),
         "operating_system": clean_text(host.get("os_version")),

@@ -45,6 +45,11 @@ jobs:
       - name: black
         run: black --check --diff .
 
+      # Sur les versions de l'image : le typage des modeles depend de celui de
+      # SQLAlchemy et de pydantic installes.
+      - name: mypy
+        run: mypy
+
   test:
     name: Tests (SQLite + PostgreSQL)
     runs-on: ubuntu-24.04

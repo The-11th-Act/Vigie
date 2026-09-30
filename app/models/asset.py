@@ -1,3 +1,4 @@
+from datetime import datetime
 from enum import Enum
 
 from sqlalchemy import Boolean, DateTime, Index, String
@@ -45,10 +46,10 @@ class Asset(Base):
     environment: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     # Team in charge of fixing this host: remediation tickets are split by it.
     owner_team: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
-    created_at: Mapped[DateTime] = mapped_column(
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
-    updated_at: Mapped[DateTime] = mapped_column(
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 

@@ -167,7 +167,7 @@ def exposition() -> bytes:
     """The metrics of this process, or of all of them in multiprocess mode."""
     if not MULTIPROCESS_DIR:
         return generate_latest(REGISTRY)
-    _forget_dead_processes()
+    _forget_dead_processes(MULTIPROCESS_DIR)
     registry = CollectorRegistry()
     multiprocess.MultiProcessCollector(registry, path=MULTIPROCESS_DIR)
     # Not a multiprocess metric: this process has just read it from the base.
@@ -175,7 +175,7 @@ def exposition() -> bytes:
     return generate_latest(registry)
 
 
-def _forget_dead_processes() -> None:
+def _forget_dead_processes(directory: str) -> None:
     """Drop the live gauges of processes that are gone.
 
     uvicorn replaces a worker that dies; its in-progress requests and
@@ -187,11 +187,11 @@ def _forget_dead_processes() -> None:
         return
     pids = {
         int(os.path.basename(path).rsplit("_", 1)[1].removesuffix(".db"))
-        for path in glob.glob(os.path.join(MULTIPROCESS_DIR, "gauge_live*_*.db"))
+        for path in glob.glob(os.path.join(directory, "gauge_live*_*.db"))
     }
     for pid in pids:
         if not os.path.exists(f"/proc/{pid}"):
-            multiprocess.mark_process_dead(pid, MULTIPROCESS_DIR)
+            multiprocess.mark_process_dead(pid, directory)
 
 
 def observe_request(method: str, route: str, status: int, duration: float) -> None:

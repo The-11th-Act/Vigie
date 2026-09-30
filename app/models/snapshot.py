@@ -1,3 +1,5 @@
+from datetime import date, datetime
+
 from sqlalchemy import Boolean, Date, DateTime, Float, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import false, func
@@ -20,7 +22,7 @@ class BacklogSnapshot(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    day: Mapped[Date] = mapped_column(Date, nullable=False, index=True)
+    day: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     # "" for hosts without a team: NULLs would not make the pair unique.
     owner_team: Mapped[str] = mapped_column(
         String(128), nullable=False, server_default="", default=""
@@ -42,6 +44,6 @@ class BacklogSnapshot(Base):
     # Summed so that a mean time to remediate stays exact across days and teams.
     fixed_days_total: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     fixed_risk: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    created_at: Mapped[DateTime] = mapped_column(
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

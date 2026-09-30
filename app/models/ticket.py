@@ -1,3 +1,4 @@
+from datetime import datetime
 from enum import Enum
 
 from sqlalchemy import DateTime, ForeignKey, String, Text, UniqueConstraint
@@ -64,13 +65,13 @@ class RemediationTicket(Base):
     created_by: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
-    created_at: Mapped[DateTime] = mapped_column(
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
-    updated_at: Mapped[DateTime] = mapped_column(
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
-    resolved_at: Mapped[DateTime | None] = mapped_column(
+    resolved_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
 
@@ -102,7 +103,7 @@ class TicketFinding(Base):
         nullable=False,
         index=True,
     )
-    added_at: Mapped[DateTime] = mapped_column(
+    added_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
 
@@ -125,6 +126,6 @@ class TicketAuditLog(Base):
     old_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
     new_status: Mapped[str] = mapped_column(String(16), nullable=False)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[DateTime] = mapped_column(
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True
     )

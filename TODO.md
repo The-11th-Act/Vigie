@@ -221,7 +221,11 @@ ci-dessous avec la mention *(items 5-18)*.
 ### T4. Outillage qualité
 - [x] `pyproject.toml` : `ruff` (E, F, I, B, UP, S, C4), `black`, `pytest`, `coverage`
 - [x] Lint branché en CI, en échec bloquant
-- [ ] `mypy` (non mis en place)
+- [x] `mypy` *(30/09/2026 : sur `app/` et `scripts/`, plugin pydantic, bloquant en CI
+      à partir de zéro erreur. 61 erreurs au départ, dont 43 venaient de colonnes
+      annotées avec le type SQL (`Mapped[DateTime]`) au lieu du type Python
+      (`Mapped[datetime]`) : sans effet sur le schéma (`alembic check`), mais tout
+      le typage des dates en était faussé)*
 
 ### T2. Dépendances
 - [x] `lxml` retiré (importé nulle part)

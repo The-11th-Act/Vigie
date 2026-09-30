@@ -96,7 +96,9 @@ def login(
     # Always run the password verification, even when the user does not exist,
     # so response timing cannot be used to enumerate valid usernames.
     hashed = user.hashed_password if user else None
-    if not verify_password_constant_time(credentials.password, hashed):
+    # `user is None` after the verification, never before it: an unknown
+    # username already fails there (no hash), this only tells the type checker.
+    if not verify_password_constant_time(credentials.password, hashed) or user is None:
         ratelimit.register_failure("ip", client_ip)
         ratelimit.register_failure("user", credentials.username)
         logger.warning("Failed login for '%s' from %s", credentials.username, client_ip)
@@ -123,7 +125,7 @@ def refresh(
     new pair back as cookies.
     """
     from_cookie = body is None
-    if from_cookie:
+    if body is None:
         presented = request.cookies.get(REFRESH_COOKIE)
         if not presented:
             raise INVALID_CREDENTIALS

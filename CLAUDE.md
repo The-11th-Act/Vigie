@@ -29,6 +29,7 @@ FastAPI + SQLAlchemy + Celery/Redis + PostgreSQL ; React 19 + Vite 8.
 
 ```bash
 venv/Scripts/python.exe -m ruff check . && venv/Scripts/python.exe -m black --check .
+venv/Scripts/python.exe -m mypy                            # app/ et scripts/, 0 erreur
 venv/Scripts/python.exe -m pytest -q                       # SQLite, 5 à 15 min
 DATABASE_URL=sqlite:///<scratchpad>/m.db venv/Scripts/python.exe -m alembic upgrade head
 DATABASE_URL=sqlite:///<scratchpad>/m.db venv/Scripts/python.exe -m alembic check
@@ -62,6 +63,8 @@ gh run list --workflow CI --branch main --limit 1          # pas seulement --lim
 - Tout nouveau réglage de `Settings` doit être câblé dans `x-app-settings` de
   `docker-compose.yml` (sinon `test_deployment_config` échoue) ; un réglage
   métier mérite une vérification dans le test de la pile de production.
+- Modèles : `Mapped[datetime]` / `Mapped[date]` (type Python), jamais
+  `Mapped[DateTime]` ; le type SQL va dans `mapped_column(DateTime(timezone=True))`.
 - Jamais d'`async def` dans `app/` hors `main.py` : l'API est synchrone
   (`tests/test_concurrency.py`). Un nouveau réglage de pool ou de threads
   change le budget de connexions (`TestConnectionBudget`).
@@ -105,9 +108,9 @@ gh run list --workflow CI --branch main --limit 1          # pas seulement --lim
 1. ~~Préproduction (D11)~~ fait le 30/09/2026 : `docs/PREPRODUCTION.md`.
    Reste le bandeau « préproduction » dans l'interface.
 2. ~~T1~~ fait le 30/09/2026 : synchrone assumé (`docs/EXPLOITATION.md`).
-   Métriques en mode multiprocessus et compteur d'ingestion faits. Reste
-   `mypy`. Le worker n'expose aucune métrique : ce qu'il fait se mesure
-   depuis la base, au scrape de l'API.
+   Métriques en mode multiprocessus, compteur d'ingestion et `mypy` faits.
+   Le worker n'expose aucune métrique : ce qu'il fait se mesure depuis la
+   base, au scrape de l'API.
 3. TanStack Query côté frontend ; groupes d'assets et filtrage par périmètre.
 4. **Plus tard, à la demande de l'utilisateur** : connecteur de ticketing
    (Jira, ServiceNow ou GLPI, à lui faire choisir) sur les champs

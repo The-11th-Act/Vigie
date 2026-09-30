@@ -25,7 +25,7 @@ disappeared because it was fixed, not because its host was out of scope.
 
 import re
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, TypeGuard
 
 from app.models.vulnerability import Severity
 
@@ -84,7 +84,7 @@ def normalize_severity(raw: str | None, cvss_score: float) -> str:
     return severity_from_cvss(cvss_score)
 
 
-def is_valid_cve(cve_id: str | None) -> bool:
+def is_valid_cve(cve_id: str | None) -> TypeGuard[str]:
     return bool(cve_id and CVE_PATTERN.match(cve_id.strip()))
 
 

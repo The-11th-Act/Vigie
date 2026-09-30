@@ -347,13 +347,13 @@ def enrich_new_vulnerabilities(db: Session, vulnerabilities, now: datetime) -> N
                 },
                 now,
             )
-        for entry in db.query(EpssScoreEntry).filter(EpssScoreEntry.cve_id.in_(chunk)):
+        for score in db.query(EpssScoreEntry).filter(EpssScoreEntry.cve_id.in_(chunk)):
             _assign(
-                by_cve[entry.cve_id],
+                by_cve[score.cve_id],
                 {
-                    "epss_score": entry.score,
-                    "epss_percentile": entry.percentile,
-                    "epss_date": entry.score_date,
+                    "epss_score": score.score,
+                    "epss_percentile": score.percentile,
+                    "epss_date": score.score_date,
                 },
                 now,
             )

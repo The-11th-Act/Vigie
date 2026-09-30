@@ -1,3 +1,4 @@
+from datetime import datetime
 from enum import Enum
 
 from sqlalchemy import (
@@ -78,10 +79,10 @@ class ScanJob(Base):
 
     message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    created_at: Mapped[DateTime] = mapped_column(
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True
     )
-    finished_at: Mapped[DateTime | None] = mapped_column(
+    finished_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
 

@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func, true
@@ -18,7 +20,7 @@ class ModuleSetting(Base):
     enabled: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default=true(), nullable=False
     )
-    updated_at: Mapped[DateTime] = mapped_column(
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
@@ -33,7 +35,7 @@ class RoleProfile(Base):
 
     role: Mapped[str] = mapped_column(String(16), primary_key=True)
     modules: Mapped[list] = mapped_column(JSON, nullable=False)
-    updated_at: Mapped[DateTime] = mapped_column(
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
@@ -52,6 +54,6 @@ class UserPreference(Base):
     )
     module_order: Mapped[list | None] = mapped_column(JSON, nullable=True)
     hidden_modules: Mapped[list | None] = mapped_column(JSON, nullable=True)
-    updated_at: Mapped[DateTime] = mapped_column(
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

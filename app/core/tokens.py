@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 _PREFIX = "token:revoked:"
 
 
-def revoke(jti: str, expires_at: int | None) -> None:
+def revoke(jti: str | None, expires_at: int | None) -> None:
     """Revoke a token id until the moment the token would have expired anyway.
 
     ``expires_at`` is the JWT ``exp`` claim (epoch seconds). An already-expired

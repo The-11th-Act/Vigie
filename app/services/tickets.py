@@ -199,7 +199,7 @@ def sync_tickets(db: Session, now: datetime | None = None) -> SyncResult:
 
     # 2. New findings of a fix join the team's active ticket for it.
     if active:
-        target = {}
+        target: dict[tuple[int, str | None], RemediationTicket] = {}
         for ticket in active:
             target.setdefault((ticket.action_id, ticket.owner_team), ticket)
         action_ids = {ticket.action_id for ticket in active}
@@ -219,13 +219,13 @@ def sync_tickets(db: Session, now: datetime | None = None) -> SyncResult:
             .distinct()
         )
         for action_id, finding_id, team in rows:
-            ticket = target.get((action_id, team))
-            if ticket is None or (action_id, finding_id) in tracked:
+            joined = target.get((action_id, team))
+            if joined is None or (action_id, finding_id) in tracked:
                 continue
-            db.add(TicketFinding(ticket_id=ticket.id, finding_id=finding_id))
+            db.add(TicketFinding(ticket_id=joined.id, finding_id=finding_id))
             tracked.add((action_id, finding_id))
-            total, opened = counts.get(ticket.id, (0, 0))
-            counts[ticket.id] = (total + 1, opened + 1)
+            total, opened = counts.get(joined.id, (0, 0))
+            counts[joined.id] = (total + 1, opened + 1)
             result.attached += 1
 
     # 3. Nothing left open: the scans confirm the work is done.

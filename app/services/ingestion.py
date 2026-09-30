@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, true
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
@@ -54,7 +54,7 @@ class IngestionResult:
     message: str = ""
 
     def as_dict(self) -> dict[str, Any]:
-        data = {
+        data: dict[str, Any] = {
             "processed_records": self.processed_records,
             "new_assets": self.new_assets,
             "new_vulnerabilities": self.new_vulnerabilities,
@@ -186,7 +186,7 @@ def _close_unseen_findings(
         .filter(
             FindingDetection.source == scan_source,
             AssetVulnerability.status == Status.open,
-            FindingDetection.finding_id.notin_(seen_ids) if seen_ids else True,
+            FindingDetection.finding_id.notin_(seen_ids) if seen_ids else true(),
         )
     )
     if scope is not None:
@@ -440,7 +440,7 @@ def _upsert_associations(
     scan_source: str,
     now: datetime,
     trusted_hostnames: set,
-) -> tuple[int, int, set]:
+) -> tuple[int, int, dict[tuple[int, int], AssetVulnerability]]:
     asset_ids = {a.id for a in asset_cache.values()}
     vuln_ids = {v.id for v in vuln_cache.values()}
 
@@ -465,7 +465,9 @@ def _upsert_associations(
         vuln = vuln_cache[finding["cve_id"]]
         key = (asset.id, vuln.id)
 
-        deadline = calculate_remediation_deadline(finding["severity"], now)
+        deadline: datetime | None = calculate_remediation_deadline(
+            finding["severity"], now
+        )
         if vuln.in_kev:
             deadline = apply_kev_sla(deadline, now, vuln.kev_date_added)
         assoc = assoc_cache.get(key)
@@ -552,8 +554,8 @@ def _sync_remediations(
             FindingRemediation.finding_id.in_(ids[i : i + CHUNK_SIZE]),
             FindingRemediation.source == scan_source,
         )
-        for link in rows:
-            existing.setdefault(link.finding_id, {})[link.action_id] = link
+        for row in rows:
+            existing.setdefault(row.finding_id, {})[row.action_id] = row
 
     for finding_id, entries in wanted.items():
         current = existing.get(finding_id, {})

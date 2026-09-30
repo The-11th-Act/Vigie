@@ -91,3 +91,23 @@ ignore = [
 line-length = 90
 target-version = ["py311"]
 extend-exclude = "(venv|\\.venv|frontend|app/db/migrations/versions)"
+
+# ---------------------------------------------------------------------------
+# Types
+# ---------------------------------------------------------------------------
+[tool.mypy]
+# The application only: tests lean on fixtures and mocks that typing would
+# only obscure. Blocking in CI from zero errors, so it can only get better.
+files = ["app", "scripts"]
+exclude = ["app/db/migrations/versions/"]
+python_version = "3.11"
+plugins = ["pydantic.mypy"]
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_optional = true
+check_untyped_defs = true
+
+[[tool.mypy.overrides]]
+# No type information published: celery, python-jose, defusedxml.
+module = ["celery.*", "jose.*", "defusedxml.*"]
+ignore_missing_imports = true

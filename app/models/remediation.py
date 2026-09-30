@@ -1,3 +1,4 @@
+from datetime import datetime
 from enum import Enum
 
 from sqlalchemy import DateTime, ForeignKey, String, Text, UniqueConstraint
@@ -42,7 +43,7 @@ class RemediationAction(Base):
     url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     # Scanner family ("Windows : Microsoft Bulletins", "Web Servers"...).
     family: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    created_at: Mapped[DateTime] = mapped_column(
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
 
@@ -81,7 +82,7 @@ class FindingRemediation(Base):
     # Per host: two hosts missing the same fix can run different versions.
     installed_version: Mapped[str | None] = mapped_column(String(256), nullable=True)
     fixed_version: Mapped[str | None] = mapped_column(String(256), nullable=True)
-    last_seen_at: Mapped[DateTime] = mapped_column(
+    last_seen_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 

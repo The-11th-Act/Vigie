@@ -1,3 +1,5 @@
+from datetime import date, datetime
+
 from sqlalchemy import Boolean, Date, DateTime, Float, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import false
@@ -24,10 +26,10 @@ class ThreatFeedStatus(Base):
     # alter or drop when a feed is added.
     feed: Mapped[str] = mapped_column(String(16), primary_key=True)
 
-    last_attempt_at: Mapped[DateTime | None] = mapped_column(
+    last_attempt_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    last_success_at: Mapped[DateTime | None] = mapped_column(
+    last_success_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -37,7 +39,7 @@ class ThreatFeedStatus(Base):
     # KEV catalogVersion, or EPSS model_version.
     source_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # KEV dateReleased, or EPSS score_date.
-    source_date: Mapped[Date | None] = mapped_column(Date, nullable=True)
+    source_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     # Entries in the last applied snapshot, and how many rows it changed.
     records: Mapped[int] = mapped_column(
@@ -59,8 +61,8 @@ class KevCatalogEntry(Base):
     __tablename__ = "kev_catalog"
 
     cve_id: Mapped[str] = mapped_column(String(32), primary_key=True)
-    date_added: Mapped[Date | None] = mapped_column(Date, nullable=True)
-    due_date: Mapped[Date | None] = mapped_column(Date, nullable=True)
+    date_added: Mapped[date | None] = mapped_column(Date, nullable=True)
+    due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     ransomware: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=false(), nullable=False
     )
@@ -74,4 +76,4 @@ class EpssScoreEntry(Base):
     cve_id: Mapped[str] = mapped_column(String(32), primary_key=True)
     score: Mapped[float] = mapped_column(Float, nullable=False)
     percentile: Mapped[float | None] = mapped_column(Float, nullable=True)
-    score_date: Mapped[Date | None] = mapped_column(Date, nullable=True)
+    score_date: Mapped[date | None] = mapped_column(Date, nullable=True)
