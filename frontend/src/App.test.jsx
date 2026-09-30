@@ -65,7 +65,8 @@ describe('App shell', () => {
     renderAt('/')
 
     await sidebarLinks()
-    expect(window.location.pathname).toBe('/findings')
+    // Navigate redirects in an effect, after the first render: wait for it.
+    await waitFor(() => expect(window.location.pathname).toBe('/findings'))
   })
 
   it('sends a module the role lacks back home', async () => {
@@ -73,7 +74,8 @@ describe('App shell', () => {
     renderAt('/scans')
 
     await sidebarLinks()
-    expect(window.location.pathname).toBe('/dashboard')
+    // Navigate redirects in an effect, after the first render: wait for it.
+    await waitFor(() => expect(window.location.pathname).toBe('/dashboard'))
   })
 
   it('keeps a hidden module reachable by its address', async () => {
@@ -84,7 +86,8 @@ describe('App shell', () => {
     renderAt('/findings')
 
     await sidebarLinks()
-    expect(window.location.pathname).toBe('/findings')
+    // Navigate redirects in an effect, after the first render: wait for it.
+    await waitFor(() => expect(window.location.pathname).toBe('/findings'))
   })
 
   it('lands on the preferences without any module', async () => {
@@ -92,7 +95,8 @@ describe('App shell', () => {
     renderAt('/')
 
     expect(await screen.findByText(/no module is available/i)).toBeInTheDocument()
-    expect(window.location.pathname).toBe('/preferences')
+    // Navigate redirects in an effect, after the first render: wait for it.
+    await waitFor(() => expect(window.location.pathname).toBe('/preferences'))
   })
 
   it('still signs out from the sidebar', async () => {
