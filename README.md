@@ -159,6 +159,19 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm web \
 ```
 It is idempotent: run against an existing account, it promotes it instead of failing.
 
+**Staging and promotion**: staging is the same production overlay run from a
+second checkout, with its own `.env` (`COMPOSE_PROJECT_NAME=vigie-staging`,
+`FRONTEND_PORT=8081`) and its own `secrets/`. No container has a fixed name,
+so both stacks can share a host without sharing a container, a network or a
+volume. The built images are named after the release (`VIGIE_VERSION`):
+`vigie-api` (API, migrations, worker, scheduler), `vigie-frontend`,
+`vigie-backup`. Staging builds and validates a version, optionally on a
+restored copy of production to rehearse its migrations; production then runs
+those same images with `up -d --no-build --pull never`, never rebuilding
+them. Across two hosts they go through a registry (`VIGIE_REGISTRY`). The
+full path, and how to roll back a release that migrated the schema:
+[`docs/PREPRODUCTION.md`](docs/PREPRODUCTION.md).
+
 ### Running Tests
 ```bash
 pytest                         # configuration lives in pyproject.toml

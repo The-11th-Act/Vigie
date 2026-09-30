@@ -80,7 +80,10 @@ INSECURE_SECRET_KEYS = {
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Vigie"
     API_V1_STR: str = "/api/v1"
-    ENVIRONMENT: str = "development"  # development | staging | production
+    # development | production. Staging runs as production, so that it tests
+    # what production does: any other value tolerates a weak SECRET_KEY and
+    # serves /docs. docs/PREPRODUCTION.md.
+    ENVIRONMENT: str = "development"
 
     SECRET_KEY: str
     # Identifies SECRET_KEY in the header ("kid") of every token it signs, so the

@@ -162,7 +162,8 @@ conteneurs s'appellent `tvm_db`, `tvm_api`, `tvm_celery_worker`. `package.json` 
 vocabulaires. C'est le genre de dette qui ne fait jamais assez mal pour être corrigée,
 et qui coûte un peu à chaque fois.
 
-> **Corrigé.** `PROJECT_NAME`, conteneurs (`vigie_db`, `vigie_api`, `vigie_worker`…),
+> **Corrigé.** `PROJECT_NAME`, conteneurs (`vigie_db`, `vigie_api`, `vigie_worker`…,
+> noms figés retirés depuis au profit du nom de projet compose, pour la préproduction),
 > utilisateur et base PostgreSQL, `package.json` : tout est aligné sur « Vigie ». Fait
 > maintenant précisément parce qu'il n'y a pas encore de production : renommer la base
 > aurait sinon imposé une migration de données. Les documents qui *décrivent* l'ancienne

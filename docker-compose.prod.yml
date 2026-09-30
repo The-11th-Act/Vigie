@@ -16,6 +16,11 @@
 #
 # Le reste de la configuration vient du .env, sans repli pour ce qui doit
 # etre choisi (utilisateur et base PostgreSQL, origines CORS).
+#
+# La preproduction utilise ce meme fichier, sans surcouche propre : un second
+# checkout avec son .env (COMPOSE_PROJECT_NAME, FRONTEND_PORT) et ses secrets.
+# Les images portent VIGIE_VERSION : la production execute celles que la
+# preproduction a construites et validees. docs/PREPRODUCTION.md.
 
 secrets:
   # Repertoire en 0700 appartenant a root sur l'hote ; fichiers en 0444 pour
@@ -236,6 +241,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile.prod
+    image: ${VIGIE_REGISTRY:-}vigie-frontend:${VIGIE_VERSION:-latest}
     # Le SPA construit et servi par Nginx, qui fait aussi office de reverse
     # proxy vers l'API (cf. frontend/nginx.conf).
     volumes: !override []
@@ -269,7 +275,7 @@ services:
     # chemin monte depuis un autre stockage.
     build:
       context: ./deploy/backup
-    container_name: vigie_backup
+    image: ${VIGIE_REGISTRY:-}vigie-backup:${VIGIE_VERSION:-latest}
     environment:
       PGHOST: db
       PGUSER: ${POSTGRES_USER:?POSTGRES_USER is required}

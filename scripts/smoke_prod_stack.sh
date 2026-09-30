@@ -72,6 +72,7 @@ printf '[offsite]\ntype = local\n' > "$SECRETS/rclone.conf"
 chmod 444 "$SECRETS"/*
 
 cat > .env <<EOF
+VIGIE_VERSION=smoke
 VIGIE_SECRETS_DIR=$SECRETS
 BACKUP_REMOTE=offsite:/offsite
 POSTGRES_USER=vigie
@@ -121,6 +122,22 @@ echo "Construction et démarrage de la pile de production..."
 echo "Attente de l'API derrière Nginx..."
 wait_for_api
 echo "API saine (/ready, donc PostgreSQL, Redis et un worker)."
+
+# --- Images de la version ---------------------------------------------------
+# La promotion (docs/PREPRODUCTION.md) repose sur une image par version :
+# l'API, les migrations, le worker et le beat exécutent la même, celle que la
+# production recevra sans la reconstruire.
+API_IMAGE=$(docker image inspect --format '{{.Id}}' vigie-api:smoke) \
+  || fail "image vigie-api:smoke absente après le build"
+for service in migrate web worker beat; do
+  cid=$("${COMPOSE[@]}" ps -a -q "$service")
+  [ "$(docker inspect --format '{{.Image}}' "$cid")" = "$API_IMAGE" ] \
+    || fail "$service n'exécute pas l'image vigie-api:smoke"
+done
+for image in vigie-frontend:smoke vigie-backup:smoke; do
+  docker image inspect "$image" >/dev/null 2>&1 || fail "image $image absente après le build"
+done
+echo "ok - une image par version : vigie-api, vigie-frontend et vigie-backup en :smoke"
 
 # --- Premier administrateur, par le chemin documenté ------------------------
 "${COMPOSE[@]}" run --rm -T -e ADMIN_PASSWORD="$ADMIN_PASSWORD" web \
@@ -271,7 +288,9 @@ echo "ok - base détruite"
   -v "$WORK/age.key:/run/age.key:ro" -e BACKUP_AGE_IDENTITY=/run/age.key \
   backup vigie-restore "$BACKUP_FILE" --yes || fail "restauration impossible"
 
-"${COMPOSE[@]}" up -d
+# Relance par la commande de promotion : les images existantes, sans build ni
+# téléchargement.
+"${COMPOSE[@]}" up -d --no-build --pull never
 wait_for_api
 
 TOKEN=$(curl -fsS -X POST "$API/auth/login" -H 'Content-Type: application/json' \

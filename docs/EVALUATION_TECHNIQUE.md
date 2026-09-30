@@ -167,7 +167,9 @@ Celery. Un scan Nessus de 50 Mo est aujourd'hui **décodé en chaîne et passé 
 tâche via Redis** (`scans.py:63`, déjà noté au point 7 de `TODO.md`) : c'est aussi un
 problème de déploiement, parce que le pic mémoire du worker n'est ni borné ni mesuré.
 
-**D11 — Un seul environnement.** `ENVIRONMENT` accepte `staging` mais rien dans le dépôt
+**D11 — Un seul environnement.** ✅ *traité le 30/09/2026 : préproduction sur la
+surcouche de production depuis un second checkout, images nommées par version et
+promues sans reconstruction ([`PREPRODUCTION.md`](PREPRODUCTION.md)).* `ENVIRONMENT` accepte `staging` mais rien dans le dépôt
 ne matérialise un staging. Aucun chemin de promotion dev → staging → prod.
 
 ### 2.2 Ce qui est déjà correct côté déploiement

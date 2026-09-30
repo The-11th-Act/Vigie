@@ -43,10 +43,20 @@ x-app-settings: &app-settings
   NO_PROXY: ${NO_PROXY:-}
   REQUESTS_CA_BUNDLE: ${REQUESTS_CA_BUNDLE:-}
 
+# One image for the API, the migrations, the worker and the scheduler, named
+# after the release it was built from. Staging builds VIGIE_VERSION once and
+# production runs that same image (--no-build), rather than rebuilding it from
+# its own checkout: docs/PREPRODUCTION.md. VIGIE_REGISTRY ("registry.example.com/
+# vigie/") names a registry to push to and pull from when they are two hosts.
+#
+# No container_name anywhere: containers, network and volumes are all named
+# after the compose project, so a staging and a production stack can share a
+# host without sharing anything.
+x-api-image: &api-image ${VIGIE_REGISTRY:-}vigie-api:${VIGIE_VERSION:-latest}
+
 services:
   db:
     image: postgres:15-alpine@sha256:f7d23353e1b15400d22ebe31189f4d314b87a4c129cc400c8c2d8d4ca127bf81
-    container_name: vigie_db
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-vigie_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vigie_password}
@@ -63,7 +73,6 @@ services:
 
   redis:
     image: redis:8-alpine@sha256:3811787313eba226a2ef38658c6ccb91cd5e110edc89c37767de373120a0e5a0
-    container_name: vigie_redis
     ports:
       - "6379:6379"
     healthcheck:
@@ -74,7 +83,7 @@ services:
 
   migrate:
     build: .
-    container_name: vigie_migrate
+    image: *api-image
     command: alembic upgrade head
     environment:
       - SECRET_KEY=${SECRET_KEY:-}
@@ -86,7 +95,7 @@ services:
 
   web:
     build: .
-    container_name: vigie_api
+    image: *api-image
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     volumes:
       - .:/app
@@ -134,7 +143,7 @@ services:
 
   worker:
     build: .
-    container_name: vigie_worker
+    image: *api-image
     command: celery -A app.worker.celery_app worker --loglevel=info
     volumes:
       - .:/app
@@ -160,7 +169,7 @@ services:
   # periodic CrowdStrike pull when that sync is enabled.
   beat:
     build: .
-    container_name: vigie_beat
+    image: *api-image
     command: celery -A app.worker.celery_app beat --loglevel=info
     # The image's HEALTHCHECK probes the API on :8000, which a scheduler does
     # not serve: the container was always reported unhealthy. beat runs as the
@@ -185,7 +194,7 @@ services:
 
   frontend:
     build: ./frontend
-    container_name: vigie_frontend
+    image: vigie-frontend-dev:${VIGIE_VERSION:-latest}
     volumes:
       - ./frontend:/app
       - /app/node_modules

@@ -297,6 +297,69 @@ class TestOffsiteCopy:
         assert "rclone_conf" not in _secret_names(prod_services["backup"])
 
 
+def _environment(**overrides: str) -> dict:
+    return json.loads(_merged_prod_config("--format", "json", extra_env=overrides))
+
+
+class TestStagingAndPromotion:
+    """La préproduction est la surcouche de production lancée depuis un second
+    checkout, avec son propre .env : elle ne partage rien avec la production,
+    et la production exécute les images qu'elle a validées."""
+
+    def test_no_fixed_container_name(self, prod_services):
+        """Un container_name figé fait échouer le démarrage d'une seconde pile
+        sur le même hôte, quel que soit son nom de projet."""
+        named = [name for name, s in prod_services.items() if "container_name" in s]
+        assert not named
+
+    def test_staging_and_production_share_nothing(self):
+        prod = _environment(COMPOSE_PROJECT_NAME="vigie")
+        staging = _environment(COMPOSE_PROJECT_NAME="vigie-staging", FRONTEND_PORT="8081")
+
+        assert (prod["name"], staging["name"]) == ("vigie", "vigie-staging")
+        for kind in ("volumes", "networks"):
+            prod_names = {item["name"] for item in prod[kind].values()}
+            staging_names = {item["name"] for item in staging[kind].values()}
+            assert prod_names and not prod_names & staging_names, kind
+
+        def published(config):
+            return {
+                port["published"]
+                for service in config["services"].values()
+                for port in service.get("ports", [])
+            }
+
+        assert published(prod) == {"8080"}
+        assert published(staging) == {"8081"}
+
+    def test_every_built_image_is_named_after_the_release(self):
+        """Sans nom d'image, compose en invente un par projet : la production
+        reconstruirait depuis ses sources au lieu d'exécuter l'image validée."""
+        services = _environment(VIGIE_VERSION="v1.2.3")["services"]
+        built = {name: s for name, s in services.items() if "build" in s}
+
+        assert {"migrate", "web", "worker", "beat", "frontend", "backup"} <= set(built)
+        for name, service in built.items():
+            assert service.get("image", "").endswith(":v1.2.3"), name
+
+    def test_api_migrations_worker_and_scheduler_run_one_image(self):
+        services = _environment(
+            VIGIE_VERSION="v1.2.3", VIGIE_REGISTRY="registry.example.com/vigie/"
+        )["services"]
+
+        for name in ("migrate", "web", "worker", "beat"):
+            assert (
+                services[name]["image"] == "registry.example.com/vigie/vigie-api:v1.2.3"
+            )
+        assert services["frontend"]["image"] == (
+            "registry.example.com/vigie/vigie-frontend:v1.2.3"
+        )
+        assert (
+            services["backup"]["image"]
+            == "registry.example.com/vigie/vigie-backup:v1.2.3"
+        )
+
+
 class TestSettingsReachTheContainers:
     """En production, un conteneur ne lit pas le .env : il est exclu de l'image
     et aucun code source n'est monté. Un réglage n'arrive que s'il est câblé

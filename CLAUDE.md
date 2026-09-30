@@ -62,6 +62,9 @@ gh run list --workflow CI --branch main --limit 1          # pas seulement --lim
 - Tout nouveau réglage de `Settings` doit être câblé dans `x-app-settings` de
   `docker-compose.yml` (sinon `test_deployment_config` échoue) ; un réglage
   métier mérite une vérification dans le test de la pile de production.
+- Pas de `container_name` ni de `name:` de volume figé (deux piles par hôte) ;
+  tout service construit porte `image: …:${VIGIE_VERSION}` (promotion sans
+  reconstruction). `TestStagingAndPromotion` le vérifie.
 - Un secret est un fichier en production (`secrets/`, convention `*_FILE`) :
   jamais de nouveau secret en variable d'environnement.
 - **Scripts sur ce poste Windows** : heredoc bash et `python -c` abîment les
@@ -96,8 +99,8 @@ gh run list --workflow CI --branch main --limit 1          # pas seulement --lim
 
 ## Suite prévue
 
-1. Environnement de préproduction (D11) sur la surcouche de production, et
-   chemin de promotion documenté.
+1. ~~Préproduction (D11)~~ fait le 30/09/2026 : `docs/PREPRODUCTION.md`.
+   Reste le bandeau « préproduction » dans l'interface.
 2. Trancher la concurrence de l'API (T1 : synchrone assumé ou async) et
    documenter `workers × threads × pool_size` ; `mypy`.
 3. TanStack Query côté frontend ; groupes d'assets et filtrage par périmètre.

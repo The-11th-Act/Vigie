@@ -338,8 +338,18 @@ un admin ne prend effet qu'à l'expiration. Aucun cloisonnement par périmètre.
 - [ ] Modèle de périmètres / groupes d'assets, filtrage des listings
 
 ### D11. Un seul environnement
-- [ ] Environnement de staging réutilisant la surcouche de production
-- [ ] Chemin de promotion dev → staging → prod documenté
+- [x] Environnement de staging réutilisant la surcouche de production *(30/09/2026 :
+      second checkout, même `docker-compose.prod.yml` sans surcouche propre, `.env`
+      et `secrets/` à lui ; plus aucun `container_name` figé, deux piles partagent un
+      hôte sans partager conteneur, réseau ni volume)*
+- [x] Chemin de promotion dev → staging → prod documenté *(30/09/2026 :
+      [`docs/PREPRODUCTION.md`](docs/PREPRODUCTION.md) ; images nommées par
+      `VIGIE_VERSION`, construites en préproduction, exécutées en production par
+      `up --no-build --pull never`, via un registre sur deux hôtes ; répétition des
+      migrations sur une copie de la production ; retour arrière avec ou sans
+      migration)*
+- [ ] Distinguer la préproduction dans l'interface (bandeau), utile dès qu'elle
+      reçoit une copie des données de production
 
 ### Nettoyage restant
 - [x] Harmoniser le nom du produit : `PROJECT_NAME`, conteneurs `vigie_*`,
@@ -500,4 +510,6 @@ Les parseurs jetaient tout ce que les scanners disent du correctif. Les fichiers
 
 ## 7. Connecteur de ticketing et webhooks
 - [ ] Interface `TicketConnector`, première implémentation, synchronisation du statut
+- [ ] Une cible par environnement : une préproduction restaurée depuis la production
+      ne doit jamais écrire dans l'outil de ticketing de production
 - [ ] Webhooks sortants
