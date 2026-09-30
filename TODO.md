@@ -516,7 +516,7 @@ Les parseurs jetaient tout ce que les scanners disent du correctif. Les fichiers
 - [x] `require_module(...)` sur chaque route, depuis l'utilisateur en base : masquer un onglet ne vaut pas autorisation
 - [x] Barre latérale et routes construites depuis les modules accordés ; écrans Préférences et Administration
 - [x] Garde-fous : le module Administration ne peut être ni désactivé ni retiré aux admins ; le dernier admin ne peut pas être rétrogradé
-- [ ] Profil de rôle : l'écran Administration ajoute un module accordé en fin de liste ; réordonner un profil passe par l'API
+- [x] Profil de rôle : l'écran Administration ajoute un module accordé en fin de liste ; réordonner un profil passe par l'API *(30/09/2026 : ordre de chaque profil réglable dans l'écran Administration ; le premier module est l'écran d'arrivée du rôle)*
 
 ## ✅ 4. Remédiation et tickets internes
 - [x] Module `remediation` et vue « Top correctifs » : risque cumulé fermé par action (chaque finding compté une fois), hôtes, findings et CVE distincts, KEV, retards, échéance ; seau « Sans correctif identifié » ; hôtes d'un correctif avec leurs versions, export CSV

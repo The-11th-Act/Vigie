@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { RotateCcw } from 'lucide-react';
+import { ArrowDown, ArrowUp, RotateCcw } from 'lucide-react';
 import { adminService, remediationService, userService } from '../services';
 import { NO_TEAM, scopeLabel, teamLabel } from '../teams';
 import { useApiQuery } from '../hooks/useApiQuery';
 import { useModules } from '../auth/ModulesContext';
 import { controlStyle } from './RemediationShared';
+import { move } from '../order';
 
 const MODULES_KEY = ['admin', 'modules'];
 
@@ -129,7 +130,57 @@ function ModulesSection() {
           </tbody>
         </table>
       </div>
+      <h3 style={{ fontSize: '1rem', margin: '1.25rem 0 0.5rem' }}>Order in the sidebar</h3>
+      <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginBottom: '0.75rem' }}>
+        The first module is where the role lands after signing in. Users can still reorder their own.
+      </p>
+      <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
+        {roles.map((role) => (
+          <ProfileOrder
+            key={role}
+            role={role}
+            profile={shown.profiles[role]}
+            labels={Object.fromEntries(shown.modules.map((m) => [m.key, m.label]))}
+            busy={busy}
+            onReorder={(next) => apply(() => adminService.setRoleProfile(role, next))}
+          />
+        ))}
+      </div>
     </section>
+  );
+}
+
+function ProfileOrder({ role, profile, labels, busy, onReorder }) {
+  const roleLabel = ROLE_LABELS[role] || role;
+  return (
+    <div className="glass-panel" style={{ minWidth: 220, padding: '1rem' }}>
+      <div style={{ fontWeight: 600, marginBottom: '0.5rem' }}>{roleLabel}</div>
+      <ol style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+        {profile.map((key, index) => (
+          <li key={key} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <span style={{ flex: 1 }}>{labels[key] || key}</span>
+            <button
+              type="button"
+              className="icon-button"
+              disabled={busy || index === 0}
+              onClick={() => onReorder(move(profile, index, -1))}
+              aria-label={`Move ${labels[key] || key} up for ${roleLabel}`}
+            >
+              <ArrowUp size={14} />
+            </button>
+            <button
+              type="button"
+              className="icon-button"
+              disabled={busy || index === profile.length - 1}
+              onClick={() => onReorder(move(profile, index, 1))}
+              aria-label={`Move ${labels[key] || key} down for ${roleLabel}`}
+            >
+              <ArrowDown size={14} />
+            </button>
+          </li>
+        ))}
+      </ol>
+    </div>
   );
 }
 

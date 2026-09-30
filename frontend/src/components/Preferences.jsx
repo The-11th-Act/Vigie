@@ -3,13 +3,7 @@ import { ArrowDown, ArrowUp } from 'lucide-react';
 import { meService } from '../services';
 import { useModules } from '../auth/ModulesContext';
 import { knownModules } from '../modules';
-
-function move(list, index, offset) {
-  const next = [...list];
-  const [item] = next.splice(index, 1);
-  next.splice(index + offset, 0, item);
-  return next;
-}
+import { move } from '../order';
 
 // Arranges the sidebar. Only the modules the role grants are listed: hiding
 // one removes it from the sidebar, it stays reachable by its address.

@@ -132,4 +132,22 @@ describe('AdminPanel', () => {
 
     expect(userService.updateTeams).toHaveBeenCalledWith(3, [])
   })
+
+  it('reorders a role profile, which sets where the role lands', async () => {
+    adminService.setRoleProfile.mockResolvedValue({ data: OVERVIEW })
+    const user = userEvent.setup()
+    renderPanel()
+
+    await user.click(await screen.findByRole('button', { name: 'Move Scans up for Analyst' }))
+
+    expect(adminService.setRoleProfile).toHaveBeenCalledWith('analyst', ['scans', 'dashboard'])
+  })
+
+  it('cannot move the first module further up', async () => {
+    renderPanel()
+
+    expect(
+      await screen.findByRole('button', { name: 'Move Dashboard up for Analyst' })
+    ).toBeDisabled()
+  })
 })
