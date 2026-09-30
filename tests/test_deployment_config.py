@@ -182,6 +182,7 @@ NOT_DEPLOYMENT_SETTINGS = {"PROJECT_NAME", "API_V1_STR", "ALGORITHM", "SCAN_UPLO
 # un identifiant administrateur n'a rien à faire dans l'environnement des autres.
 ONLY_ON = {
     "web": {
+        "API_THREADS",
         "PREVIOUS_SECRET_KEYS",
         "BACKEND_CORS_ORIGINS",
         "RATE_LIMIT_ENABLED",
@@ -358,6 +359,36 @@ class TestStagingAndPromotion:
             services["backup"]["image"]
             == "registry.example.com/vigie/vigie-backup:v1.2.3"
         )
+
+
+class TestConnectionBudget:
+    """Chaque processus a son propre pool : les défauts de la pile doivent
+    tenir dans max_connections de PostgreSQL. Avant, 4 workers uvicorn × (10 +
+    20) pouvaient ouvrir 120 connexions pour 100 disponibles."""
+
+    # Défaut de l'image postgres, que la surcouche ne change pas.
+    POSTGRES_MAX_CONNECTIONS = 100
+    # superuser_reserved_connections, plus une marge pour l'exploitant (psql,
+    # restauration, sonde de supervision).
+    RESERVED = 3 + 5
+
+    def test_the_defaults_fit_postgres(self, prod_services):
+        from app.core.config import Settings
+
+        fields = Settings.model_fields
+        per_api_process = (
+            fields["DB_POOL_SIZE"].default + fields["DB_MAX_OVERFLOW"].default
+        )
+        web = " ".join(prod_services["web"]["command"])
+        worker = " ".join(prod_services["worker"]["command"])
+        api_processes = int(re.search(r"--workers (\d+)", web).group(1))
+        celery_children = int(re.search(r"--concurrency=(\d+)", worker).group(1))
+
+        assert "max_connections" not in json.dumps(prod_services["db"])
+        # Un enfant Celery exécute une tâche, donc une session, à la fois ; le
+        # beat, la sauvegarde et les migrations en prennent une chacun.
+        total = api_processes * per_api_process + celery_children + 3
+        assert total <= self.POSTGRES_MAX_CONNECTIONS - self.RESERVED, total
 
 
 class TestSettingsReachTheContainers:

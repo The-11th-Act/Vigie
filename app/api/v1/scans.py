@@ -39,7 +39,7 @@ MAX_LIMIT = 200
 
 
 @router.post("/upload", status_code=status.HTTP_202_ACCEPTED)
-async def upload_scan_file(
+def upload_scan_file(
     scan_type: str = Form(..., description="Type of scan: nessus or openvas"),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
@@ -67,7 +67,7 @@ async def upload_scan_file(
     # Written to a shared volume rather than passed through the broker: a 50 MB
     # report would otherwise be JSON-serialised into Redis in full.
     stored_path = _staged_path(file.filename)
-    written = await _stream_to_disk(file, stored_path, settings.MAX_SCAN_UPLOAD_BYTES)
+    written = _stream_to_disk(file, stored_path, settings.MAX_SCAN_UPLOAD_BYTES)
 
     if not written:
         _discard(stored_path)
@@ -200,13 +200,19 @@ def _staged_path(filename: str) -> str:
     return os.path.join(settings.SCAN_UPLOAD_DIR, f"{uuid.uuid4().hex}{ext}")
 
 
-async def _stream_to_disk(file: UploadFile, destination: str, max_bytes: int) -> int:
-    """Stream an upload to disk, aborting as soon as it exceeds ``max_bytes``."""
+def _stream_to_disk(file: UploadFile, destination: str, max_bytes: int) -> int:
+    """Stream an upload to disk, aborting as soon as it exceeds ``max_bytes``.
+
+    Synchronous on purpose, like the route: Starlette has already spooled the
+    body, and this copy, the commit and the broker call are blocking I/O. In an
+    ``async def`` route they froze the event loop, so every other request of
+    the process, the probes included, waited for the upload.
+    """
     total = 0
     try:
         with open(destination, "wb") as out:
             while True:
-                chunk = await file.read(CHUNK_SIZE)
+                chunk = file.file.read(CHUNK_SIZE)
                 if not chunk:
                     break
                 total += len(chunk)

@@ -32,7 +32,9 @@ pas d'image de production, pas de CI, pas de gestion de secrets, pas d'observabi
 
 ### 1.2 Faiblesses technologiques
 
-**T1 — Le driver DB est synchrone alors que l'API est async.**
+**T1 — Le driver DB est synchrone alors que l'API est async.** ✅ *traité le
+30/09/2026 : synchrone assumé, upload repassé en `def`, threadpool et pool réglables
+et cohérents, budget de connexions documenté et vérifié (`EXPLOITATION.md`).*
 `psycopg2-binary` + `create_engine` sync sous des routes `def` : chaque requête DB
 occupe un thread du threadpool Starlette (40 par défaut). Le pool SQLAlchemy est à
 `pool_size=10, max_overflow=20`, soit 30 connexions par process. Sous charge, la file

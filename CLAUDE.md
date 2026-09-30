@@ -62,6 +62,9 @@ gh run list --workflow CI --branch main --limit 1          # pas seulement --lim
 - Tout nouveau réglage de `Settings` doit être câblé dans `x-app-settings` de
   `docker-compose.yml` (sinon `test_deployment_config` échoue) ; un réglage
   métier mérite une vérification dans le test de la pile de production.
+- Jamais d'`async def` dans `app/` hors `main.py` : l'API est synchrone
+  (`tests/test_concurrency.py`). Un nouveau réglage de pool ou de threads
+  change le budget de connexions (`TestConnectionBudget`).
 - Pas de `container_name` ni de `name:` de volume figé (deux piles par hôte) ;
   tout service construit porte `image: …:${VIGIE_VERSION}` (promotion sans
   reconstruction). `TestStagingAndPromotion` le vérifie.
@@ -101,8 +104,9 @@ gh run list --workflow CI --branch main --limit 1          # pas seulement --lim
 
 1. ~~Préproduction (D11)~~ fait le 30/09/2026 : `docs/PREPRODUCTION.md`.
    Reste le bandeau « préproduction » dans l'interface.
-2. Trancher la concurrence de l'API (T1 : synchrone assumé ou async) et
-   documenter `workers × threads × pool_size` ; `mypy`.
+2. ~~T1~~ fait le 30/09/2026 : synchrone assumé (`docs/EXPLOITATION.md`).
+   Reste : métriques Prometheus en mode multiprocessus (4 workers uvicorn,
+   chaque scrape ne voit qu'un processus) ; `mypy`.
 3. TanStack Query côté frontend ; groupes d'assets et filtrage par périmètre.
 4. **Plus tard, à la demande de l'utilisateur** : connecteur de ticketing
    (Jira, ServiceNow ou GLPI, à lui faire choisir) sur les champs

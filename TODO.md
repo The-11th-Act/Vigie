@@ -321,8 +321,19 @@ Driver `psycopg2` synchrone sous une API async : chaque requête DB occupe un th
 threadpool Starlette, et la file d'attente devient invisible. `docker-compose.prod.yml`
 expose `UVICORN_WORKERS`, mais le lien avec `pool_size` n'est pas documenté.
 
-- [ ] Trancher : full-sync assumé (le plus simple) ou `asyncpg` + `AsyncSession`
-- [ ] Documenter le dimensionnement `workers × threads × pool_size`
+- [x] Trancher : full-sync assumé (le plus simple) ou `asyncpg` + `AsyncSession`
+      *(30/09/2026 : synchrone assumé. L'upload de scan était la seule route
+      `async def` et figeait la boucle d'événements pendant la copie, le commit et
+      l'appel au broker : repassé en `def`, et un test refuse tout `async def` hors
+      `main.py`)*
+- [x] Documenter le dimensionnement `workers × threads × pool_size`
+      *(30/09/2026 : `API_THREADS`, `DB_POOL_SIZE`, `DB_MAX_OVERFLOW`,
+      `DB_POOL_TIMEOUT_SECONDS` ; démarrage refusé si les threads dépassent le pool ;
+      budget de connexions dans `docs/EXPLOITATION.md`, recalculé par les tests.
+      L'ancien pool figé, 4 × (10 + 20) = 120 connexions, dépassait les 100 de
+      PostgreSQL)*
+- [ ] Métriques Prometheus justes avec plusieurs workers uvicorn (mode
+      multiprocessus), plus l'occupation des threads et du pool
 
 ### T5 (suite). Frontend
 - [ ] TanStack Query en remplacement de `useFetch` (cache, déduplication, invalidation)

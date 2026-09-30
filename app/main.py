@@ -3,6 +3,7 @@ import time
 import uuid
 from contextlib import asynccontextmanager
 
+from anyio import to_thread
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
@@ -39,6 +40,17 @@ logger = logging.getLogger(__name__)
 REQUEST_ID_HEADER = "X-Request-ID"
 
 
+def configure_threadpool() -> None:
+    """Run at most API_THREADS requests at once in this process.
+
+    Every route is a plain ``def``: Starlette runs it in anyio's threadpool
+    (40 threads by default), where it holds a database connection. Capping the
+    threads at what the pool can serve keeps waiting requests in the event
+    loop, measurable, instead of in threads blocked on the pool.
+    """
+    to_thread.current_default_thread_limiter().total_tokens = settings.API_THREADS
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     """Startup / shutdown hooks.
@@ -46,6 +58,7 @@ async def lifespan(_app: FastAPI):
     Replaces the deprecated ``@app.on_event("startup")``, which FastAPI warns
     about at import time and plans to remove.
     """
+    configure_threadpool()
     db = SessionLocal()
     try:
         bootstrap_admin_user(db)

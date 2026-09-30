@@ -159,6 +159,13 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm web \
 ```
 It is idempotent: run against an existing account, it promotes it instead of failing.
 
+**Concurrency and sizing**: the API is synchronous by choice. Every route is
+a plain `def` run in a thread, so concurrency comes from processes
+(`UVICORN_WORKERS`) and, in each, `API_THREADS` threads with a database pool
+that covers them (`DB_POOL_SIZE`, `DB_MAX_OVERFLOW`). The whole stack must fit
+PostgreSQL's `max_connections`; the formula, the defaults (67 of 100) and how
+to scale are in [`docs/EXPLOITATION.md`](docs/EXPLOITATION.md).
+
 **Staging and promotion**: staging is the same production overlay run from a
 second checkout, with its own `.env` (`COMPOSE_PROJECT_NAME=vigie-staging`,
 `FRONTEND_PORT=8081`) and its own `secrets/`. No container has a fixed name,

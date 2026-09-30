@@ -18,6 +18,9 @@ x-app-settings: &app-settings
   ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-}
   REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-}
   MAX_SCAN_UPLOAD_BYTES: ${MAX_SCAN_UPLOAD_BYTES:-}
+  DB_POOL_SIZE: ${DB_POOL_SIZE:-}
+  DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-}
+  DB_POOL_TIMEOUT_SECONDS: ${DB_POOL_TIMEOUT_SECONDS:-}
   CRITICALITY_RULES: ${CRITICALITY_RULES:-}
   INTERNET_FACING_SUBNETS: ${INTERNET_FACING_SUBNETS:-}
   OWNER_TEAM_RULES: ${OWNER_TEAM_RULES:-}
@@ -117,6 +120,8 @@ services:
       # Retired signing keys, still accepted to verify their tokens. Secret,
       # and only the API verifies tokens.
       PREVIOUS_SECRET_KEYS: ${PREVIOUS_SECRET_KEYS:-}
+      # Requests served at once by each API process (docs/EXPLOITATION.md).
+      API_THREADS: ${API_THREADS:-}
       # Login throttling only concerns the API.
       RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-}
       LOGIN_MAX_ATTEMPTS: ${LOGIN_MAX_ATTEMPTS:-}

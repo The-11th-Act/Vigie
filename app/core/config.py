@@ -115,6 +115,19 @@ class Settings(BaseSettings):
     # URLs stay plain configuration.
     DATABASE_PASSWORD: str | None = None
     REDIS_PASSWORD: str | None = None
+
+    # Concurrency is synchronous and process-based: every route is a plain
+    # `def` run in a thread, holding one database connection while it runs.
+    # Each API process serves at most API_THREADS requests at once and keeps
+    # DB_POOL_SIZE connections; DB_MAX_OVERFLOW is slack for a connection held
+    # past its thread (a download finishing). Across the stack, the total must
+    # fit PostgreSQL's max_connections: docs/EXPLOITATION.md, "Dimensionnement".
+    API_THREADS: int = Field(default=10, ge=1)
+    DB_POOL_SIZE: int = Field(default=10, ge=1)
+    DB_MAX_OVERFLOW: int = Field(default=5, ge=0)
+    # How long a request waits for a free connection before failing.
+    DB_POOL_TIMEOUT_SECONDS: int = Field(default=30, ge=1)
+
     BACKEND_CORS_ORIGINS: list[str] = [
         "http://localhost:5173",
         "http://localhost:3000",
@@ -280,6 +293,17 @@ class Settings(BaseSettings):
         if self.RISK_ACCEPTANCE_DEFAULT_DAYS > self.RISK_ACCEPTANCE_MAX_DAYS:
             raise ValueError(
                 "RISK_ACCEPTANCE_DEFAULT_DAYS cannot exceed RISK_ACCEPTANCE_MAX_DAYS"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def validate_pool_covers_threads(self) -> "Settings":
+        # Otherwise the extra threads wait on the pool, where no metric sees
+        # them, and fail after DB_POOL_TIMEOUT_SECONDS.
+        if self.API_THREADS > self.DB_POOL_SIZE + self.DB_MAX_OVERFLOW:
+            raise ValueError(
+                "API_THREADS cannot exceed DB_POOL_SIZE + DB_MAX_OVERFLOW: every "
+                "request thread may need a database connection."
             )
         return self
 
