@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { scanService } from '../services';
 import ScanHistory from './ScanHistory';
 import { UploadCloud, FileText, CheckCircle, Loader, AlertCircle } from 'lucide-react';
@@ -15,7 +16,7 @@ export default function ScanUpload() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [polling, setPolling] = useState(false);
-  const [historyToken, setHistoryToken] = useState(0);
+  const queryClient = useQueryClient();
 
   const handleFileChange = (e) => {
     setFile(e.target.files[0]);
@@ -40,12 +41,12 @@ export default function ScanUpload() {
           clearInterval(interval);
           setPolling(false);
           setResult({ state: 'SUCCESS', data: job });
-          setHistoryToken((token) => token + 1);
+          queryClient.invalidateQueries({ queryKey: ['scans'] });
         } else if (job.status === 'Failed') {
           clearInterval(interval);
           setPolling(false);
           setResult({ state: 'FAILURE', data: job });
-          setHistoryToken((token) => token + 1);
+          queryClient.invalidateQueries({ queryKey: ['scans'] });
         } else if (attempts >= maxAttempts) {
           clearInterval(interval);
           setPolling(false);
@@ -57,7 +58,7 @@ export default function ScanUpload() {
         setError('Failed to check task status');
       }
     }, 2000);
-  }, []);
+  }, [queryClient]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -197,7 +198,7 @@ export default function ScanUpload() {
         )}
       </div>
 
-      <ScanHistory refreshToken={historyToken} />
+      <ScanHistory />
     </div>
   );
 }

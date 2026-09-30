@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor } from '../test/render'
 
 import InstanceBanner from './InstanceBanner'
 import { instanceService } from '../services'

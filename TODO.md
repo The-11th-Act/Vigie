@@ -348,7 +348,11 @@ expose `UVICORN_WORKERS`, mais le lien avec `pool_size` n'est pas documenté.
       pile réelle)*
 
 ### T5 (suite). Frontend
-- [ ] TanStack Query en remplacement de `useFetch` (cache, déduplication, invalidation)
+- [x] TanStack Query en remplacement de `useFetch` (cache, déduplication, invalidation)
+      *(30/09/2026 : `useApiQuery`, clés par domaine (`findings`, `remediation`…) ;
+      un écran rouvert affiche aussitôt son cache et le rafraîchit ; une mise à jour
+      de ticket invalide tout `remediation` ; cache vidé à la déconnexion, sans quoi
+      le compte suivant voyait un instant les données du précédent)*
 - [x] Dépendances du `useCallback` de `useFetch` corrigées *(items 5-18, point 15)*
 - [x] ESLint + Prettier, Vitest + Testing Library, branchés en CI *(items 5-18, point 15)*
 
@@ -492,7 +496,7 @@ Les parseurs jetaient tout ce que les scanners disent du correctif. Les fichiers
 ## 0. Remise à plat
 - [x] Trier les PR Dependabot : regroupées en commits cohérents (bcrypt 5 sans passlib, React 19, Vite 8, vitest 5, node 26, nginx 1.31, Redis 8, black 26, ruff 0.16) ; postgres 18 bien ignoré, pydantic-core exclu *(30/09/2026)*
 - [x] `.gitattributes` *(30/09/2026)*
-- [ ] TanStack Query en remplacement de `useFetch` (T5), socle des nouveaux écrans
+- [x] TanStack Query en remplacement de `useFetch` (T5), socle des nouveaux écrans *(30/09/2026)*
 
 ## ✅ 2. Socle modulaire
 

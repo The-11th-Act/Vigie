@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { assetService } from '../services';
-import { useFetch } from '../hooks/useFetch';
+import { useApiQuery } from '../hooks/useApiQuery';
 import { useAuth } from '../auth/AuthContext';
 import { Search, ChevronLeft, ChevronRight, Plus, Pencil, Trash2 } from 'lucide-react';
 
@@ -67,16 +67,17 @@ export default function AssetsList() {
     return () => clearTimeout(searchTimer.current);
   }, [search]);
 
-  const fetchAssets = useCallback(async () => {
-    const res = await assetService.list({
-      skip: page * PAGE_SIZE,
-      limit: PAGE_SIZE,
-      search: debouncedSearch || undefined,
-    });
-    return res.data;
-  }, [page, debouncedSearch]);
-
-  const { data, loading, error, refetch } = useFetch(fetchAssets, [page, debouncedSearch]);
+  const { data, loading, error, refetch } = useApiQuery(
+    ['assets', 'list', { page, search: debouncedSearch }],
+    async () => {
+      const res = await assetService.list({
+        skip: page * PAGE_SIZE,
+        limit: PAGE_SIZE,
+        search: debouncedSearch || undefined,
+      });
+      return res.data;
+    }
+  );
 
   const totalPages = data ? Math.ceil(data.total / PAGE_SIZE) : 0;
 

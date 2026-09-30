@@ -3,7 +3,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import App from './App'
-import { authService, meService } from './services'
+import { authService, dashboardService, meService } from './services'
 
 // Screens only need to mount: their data never arrives.
 const pending = () => new Promise(() => {})
@@ -24,6 +24,26 @@ vi.mock('./services', () => ({
   adminService: { getModules: vi.fn(() => pending()) },
   userService: { list: vi.fn(() => pending()) },
 }))
+
+// Charts need a layout jsdom does not have (ResizeObserver): drawn as nothing.
+vi.mock('recharts', () => {
+  const Empty = () => null
+  return Object.fromEntries(
+    [
+      'Bar',
+      'BarChart',
+      'CartesianGrid',
+      'Cell',
+      'Legend',
+      'Line',
+      'LineChart',
+      'ResponsiveContainer',
+      'Tooltip',
+      'XAxis',
+      'YAxis',
+    ].map((name) => [name, Empty])
+  )
+})
 
 function signedInWith(modules) {
   authService.getMe.mockResolvedValue({ data: { username: 'alice', role: 'remediator' } })
@@ -111,6 +131,43 @@ describe('App shell', () => {
 
     expect(authService.logout).toHaveBeenCalled()
     await waitFor(() => expect(window.location.pathname).toBe('/login'))
+  })
+
+  it('forgets what the previous session loaded when signing out', async () => {
+    // Alice's dashboard, cached by TanStack Query while she is signed in. An
+    // analyst: the dashboard opens on the posture figures.
+    authService.getMe.mockResolvedValue({ data: { username: 'alice', role: 'analyst' } })
+    meService.getModules.mockResolvedValue({
+      data: { role: 'analyst', modules: [{ key: 'dashboard', label: 'Dashboard', hidden: false }] },
+    })
+    dashboardService.getStats.mockResolvedValueOnce({
+      data: {
+        total_assets: 777,
+        total_open_vulnerabilities: 0,
+        severity_breakdown: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+        overdue_count: 0,
+        average_cvss: 0,
+        kev_open_count: 0,
+        kev_overdue_count: 0,
+        threat_intel: { enabled: false, feeds: [] },
+      },
+    })
+    authService.logout.mockResolvedValue({})
+    const user = userEvent.setup()
+    renderAt('/dashboard')
+    expect(await screen.findByText('777')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /log out/i }))
+    await waitFor(() => expect(window.location.pathname).toBe('/login'))
+
+    // Bob signs in on the same browser; his figures are still on their way.
+    authService.login.mockResolvedValue({ data: { username: 'bob', role: 'analyst' } })
+    await user.type(screen.getByLabelText('Username'), 'bob')
+    await user.type(screen.getByLabelText('Password'), 'secret')
+    await user.click(screen.getByRole('button', { name: /sign in/i }))
+
+    expect(await screen.findByText(/loading dashboard/i)).toBeInTheDocument()
+    expect(screen.queryByText('777')).not.toBeInTheDocument()
   })
 
   it('says so when the modules cannot be loaded', async () => {

@@ -1,6 +1,6 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState } from 'react';
 import { vulnerabilityService } from '../services';
-import { useFetch } from '../hooks/useFetch';
+import { useApiQuery } from '../hooks/useApiQuery';
 import { useAuth } from '../auth/AuthContext';
 import { ChevronLeft, ChevronRight, Download } from 'lucide-react';
 
@@ -119,18 +119,6 @@ export default function FindingsBacklog() {
     min_epss: minEpss || undefined,
   };
 
-  const fetchFindings = useCallback(async () => {
-    const res = await vulnerabilityService.getFindings({
-      skip: page * PAGE_SIZE,
-      limit: PAGE_SIZE,
-      status_filter: statusFilter || undefined,
-      min_risk: minRisk || undefined,
-      overdue_only: overdueOnly || undefined,
-      kev_only: kevOnly || undefined,
-      min_epss: minEpss || undefined,
-    });
-    return res.data;
-  }, [page, statusFilter, minRisk, overdueOnly, kevOnly, minEpss]);
 
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState(null);
@@ -153,14 +141,12 @@ export default function FindingsBacklog() {
     }
   };
 
-  const { data, loading, error, refetch } = useFetch(fetchFindings, [
-    page,
-    statusFilter,
-    minRisk,
-    overdueOnly,
-    kevOnly,
-    minEpss,
-  ]);
+  const { data, loading, error, refetch } = useApiQuery(
+    ['findings', 'backlog', { page, ...filterParams }],
+    async () =>
+      (await vulnerabilityService.getFindings({ skip: page * PAGE_SIZE, limit: PAGE_SIZE, ...filterParams }))
+        .data
+  );
 
   const totalPages = data ? Math.ceil(data.total / PAGE_SIZE) : 0;
 

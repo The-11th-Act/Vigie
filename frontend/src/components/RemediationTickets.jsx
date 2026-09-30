@@ -1,7 +1,8 @@
-import React, { useCallback, useState } from 'react';
+import React, { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { ChevronDown, ChevronUp, Download, ExternalLink } from 'lucide-react';
 import { remediationService } from '../services';
-import { useFetch } from '../hooks/useFetch';
+import { useApiQuery } from '../hooks/useApiQuery';
 import { useAuth } from '../auth/AuthContext';
 import {
   FixLabel,
@@ -35,10 +36,13 @@ function errorText(err) {
   return err.response?.data?.detail || err.message || 'The change was refused';
 }
 
-function TicketDetail({ ticketId, onChanged }) {
+function TicketDetail({ ticketId }) {
   const role = useAuth().user?.role;
-  const fetchTicket = useCallback(async () => (await remediationService.getTicket(ticketId)).data, [ticketId]);
-  const { data, loading, error, refetch } = useFetch(fetchTicket, [ticketId]);
+  const queryClient = useQueryClient();
+  const { data, loading, error } = useApiQuery(
+    ['remediation', 'ticket', ticketId],
+    async () => (await remediationService.getTicket(ticketId)).data
+  );
   const [draft, setDraft] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
@@ -70,8 +74,8 @@ function TicketDetail({ ticketId, onChanged }) {
         external_url: form.external_url,
       });
       setDraft(null);
-      refetch();
-      onChanged();
+      // This ticket, the ticket list and the fixes it counts in.
+      queryClient.invalidateQueries({ queryKey: ['remediation'] });
     } catch (err) {
       setSaveError(errorText(err));
     } finally {
@@ -195,18 +199,22 @@ export default function RemediationTickets() {
   const [team, setTeam] = useState('');
   const [openId, setOpenId] = useState(null);
 
-  const fetchTeams = useCallback(async () => (await remediationService.listTeams()).data.teams, []);
-  const { data: teams } = useFetch(fetchTeams, []);
+  const { data: teams } = useApiQuery(
+    ['remediation', 'teams'],
+    async () => (await remediationService.listTeams()).data.teams
+  );
 
-  const fetchTickets = useCallback(async () => {
-    const res = await remediationService.listTickets({
-      status,
-      owner_team: team || undefined,
-      limit: 200,
-    });
-    return res.data;
-  }, [status, team]);
-  const { data, loading, error, refetch } = useFetch(fetchTickets, [status, team]);
+  const { data, loading, error } = useApiQuery(
+    ['remediation', 'tickets', { status, team }],
+    async () => {
+      const res = await remediationService.listTickets({
+        status,
+        owner_team: team || undefined,
+        limit: 200,
+      });
+      return res.data;
+    }
+  );
 
   return (
     <div>
@@ -316,7 +324,7 @@ export default function RemediationTickets() {
                       {open && (
                         <tr>
                           <td colSpan={7}>
-                            <TicketDetail ticketId={ticket.id} onChanged={refetch} />
+                            <TicketDetail ticketId={ticket.id} />
                           </td>
                         </tr>
                       )}

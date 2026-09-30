@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, within } from '../test/render'
 
 import ScanHistory from './ScanHistory'
 import { scanService } from '../services'

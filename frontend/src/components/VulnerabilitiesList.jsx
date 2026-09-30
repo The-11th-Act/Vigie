@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { vulnerabilityService } from '../services';
-import { useFetch } from '../hooks/useFetch';
+import { useApiQuery } from '../hooks/useApiQuery';
 import { Search, ChevronLeft, ChevronRight } from 'lucide-react';
 
 const PAGE_SIZE = 20;
@@ -12,17 +12,18 @@ export default function VulnerabilitiesList() {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [severity, setSeverity] = useState('');
 
-  const fetchVulns = useCallback(async () => {
-    const res = await vulnerabilityService.list({
-      skip: page * PAGE_SIZE,
-      limit: PAGE_SIZE,
-      search: debouncedSearch || undefined,
-      severity: severity || undefined,
-    });
-    return res.data;
-  }, [page, debouncedSearch, severity]);
-
-  const { data, loading, error } = useFetch(fetchVulns, [page, debouncedSearch, severity]);
+  const { data, loading, error } = useApiQuery(
+    ['vulnerabilities', 'catalog', { page, search: debouncedSearch, severity }],
+    async () => {
+      const res = await vulnerabilityService.list({
+        skip: page * PAGE_SIZE,
+        limit: PAGE_SIZE,
+        search: debouncedSearch || undefined,
+        severity: severity || undefined,
+      });
+      return res.data;
+    }
+  );
 
   // Debounce held in a ref rather than on `window`: a module-level global was
   // shared with every other list and leaked its timer between components.

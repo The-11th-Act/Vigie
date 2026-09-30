@@ -1,10 +1,12 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Copy, Download, Eye, Save, Trash2 } from 'lucide-react';
 import { extractService } from '../services';
-import { useFetch } from '../hooks/useFetch';
+import { useApiQuery } from '../hooks/useApiQuery';
 import { controlStyle, download, formatDate, muted } from './RemediationShared';
 
 const EXPIRIES = [30, 90, 180, 365];
+const SAVED_KEY = ['extracts', 'saved'];
 
 function errorText(err) {
   return err.response?.data?.detail || err.message || 'The request failed';
@@ -271,9 +273,11 @@ function Builder({ datasets, onSaved }) {
   );
 }
 
-function SavedExtracts({ datasets, version }) {
-  const fetchSaved = useCallback(async () => (await extractService.listSaved()).data, []);
-  const { data, error, refetch } = useFetch(fetchSaved, [version]);
+function SavedExtracts({ datasets }) {
+  const { data, error, refetch } = useApiQuery(
+    SAVED_KEY,
+    async () => (await extractService.listSaved()).data
+  );
   const [actionError, setActionError] = useState(null);
   const labels = Object.fromEntries(datasets.map((d) => [d.key, d.label]));
 
@@ -350,8 +354,10 @@ function SavedExtracts({ datasets, version }) {
 }
 
 function Tokens() {
-  const fetchTokens = useCallback(async () => (await extractService.listTokens()).data, []);
-  const { data, error, refetch } = useFetch(fetchTokens, []);
+  const { data, error, refetch } = useApiQuery(
+    ['extracts', 'tokens'],
+    async () => (await extractService.listTokens()).data
+  );
   const [name, setName] = useState('');
   const [days, setDays] = useState(90);
   const [created, setCreated] = useState(null);
@@ -469,9 +475,11 @@ function Tokens() {
 }
 
 export default function Extracts() {
-  const fetchDatasets = useCallback(async () => (await extractService.datasets()).data, []);
-  const { data: datasets, loading, error } = useFetch(fetchDatasets, []);
-  const [savedVersion, setSavedVersion] = useState(0);
+  const queryClient = useQueryClient();
+  const { data: datasets, loading, error } = useApiQuery(
+    ['extracts', 'datasets'],
+    async () => (await extractService.datasets()).data
+  );
 
   return (
     <div>
@@ -485,11 +493,14 @@ export default function Extracts() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.75rem' }}>
           <section>
             <h2 style={{ fontSize: '1.1rem', marginBottom: '0.75rem' }}>Build an extract</h2>
-            <Builder datasets={datasets} onSaved={() => setSavedVersion((v) => v + 1)} />
+            <Builder
+              datasets={datasets}
+              onSaved={() => queryClient.invalidateQueries({ queryKey: SAVED_KEY })}
+            />
           </section>
           <section>
             <h2 style={{ fontSize: '1.1rem', marginBottom: '0.75rem' }}>Saved extracts</h2>
-            <SavedExtracts datasets={datasets} version={savedVersion} />
+            <SavedExtracts datasets={datasets} />
           </section>
           <section>
             <h2 style={{ fontSize: '1.1rem', marginBottom: '0.75rem' }}>Personal API tokens</h2>

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen } from '../test/render'
 import userEvent from '@testing-library/user-event'
 
 import Dashboard from './Dashboard'
@@ -89,7 +89,9 @@ describe('DashboardTrends', () => {
     const user = userEvent.setup()
     render(asRole('analyst', <DashboardTrends />))
 
-    await user.selectOptions(await screen.findByLabelText('Team'), 'Workplace')
+    // The teams come with the performance data: wait for the option.
+    await screen.findByRole('option', { name: 'Workplace' })
+    await user.selectOptions(screen.getByLabelText('Team'), 'Workplace')
 
     expect(dashboardService.getPerformance).toHaveBeenLastCalledWith({ days: 30, owner_team: 'Workplace' })
     expect(dashboardService.getTrends).toHaveBeenLastCalledWith({ days: 90, owner_team: 'Workplace' })

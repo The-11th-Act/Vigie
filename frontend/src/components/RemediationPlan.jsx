@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, ExternalLink, Search, Ticket } from 'lucide-react';
 import { remediationService } from '../services';
-import { useFetch } from '../hooks/useFetch';
+import { useApiQuery } from '../hooks/useApiQuery';
 import RemediationTickets from './RemediationTickets';
 import {
   FixLabel,
@@ -18,8 +18,10 @@ const PAGE_SIZE = 25;
 
 // The hosts still waiting for one fix, loaded when its row is opened.
 function ActionHosts({ actionId }) {
-  const fetchAction = useCallback(async () => (await remediationService.getAction(actionId)).data, [actionId]);
-  const { data, loading, error } = useFetch(fetchAction, [actionId]);
+  const { data, loading, error } = useApiQuery(
+    ['remediation', 'action', actionId],
+    async () => (await remediationService.getAction(actionId)).data
+  );
   const [exportError, setExportError] = useState(null);
 
   if (loading) return <div className="loading">Loading hosts...</div>;
@@ -78,18 +80,19 @@ function FixesView({ onTicketsCreated }) {
     return () => clearTimeout(searchTimer.current);
   }, [search]);
 
-  const fetchActions = useCallback(async () => {
-    const res = await remediationService.listActions({
-      skip: page * PAGE_SIZE,
-      limit: PAGE_SIZE,
-      kind: kind || undefined,
-      kev_only: kevOnly || undefined,
-      search: debouncedSearch || undefined,
-    });
-    return res.data;
-  }, [page, kind, kevOnly, debouncedSearch]);
-
-  const { data, loading, error, refetch } = useFetch(fetchActions, [page, kind, kevOnly, debouncedSearch]);
+  const { data, loading, error, refetch } = useApiQuery(
+    ['remediation', 'actions', { page, kind, kevOnly, search: debouncedSearch }],
+    async () => {
+      const res = await remediationService.listActions({
+        skip: page * PAGE_SIZE,
+        limit: PAGE_SIZE,
+        kind: kind || undefined,
+        kev_only: kevOnly || undefined,
+        search: debouncedSearch || undefined,
+      });
+      return res.data;
+    }
+  );
   const totalPages = data ? Math.ceil(data.total / PAGE_SIZE) : 0;
 
   const createTickets = async (item) => {

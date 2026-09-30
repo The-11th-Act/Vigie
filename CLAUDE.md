@@ -80,6 +80,13 @@ gh run list --workflow CI --branch main --limit 1          # pas seulement --lim
   fichier modifié (CRLF ou LF) ; les `.sh` et `deploy/backup/*` restent en LF.
 - Chrome piloté est peu fiable ici (captures qui expirent, clics perdus) :
   privilégier `find`/navigation par URL, et couvrir l'interaction par Vitest.
+- Données serveur : `useApiQuery(clé, fn)` (`src/hooks/useApiQuery.js`), clé
+  commençant par le domaine (`['remediation', 'tickets', {...}]`), filtres et
+  page dans la clé. Après une action, `invalidateQueries({ queryKey: [domaine] })`
+  pour ce qui est affiché sur le même écran (le reste se rafraîchit au montage).
+  Les tests d'écran importent `render` de `src/test/render.jsx` (client neuf,
+  sans nouvelle tentative) ; une option chargée par l'API s'attend avec
+  `findByRole('option', …)` avant `selectOptions`.
 - Recharts est remplacé par des composants vides dans les tests d'écran ;
   `Charts.test.jsx` monte les vrais graphiques. `lucide-react` est en 0.577 :
   vérifier qu'une icône existe (`node_modules/lucide-react/dist/lucide-react.d.ts`).
@@ -112,7 +119,8 @@ gh run list --workflow CI --branch main --limit 1          # pas seulement --lim
    Métriques en mode multiprocessus, compteur d'ingestion et `mypy` faits.
    Le worker n'expose aucune métrique : ce qu'il fait se mesure depuis la
    base, au scrape de l'API.
-3. TanStack Query côté frontend ; groupes d'assets et filtrage par périmètre.
+3. ~~TanStack Query~~ fait le 30/09/2026. Reste : groupes d'assets et
+   filtrage par périmètre (T7).
 4. **Plus tard, à la demande de l'utilisateur** : connecteur de ticketing
    (Jira, ServiceNow ou GLPI, à lui faire choisir) sur les champs
    `external_*` des tickets, et webhooks. Garder la conception ouverte.

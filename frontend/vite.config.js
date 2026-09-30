@@ -16,7 +16,7 @@ export default defineConfig({
       output: {
         // Module ids use forward slashes on every platform.
         manualChunks(id) {
-          if (/\/node_modules\/(react|react-dom|react-router|react-router-dom|scheduler)\//.test(id)) {
+          if (/\/node_modules\/(react|react-dom|react-router|react-router-dom|scheduler|@tanstack\/[^/]+)\//.test(id)) {
             return 'react'
           }
           if (/\/node_modules\/(recharts|recharts-scale|d3-[^/]+|victory-vendor)\//.test(id)) {

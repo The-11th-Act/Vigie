@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useState } from 'react';
 import {
   Bar,
   BarChart,
@@ -12,7 +12,7 @@ import {
   YAxis,
 } from 'recharts';
 import { dashboardService } from '../services';
-import { useFetch } from '../hooks/useFetch';
+import { useApiQuery } from '../hooks/useApiQuery';
 import { useAuth } from '../auth/AuthContext';
 import { controlStyle, muted } from './RemediationShared';
 
@@ -77,18 +77,16 @@ export default function DashboardTrends() {
   const [rebuilding, setRebuilding] = useState(false);
   const [rebuildError, setRebuildError] = useState(null);
 
-  const fetchPerformance = useCallback(
+  const { data: perf, loading, error } = useApiQuery(
+    ['dashboard', 'performance', { period, team }],
     async () =>
-      (await dashboardService.getPerformance({ days: period, owner_team: team || undefined })).data,
-    [period, team]
+      (await dashboardService.getPerformance({ days: period, owner_team: team || undefined })).data
   );
-  const fetchTrends = useCallback(
+  const { data: trends, refetch: refetchTrends } = useApiQuery(
+    ['dashboard', 'trends', { history, team }],
     async () =>
-      (await dashboardService.getTrends({ days: history, owner_team: team || undefined })).data,
-    [history, team]
+      (await dashboardService.getTrends({ days: history, owner_team: team || undefined })).data
   );
-  const { data: perf, loading, error } = useFetch(fetchPerformance, [period, team]);
-  const { data: trends, refetch: refetchTrends } = useFetch(fetchTrends, [history, team]);
 
   const rebuild = async () => {
     setRebuilding(true);

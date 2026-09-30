@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useFetch } from '../hooks/useFetch';
+import { useApiQuery } from '../hooks/useApiQuery';
 import { dashboardService } from '../services';
 import { useAuth } from '../auth/AuthContext';
 import DashboardTrends from './DashboardTrends';
@@ -16,8 +16,12 @@ function describeFeed(feed) {
 }
 
 function Posture() {
-  const { data: stats, loading, error } = useFetch(() => dashboardService.getStats().then(r => r.data));
-  const { data: topRisks, loading: topRisksLoading } = useFetch(() => dashboardService.getTopRisks(10).then(r => r.data));
+  const { data: stats, loading, error } = useApiQuery(['dashboard', 'stats'], () =>
+    dashboardService.getStats().then((r) => r.data)
+  );
+  const { data: topRisks, loading: topRisksLoading } = useApiQuery(['dashboard', 'top-risks', 10], () =>
+    dashboardService.getTopRisks(10).then((r) => r.data)
+  );
 
   if (loading) return <div className="loading">Loading dashboard...</div>;
   if (error) return <div className="error-message">Error: {error}</div>;

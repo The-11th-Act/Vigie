@@ -1,8 +1,11 @@
 import React, { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { RotateCcw } from 'lucide-react';
 import { adminService, userService } from '../services';
-import { useFetch } from '../hooks/useFetch';
+import { useApiQuery } from '../hooks/useApiQuery';
 import { useModules } from '../auth/ModulesContext';
+
+const MODULES_KEY = ['admin', 'modules'];
 
 const ROLE_LABELS = {
   admin: 'Administrator',
@@ -22,21 +25,22 @@ function errorText(err) {
 
 function ModulesSection() {
   const { refresh: refreshMyModules } = useModules();
-  const { data, loading, error } = useFetch(async () => (await adminService.getModules()).data, []);
-  const [overview, setOverview] = useState(null);
+  const queryClient = useQueryClient();
+  const { data: shown, loading, error } = useApiQuery(
+    MODULES_KEY,
+    async () => (await adminService.getModules()).data
+  );
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState(null);
 
-  const shown = overview || data;
-
-  // Every change answers with the whole overview; the admin's own sidebar
-  // may have changed with it.
+  // Every change answers with the whole overview, stored as the cached one;
+  // the admin's own sidebar may have changed with it.
   const apply = async (request) => {
     setBusy(true);
     setActionError(null);
     try {
       const res = await request();
-      setOverview(res.data);
+      queryClient.setQueryData(MODULES_KEY, res.data);
       refreshMyModules();
     } catch (err) {
       setActionError(errorText(err));
@@ -129,7 +133,10 @@ function ModulesSection() {
 
 function UsersSection() {
   const { refresh: refreshMyModules } = useModules();
-  const { data, loading, error, refetch } = useFetch(async () => (await userService.list()).data, []);
+  const { data, loading, error, refetch } = useApiQuery(
+    ['admin', 'users'],
+    async () => (await userService.list()).data
+  );
   const [rowError, setRowError] = useState({});
 
   const changeRole = async (user, role) => {

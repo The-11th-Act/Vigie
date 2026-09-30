@@ -1,6 +1,6 @@
-import React, { useCallback, useState } from 'react';
+import React, { useState } from 'react';
 import { categorizationService } from '../services';
-import { useFetch } from '../hooks/useFetch';
+import { useApiQuery } from '../hooks/useApiQuery';
 import { controlStyle, formatDate, muted } from './RemediationShared';
 
 const METRICS = {
@@ -15,10 +15,9 @@ function heat(value, max) {
   return `rgba(239, 68, 68, ${(0.08 + 0.55 * (value / max)).toFixed(3)})`;
 }
 
-// Plain values as inputs, not an object: a new object on every render would
-// make the fetch below run on every render.
 function CellFindings({ row, col, columns, kevOnly, rowLabel, colLabel, onClose }) {
-  const fetchCell = useCallback(
+  const { data, loading, error } = useApiQuery(
+    ['categorization', 'cell', { row, col, columns, kevOnly }],
     async () =>
       (
         await categorizationService.cellFindings({
@@ -28,10 +27,8 @@ function CellFindings({ row, col, columns, kevOnly, rowLabel, colLabel, onClose 
           value: col,
           limit: 100,
         })
-      ).data,
-    [row, col, columns, kevOnly]
+      ).data
   );
-  const { data, loading, error } = useFetch(fetchCell, [row, col, columns, kevOnly]);
 
   return (
     <div className="glass-panel" style={{ marginTop: '1.25rem' }}>
@@ -104,11 +101,10 @@ export default function Categorization() {
   const [kevOnly, setKevOnly] = useState(false);
   const [selected, setSelected] = useState(null);
 
-  const fetchMatrix = useCallback(
-    async () => (await categorizationService.matrix({ columns, kev_only: kevOnly || undefined })).data,
-    [columns, kevOnly]
+  const { data, loading, error } = useApiQuery(
+    ['categorization', 'matrix', { columns, kevOnly }],
+    async () => (await categorizationService.matrix({ columns, kev_only: kevOnly || undefined })).data
   );
-  const { data, loading, error } = useFetch(fetchMatrix, [columns, kevOnly]);
 
   const cells = {};
   let max = 0;

@@ -79,7 +79,8 @@ au lieu de `npm ci` dans le Dockerfile, pas de gestion d'état serveur (chaque c
 refetch via `useFetch`, pas de cache ni de déduplication). `useFetch` prend `deps` mais
 `fetchFn` n'est pas dans le tableau de dépendances de `useCallback` : un appelant qui ne
 mémoïse pas sa fonction déclenche une boucle de refetch. C'est un piège latent.
-→ *TanStack Query supprimerait `useFetch` et le problème avec.*
+→ *TanStack Query supprimerait `useFetch` et le problème avec.* ✅ *fait le 30/09/2026 :
+`useFetch` supprimé, `useApiQuery` sur TanStack Query.*
 
 **T6 — Le token JWT est stocké dans `localStorage`.**
 `services/api.js:9` : lisible par n'importe quel script injecté. Pour une plateforme de

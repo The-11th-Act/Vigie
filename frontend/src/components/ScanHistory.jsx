@@ -1,6 +1,6 @@
-import React, { useCallback } from 'react';
+import React from 'react';
 import { scanService } from '../services';
-import { useFetch } from '../hooks/useFetch';
+import { useApiQuery } from '../hooks/useApiQuery';
 
 const HISTORY_SIZE = 10;
 
@@ -19,16 +19,14 @@ function formatDateTime(value) {
 /**
  * The last scans the user uploaded (every scan, for an admin).
  *
- * `refreshToken` is bumped by the upload form once a scan finishes, so the new
- * row shows up without a page reload.
+ * The upload form invalidates ["scans"] once a scan finishes, so the new row
+ * shows up without a page reload.
  */
-export default function ScanHistory({ refreshToken = 0 }) {
-  const fetchScans = useCallback(async () => {
-    const res = await scanService.list({ limit: HISTORY_SIZE });
-    return res.data;
-  }, []);
-
-  const { data, loading, error } = useFetch(fetchScans, [refreshToken]);
+export default function ScanHistory() {
+  const { data, loading, error } = useApiQuery(
+    ['scans', 'history', HISTORY_SIZE],
+    async () => (await scanService.list({ limit: HISTORY_SIZE })).data
+  );
 
   return (
     <div style={{ marginTop: '2rem' }}>

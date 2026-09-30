@@ -1,4 +1,5 @@
-import React from 'react'
+import React, { useState } from 'react'
+import { QueryClientProvider, useQueryClient } from '@tanstack/react-query'
 import { BrowserRouter, Routes, Route, NavLink, Navigate, useNavigate } from 'react-router-dom'
 import { LogOut, SlidersHorizontal } from 'lucide-react'
 import InstanceBanner from './components/InstanceBanner'
@@ -8,16 +9,21 @@ import ProtectedRoute from './components/ProtectedRoute'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 import { ModulesProvider, useModules } from './auth/ModulesContext'
 import { MODULE_SCREENS, PREFERENCES_PATH, homePath, knownModules } from './modules'
+import { createQueryClient } from './queryClient'
 
 const navClass = ({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')
 
 function Sidebar({ modules }) {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const { user, logout } = useAuth()
   const username = user?.username
 
   const handleLogout = async () => {
     await logout()
+    // The next person to sign in on this browser must not see, even for an
+    // instant, what this session had loaded.
+    queryClient.clear()
     navigate('/login')
   }
 
@@ -108,16 +114,19 @@ function AuthenticatedLayout() {
 }
 
 function App() {
+  const [queryClient] = useState(createQueryClient)
   return (
-    <BrowserRouter>
-      <InstanceBanner />
-      <AuthProvider>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/*" element={<AuthenticatedLayout />} />
-        </Routes>
-      </AuthProvider>
-    </BrowserRouter>
+    <QueryClientProvider client={queryClient}>
+      <BrowserRouter>
+        <InstanceBanner />
+        <AuthProvider>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route path="/*" element={<AuthenticatedLayout />} />
+          </Routes>
+        </AuthProvider>
+      </BrowserRouter>
+    </QueryClientProvider>
   )
 }
 

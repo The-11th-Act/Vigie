@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor } from '../test/render'
 import userEvent from '@testing-library/user-event'
 
 import RemediationPlan from './RemediationPlan'
@@ -131,7 +131,9 @@ describe('RemediationTickets', () => {
     const user = userEvent.setup()
     render(withRole('analyst', <RemediationTickets />))
 
-    await user.selectOptions(await screen.findByLabelText('Team filter'), 'Workplace')
+    // The teams are loaded from the API: wait for the option.
+    await screen.findByRole('option', { name: 'Workplace' })
+    await user.selectOptions(screen.getByLabelText('Team filter'), 'Workplace')
 
     expect(remediationService.listTickets).toHaveBeenLastCalledWith(
       expect.objectContaining({ owner_team: 'Workplace' })
@@ -147,6 +149,8 @@ describe('RemediationTickets', () => {
     await user.click(await screen.findByRole('button', { name: /open ticket/i }))
     await user.selectOptions(await screen.findByLabelText('Ticket status'), 'deployed')
     await user.type(screen.getByLabelText('Ticket note'), 'Wave 1 pushed.')
+    const listed = remediationService.listTickets.mock.calls.length
+    const opened = remediationService.getTicket.mock.calls.length
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() =>
@@ -155,6 +159,9 @@ describe('RemediationTickets', () => {
         expect.objectContaining({ status: 'deployed', note: 'Wave 1 pushed.' })
       )
     )
+    // One invalidation of ["remediation"]: the ticket and the list reload.
+    await waitFor(() => expect(remediationService.listTickets.mock.calls.length).toBeGreaterThan(listed))
+    await waitFor(() => expect(remediationService.getTicket.mock.calls.length).toBeGreaterThan(opened))
   })
 
   it('does not offer a remediator to cancel', async () => {

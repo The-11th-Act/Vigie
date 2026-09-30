@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen } from '../test/render'
 import userEvent from '@testing-library/user-event'
 
 import Categorization from './Categorization'
@@ -67,7 +67,9 @@ describe('Categorization', () => {
     const user = userEvent.setup()
     render(<Categorization />)
 
-    await user.selectOptions(await screen.findByLabelText('Host dimension'), 'environment')
+    // The dimensions come with the matrix: wait for the option, as a user would.
+    await screen.findByRole('option', { name: 'Environment' })
+    await user.selectOptions(screen.getByLabelText('Host dimension'), 'environment')
 
     expect(categorizationService.matrix).toHaveBeenLastCalledWith(
       expect.objectContaining({ columns: 'environment' })

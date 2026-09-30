@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen } from '../test/render'
 
 import DashboardTrends from './DashboardTrends'
 import { dashboardService } from '../services'
