@@ -68,7 +68,7 @@ jobs:
           - 5432:5432
 
       redis:
-        image: redis:7-alpine
+        image: redis:8-alpine
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 5s
@@ -312,7 +312,7 @@ jobs:
           docker run -d --name pg --network vigie-ci \
             -e POSTGRES_USER=vigie_ci -e POSTGRES_PASSWORD=vigie_ci -e POSTGRES_DB=vigie_ci \
             postgres:15-alpine
-          docker run -d --name rd --network vigie-ci redis:7-alpine
+          docker run -d --name rd --network vigie-ci redis:8-alpine
 
           # Attendre que Postgres accepte les connexions.
           for _ in $(seq 1 30); do
