@@ -80,6 +80,11 @@ INSECURE_SECRET_KEYS = {
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Vigie"
     API_V1_STR: str = "/api/v1"
+    # Shown on every screen, sign-in included, and in the tab title: a staging
+    # restored from production looks exactly like it otherwise, down to the
+    # accounts. Empty in production. Served by the API, not built into the
+    # frontend: staging and production run the same image.
+    INSTANCE_BANNER: str | None = Field(default=None, max_length=80)
     # development | production. Staging runs as production, so that it tests
     # what production does: any other value tolerates a weak SECRET_KEY and
     # serves /docs. docs/PREPRODUCTION.md.

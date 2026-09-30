@@ -371,8 +371,11 @@ un admin ne prend effet qu'à l'expiration. Aucun cloisonnement par périmètre.
       `up --no-build --pull never`, via un registre sur deux hôtes ; répétition des
       migrations sur une copie de la production ; retour arrière avec ou sans
       migration)*
-- [ ] Distinguer la préproduction dans l'interface (bandeau), utile dès qu'elle
-      reçoit une copie des données de production
+- [x] Distinguer la préproduction dans l'interface (bandeau), utile dès qu'elle
+      reçoit une copie des données de production *(30/09/2026 : `INSTANCE_BANNER`,
+      servi par une route publique de l'API (`/api/v1/instance`) plutôt que figé au
+      build, puisque les deux environnements partagent l'image du frontend ; sur
+      chaque écran, connexion comprise, et dans le titre de l'onglet)*
 
 ### Nettoyage restant
 - [x] Harmoniser le nom du produit : `PROJECT_NAME`, conteneurs `vigie_*`,

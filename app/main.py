@@ -211,6 +211,16 @@ def read_root():
     return {"status": "online", "project": settings.PROJECT_NAME, "docs": "/docs"}
 
 
+@app.get(f"{settings.API_V1_STR}/instance", tags=["Health"])
+def instance():
+    """What the web app shows about this deployment, before anyone signs in.
+
+    Public on purpose: the sign-in screen is where a staging environment must
+    be told apart from production, before production passwords are typed.
+    """
+    return {"banner": settings.INSTANCE_BANNER or None}
+
+
 @app.get("/health", tags=["Health"])
 def health_check():
     """Liveness only: is this process running and able to answer?

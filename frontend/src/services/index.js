@@ -18,6 +18,13 @@ export const authService = {
     api.post('/auth/logout'),
 }
 
+// Public: read before sign-in, so a staging environment shows as such on the
+// sign-in screen too.
+export const instanceService = {
+  get: () =>
+    api.get('/instance', { skipLoginRedirect: true }),
+}
+
 export const dashboardService = {
   getStats: () =>
     api.get('/dashboard/stats'),

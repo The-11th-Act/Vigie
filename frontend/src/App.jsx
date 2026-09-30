@@ -1,6 +1,7 @@
 import React from 'react'
 import { BrowserRouter, Routes, Route, NavLink, Navigate, useNavigate } from 'react-router-dom'
 import { LogOut, SlidersHorizontal } from 'lucide-react'
+import InstanceBanner from './components/InstanceBanner'
 import Login from './components/Login'
 import Preferences from './components/Preferences'
 import ProtectedRoute from './components/ProtectedRoute'
@@ -109,6 +110,7 @@ function AuthenticatedLayout() {
 function App() {
   return (
     <BrowserRouter>
+      <InstanceBanner />
       <AuthProvider>
         <Routes>
           <Route path="/login" element={<Login />} />

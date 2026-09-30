@@ -46,6 +46,7 @@ Ce qui doit différer entre les deux `.env` :
 | Réglage | Production | Préproduction | Pourquoi |
 |---|---|---|---|
 | `COMPOSE_PROJECT_NAME` | `vigie` | `vigie-staging` | Nomme conteneurs, réseau et volumes |
+| `INSTANCE_BANNER` | Vide | `Préproduction` | Bandeau sur chaque écran, connexion comprise, et dans le titre de l'onglet |
 | `FRONTEND_PORT` | `8080` | `8081` | Deux piles sur un hôte |
 | `secrets/` | Les siens | Les siens | Une fuite en préproduction ne doit pas permettre de signer un token de production |
 | `BACKEND_CORS_ORIGINS` | `https://vigie.example.com` | `https://vigie-staging.example.com` | Un nom d'hôte par environnement, derrière le terminateur TLS |
@@ -173,10 +174,11 @@ une version sans migration.
 
 ## Limites connues
 
-- Rien dans l'interface ne distingue la préproduction de la production, hormis
-  son nom d'hôte. Avec une copie des données de production, une décision prise
-  par erreur en préproduction (acceptation de risque) n'a aucun effet, mais
-  une décision qu'on croit avoir prise en production non plus.
+- Le bandeau (`INSTANCE_BANNER`) est la seule chose qui distingue les deux
+  interfaces : sans lui, avec une copie des données de production, une
+  décision qu'on croit prendre en production (acceptation de risque) n'est
+  prise qu'en préproduction. Le libellé vient de l'API et non du build, puisque
+  les deux environnements exécutent la même image du frontend.
 - Le futur connecteur de ticketing et les webhooks devront pouvoir viser un
   bac à sable en préproduction : une copie des tickets de production ne doit
   jamais écrire dans le Jira de production.

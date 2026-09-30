@@ -40,6 +40,21 @@ body {
   box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
 }
 
+/* A non-production deployment, named on every screen (InstanceBanner). */
+.instance-banner {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  padding: 0.4rem 1rem;
+  background: var(--high);
+  color: #111;
+  font-weight: 700;
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
 .app-container {
   display: flex;
   min-height: 100vh;

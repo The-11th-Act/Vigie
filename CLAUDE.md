@@ -105,8 +105,9 @@ gh run list --workflow CI --branch main --limit 1          # pas seulement --lim
 
 ## Suite prévue
 
-1. ~~Préproduction (D11)~~ fait le 30/09/2026 : `docs/PREPRODUCTION.md`.
-   Reste le bandeau « préproduction » dans l'interface.
+1. ~~Préproduction (D11)~~ fait le 30/09/2026, bandeau compris :
+   `docs/PREPRODUCTION.md`. Une valeur propre à un environnement vient de
+   l'API au lancement, jamais d'une variable `VITE_*` (image partagée).
 2. ~~T1~~ fait le 30/09/2026 : synchrone assumé (`docs/EXPLOITATION.md`).
    Métriques en mode multiprocessus, compteur d'ingestion et `mypy` faits.
    Le worker n'expose aucune métrique : ce qu'il fait se mesure depuis la

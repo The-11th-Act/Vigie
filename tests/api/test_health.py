@@ -19,6 +19,26 @@ class TestLiveness:
         assert response.json()["status"] == "healthy"
 
 
+class TestInstance:
+    """The staging banner is read before sign-in: a staging restored from
+    production looks exactly like it, accounts included."""
+
+    def test_no_banner_by_default(self, unauthenticated_client):
+        response = unauthenticated_client.get("/api/v1/instance")
+
+        assert response.status_code == 200
+        assert response.json() == {"banner": None}
+
+    def test_the_banner_is_public(self, unauthenticated_client, monkeypatch):
+        from app.core.config import settings
+
+        monkeypatch.setattr(settings, "INSTANCE_BANNER", "Préproduction")
+
+        response = unauthenticated_client.get("/api/v1/instance")
+
+        assert response.json() == {"banner": "Préproduction"}
+
+
 class TestReadiness:
     def _stub(self, monkeypatch, database="ok", redis="ok", celery="ok"):
         monkeypatch.setattr("app.main._check_database", lambda db: database)

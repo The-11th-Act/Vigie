@@ -9,6 +9,7 @@ import { authService, meService } from './services'
 const pending = () => new Promise(() => {})
 
 vi.mock('./services', () => ({
+  instanceService: { get: vi.fn(() => Promise.resolve({ data: { banner: null } })) },
   authService: { getMe: vi.fn(), login: vi.fn(), logout: vi.fn() },
   meService: { getModules: vi.fn(), updatePreferences: vi.fn() },
   dashboardService: { getStats: vi.fn(() => pending()), getTopRisks: vi.fn(() => pending()) },

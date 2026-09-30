@@ -86,6 +86,7 @@ ENVIRONMENT_RULES={"203.0.113.0/24":"production"}
 KEV_SLA_DAYS=7
 LOG_FORMAT=json
 THREAT_INTEL_ENABLED=true
+INSTANCE_BANNER=Smoke
 EOF
 
 # --- Clé de sauvegarde -----------------------------------------------------
@@ -122,6 +123,12 @@ echo "Construction et démarrage de la pile de production..."
 echo "Attente de l'API derrière Nginx..."
 wait_for_api
 echo "API saine (/ready, donc PostgreSQL, Redis et un worker)."
+
+# Le bandeau d'instance se lit avant toute connexion, à travers Nginx : c'est
+# sur l'écran de connexion qu'une préproduction doit se distinguer.
+BANNER=$(curl -fsS "$API/instance" | jq -r .banner) || fail "/instance inaccessible sans session"
+[ "$BANNER" = "Smoke" ] || fail "INSTANCE_BANNER n'atteint pas l'API (« $BANNER »)"
+echo "ok - bandeau d'instance lisible sans session, à travers Nginx"
 
 # --- Images de la version ---------------------------------------------------
 # La promotion (docs/PREPRODUCTION.md) repose sur une image par version :
