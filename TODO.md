@@ -426,8 +426,8 @@ lançait les images une par une. Le faire a révélé trois défauts, corrigés 
 - [x] Export CSV du backlog *(26/09/2026 : mêmes filtres que l'écran, formules
       neutralisées, écrit via un fichier temporaire)*
 - [ ] Webhooks
-- [ ] `.gitattributes` pour fixer les fins de ligne (le dépôt mélange CRLF et LF dans
-      l'arbre de travail ; à faire avec un `git add --renormalize` dédié)
+- [x] `.gitattributes` pour fixer les fins de ligne *(30/09/2026 : `* text=auto` ;
+      l'index était déjà en LF, la renormalisation n'a changé aucun fichier)*
 
 ---
 
@@ -454,8 +454,8 @@ Les parseurs jetaient tout ce que les scanners disent du correctif. Les fichiers
 - [ ] Remplacement des KB (supersedence) pour les sources qui ne donnent pas le KB par hôte : flux MSRC CVRF
 
 ## 0. Remise à plat
-- [ ] Trier les PR Dependabot ouvertes (vite 8, vitest 5, plugin-react 6, bcrypt 5, node 26, nginx 1.31 ; vérifier que postgres 18 est bien ignoré)
-- [ ] `.gitattributes` + `git add --renormalize` (voir « Plus tard »)
+- [x] Trier les PR Dependabot : regroupées en commits cohérents (bcrypt 5 sans passlib, React 19, Vite 8, vitest 5, node 26, nginx 1.31, Redis 8, black 26, ruff 0.16) ; postgres 18 bien ignoré, pydantic-core exclu *(30/09/2026)*
+- [x] `.gitattributes` *(30/09/2026)*
 - [ ] TanStack Query en remplacement de `useFetch` (T5), socle des nouveaux écrans
 
 ## ✅ 2. Socle modulaire
