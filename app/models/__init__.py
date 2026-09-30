@@ -6,7 +6,7 @@ from app.models.scan import ScanJob, ScanStatus
 from app.models.snapshot import BacklogSnapshot
 from app.models.threat_intel import EpssScoreEntry, KevCatalogEntry, ThreatFeedStatus
 from app.models.ticket import RemediationTicket, TicketAuditLog, TicketFinding
-from app.models.user import User
+from app.models.user import User, UserTeam
 from app.models.vulnerability import (
     AssetVulnerability,
     FindingAuditLog,
@@ -31,6 +31,7 @@ __all__ = [
     "TicketAuditLog",
     "TicketFinding",
     "User",
+    "UserTeam",
     "ScanJob",
     "BacklogSnapshot",
     "ScanStatus",

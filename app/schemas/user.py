@@ -1,3 +1,5 @@
+from typing import Annotated
+
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
 VALID_ROLES = {"admin", "analyst", "remediator"}
@@ -66,8 +68,19 @@ class UserResponse(BaseModel):
     email: str
     username: str
     role: str
+    # The teams whose hosts the user sees ("__none__": hosts without a team);
+    # empty: the whole estate.
+    teams: list[str] = []
 
     model_config = {"from_attributes": True}
+
+
+class UserTeamsUpdate(BaseModel):
+    """A user's scope; an empty list gives back the whole estate."""
+
+    teams: list[Annotated[str, Field(min_length=1, max_length=128)]] = Field(
+        default_factory=list, max_length=50
+    )
 
 
 class UserRoleUpdate(BaseModel):

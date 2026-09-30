@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.api_tokens import MAX_TOKENS_PER_USER, new_token
 from app.core.modules import current_user, module_access
+from app.core.scope import scope_of
 from app.db.database import get_db
 from app.models.extract import ApiToken, SavedExtract
 from app.models.user import User
@@ -51,8 +52,10 @@ def _invalid(exc: ValueError) -> HTTPException:
     )
 
 
-def _stream(db, dataset, columns, filters, fmt, limit=None) -> StreamingResponse:
-    chunks = extracts.run(db, dataset, columns, filters, fmt, limit)
+def _stream(db, user, dataset, columns, filters, fmt, limit=None) -> StreamingResponse:
+    # The rows of the user's scope, a personal token's pull included: the
+    # token acts as its owner.
+    chunks = extracts.run(db, dataset, columns, filters, fmt, scope_of(db, user), limit)
     return StreamingResponse(
         chunks,
         media_type=MEDIA_TYPES[fmt],
@@ -219,7 +222,7 @@ def run_saved(
         filters = extracts.parse_filters(dataset, saved.filters)
     except ValueError as exc:
         raise _invalid(exc) from None
-    return _stream(db, dataset, columns, filters, fmt)
+    return _stream(db, user, dataset, columns, filters, fmt)
 
 
 # --- one-off extract (declared last: its path would match the ones above) -----
@@ -248,4 +251,4 @@ def extract(
         filters = extracts.parse_filters(dataset, raw_filters)
     except ValueError as exc:
         raise _invalid(exc) from None
-    return _stream(db, dataset, chosen, filters, fmt, limit)
+    return _stream(db, user, dataset, chosen, filters, fmt, limit)

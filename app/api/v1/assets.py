@@ -2,9 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_or_404
+from app.api.deps import get_in_scope_or_404, get_or_404
 from app.core.modules import require_risk_decision
-from app.core.security import decode_token, require_admin
+from app.core.scope import Scope, current_scope
+from app.core.security import require_admin
 from app.db.database import get_db
 from app.models.asset import Asset, Criticality
 from app.models.vulnerability import AssetVulnerability
@@ -33,9 +34,9 @@ def get_assets(
     asset_type: str | None = Query(None, max_length=16),
     environment: str | None = Query(None, max_length=32),
     db: Session = Depends(get_db),
-    payload: dict = Depends(decode_token),
+    scope: Scope = Depends(current_scope),
 ):
-    query = db.query(Asset)
+    query = scope.filter(db.query(Asset))
 
     if search:
         pattern = f"%{search}%"
@@ -67,7 +68,7 @@ def get_assets(
 def create_asset(
     asset_in: AssetCreate,
     db: Session = Depends(get_db),
-    payload: dict = Depends(decode_token),
+    scope: Scope = Depends(current_scope),
 ):
     existing = db.query(Asset).filter(Asset.ip_address == asset_in.ip_address).first()
     if existing:
@@ -83,6 +84,7 @@ def create_asset(
         db_asset.asset_type = asset_type_for(db_asset.operating_system)
     if db_asset.environment is None:
         db_asset.environment = environment_for(db_asset.ip_address)
+    _require_team_in_scope(scope, db_asset.owner_team)
     db.add(db_asset)
     db.commit()
     db.refresh(db_asset)
@@ -93,9 +95,9 @@ def create_asset(
 def get_asset(
     asset_id: int,
     db: Session = Depends(get_db),
-    payload: dict = Depends(decode_token),
+    scope: Scope = Depends(current_scope),
 ):
-    return get_or_404(db, Asset, asset_id)
+    return get_in_scope_or_404(db, Asset, asset_id, scope, _team)
 
 
 @router.put(
@@ -107,10 +109,12 @@ def update_asset(
     asset_id: int,
     asset_in: AssetUpdate,
     db: Session = Depends(get_db),
-    payload: dict = Depends(decode_token),
+    scope: Scope = Depends(current_scope),
 ):
-    asset = get_or_404(db, Asset, asset_id)
+    asset = get_in_scope_or_404(db, Asset, asset_id, scope, _team)
     changes = asset_in.model_dump(exclude_unset=True)
+    if "owner_team" in changes:
+        _require_team_in_scope(scope, changes["owner_team"])
 
     for key, val in changes.items():
         setattr(asset, key, val)
@@ -134,3 +138,16 @@ def delete_asset(
     asset = get_or_404(db, Asset, asset_id)
     db.delete(asset)
     db.commit()
+
+
+def _team(asset: Asset) -> str | None:
+    return asset.owner_team
+
+
+def _require_team_in_scope(scope: Scope, team: str | None) -> None:
+    """A scoped user may not create a host for, or hand one to, another team."""
+    if not scope.allows(team):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This team is outside your scope",
+        )

@@ -24,6 +24,9 @@ class MyModulesResponse(BaseModel):
 
     role: str
     modules: list[ModuleEntry]
+    # The teams whose hosts this user sees ("__none__": hosts without a
+    # team); None: the whole estate.
+    teams: list[str] | None = None
 
 
 class PreferencesUpdate(BaseModel):

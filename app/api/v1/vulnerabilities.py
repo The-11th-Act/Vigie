@@ -6,12 +6,13 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, contains_eager, joinedload, selectinload
 
-from app.api.deps import get_or_404
+from app.api.deps import get_in_scope_or_404, get_or_404
 from app.core.config import settings
 from app.core.modules import ROLE_REMEDIATOR, require_module, require_risk_decision
+from app.core.scope import Scope, current_scope
 from app.core.security import decode_token, require_admin
 from app.db.database import get_db
-from app.models.asset import Criticality
+from app.models.asset import Asset, Criticality
 from app.models.remediation import FindingRemediation
 from app.models.user import User
 from app.models.vulnerability import (
@@ -60,9 +61,9 @@ def get_vulnerabilities(
     severity: Severity | None = None,
     min_cvss: float | None = Query(None, ge=0, le=10),
     db: Session = Depends(get_db),
-    payload: dict = Depends(decode_token),
+    scope: Scope = Depends(current_scope),
 ):
-    query = db.query(Vulnerability)
+    query = scope.filter_vulnerabilities(db, db.query(Vulnerability))
 
     if search:
         pattern = f"%{search}%"
@@ -96,8 +97,9 @@ def get_vulnerabilities(
 def create_vulnerability(
     vuln_in: VulnerabilityCreate,
     db: Session = Depends(get_db),
-    payload: dict = Depends(decode_token),
+    scope: Scope = Depends(current_scope),
 ):
+    scope.refuse_if_restricted("Editing the CVE catalogue")
     existing = (
         db.query(Vulnerability).filter(Vulnerability.cve_id == vuln_in.cve_id).first()
     )
@@ -123,7 +125,7 @@ def update_vulnerability(
     vulnerability_id: int,
     vuln_in: VulnerabilityUpdate,
     db: Session = Depends(get_db),
-    payload: dict = Depends(decode_token),
+    scope: Scope = Depends(current_scope),
 ):
     """Correct a vulnerability's metadata (a wrong score, a truncated title).
 
@@ -131,6 +133,8 @@ def update_vulnerability(
     derived from it, so leaving the old scores would silently misrank the
     backlog.
     """
+    # A CVE's score moves the risk of every team's findings.
+    scope.refuse_if_restricted("Editing the CVE catalogue")
     vuln = get_or_404(db, Vulnerability, vulnerability_id)
     changes = vuln_in.model_dump(exclude_unset=True)
 
@@ -207,7 +211,7 @@ def get_findings(
     limit: int = Query(100, ge=1, le=MAX_LIMIT),
     filters: FindingFilters = Depends(finding_filters),
     db: Session = Depends(get_db),
-    payload: dict = Depends(decode_token),
+    scope: Scope = Depends(current_scope),
 ):
     """The risk-ranked remediation backlog across every asset.
 
@@ -215,7 +219,7 @@ def get_findings(
     from. Without this endpoint the platform stored a risk score nobody could
     order by.
     """
-    query = findings_query(db, filters)
+    query = findings_query(db, filters, scope)
     total = query.count()
     items = query.order_by(*RISK_ORDER).offset(skip).limit(limit).all()
     return {"total": total, "items": items}
@@ -227,11 +231,11 @@ def get_findings(
 def export_findings(
     filters: FindingFilters = Depends(finding_filters),
     db: Session = Depends(get_db),
-    payload: dict = Depends(decode_token),
+    scope: Scope = Depends(current_scope),
 ):
     """The filtered backlog as CSV, worst first, every row: what gets pasted
     into a remediation ticket or a report, without scraping the screen."""
-    chunks = export_findings_csv(findings_query(db, filters).order_by(*RISK_ORDER))
+    chunks = export_findings_csv(findings_query(db, filters, scope).order_by(*RISK_ORDER))
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M")
     return StreamingResponse(
         chunks,
@@ -253,8 +257,9 @@ def get_asset_vulnerabilities(
     limit: int = Query(100, ge=1, le=MAX_LIMIT),
     status_filter: Status | None = None,
     db: Session = Depends(get_db),
-    payload: dict = Depends(decode_token),
+    scope: Scope = Depends(current_scope),
 ):
+    get_in_scope_or_404(db, Asset, asset_id, scope, lambda asset: asset.owner_team)
     # Eager loads avoid one extra SELECT per row for the nested vulnerability
     # and asset, both read by the response (risk_factors included).
     query = (
@@ -286,13 +291,14 @@ def update_finding_status(
     db: Session = Depends(get_db),
     payload: dict = Depends(decode_token),
     user: User = Depends(require_module("backlog")),
+    scope: Scope = Depends(current_scope),
 ):
     """Triage a finding: remediate it, accept the risk, or dismiss it."""
     if user.role == ROLE_REMEDIATOR and update_in.status in STATUSES_REQUIRING_NOTE:
         # Marking a fix done or undone is theirs; declaring the risk
         # acceptable or the finding false is the analysts' call.
         require_risk_decision(user)
-    finding = get_or_404(db, AssetVulnerability, finding_id)
+    finding = get_in_scope_or_404(db, AssetVulnerability, finding_id, scope, _team)
 
     if update_in.status in STATUSES_REQUIRING_NOTE and not update_in.status_note:
         raise HTTPException(
@@ -347,10 +353,10 @@ def update_finding_status(
 def get_finding_history(
     finding_id: int,
     db: Session = Depends(get_db),
-    payload: dict = Depends(decode_token),
+    scope: Scope = Depends(current_scope),
 ):
     """Who changed this finding's status, when, and with what justification."""
-    get_or_404(db, AssetVulnerability, finding_id)
+    get_in_scope_or_404(db, AssetVulnerability, finding_id, scope, _team)
 
     return (
         db.query(FindingAuditLog)
@@ -409,3 +415,7 @@ def _user_id(payload: dict) -> int | None:
         return int(payload["sub"])
     except (KeyError, TypeError, ValueError):
         return None
+
+
+def _team(finding: AssetVulnerability) -> str | None:
+    return finding.asset.owner_team

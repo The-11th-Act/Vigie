@@ -129,6 +129,10 @@ export const userService = {
 
   updateRole: (id, role) =>
     api.patch(`/users/${id}/role`, { role }),
+
+  // The teams whose hosts the user sees; [] gives back the whole estate.
+  updateTeams: (id, teams) =>
+    api.put(`/users/${id}/teams`, { teams }),
 }
 
 export const remediationService = {

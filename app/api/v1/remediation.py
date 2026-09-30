@@ -5,11 +5,12 @@ from fastapi.responses import Response
 from sqlalchemy import case, func
 from sqlalchemy.orm import Session, joinedload
 
-from app.api.deps import get_or_404
+from app.api.deps import get_in_scope_or_404, get_or_404
 from app.core.modules import current_user, require_risk_decision
+from app.core.scope import Scope, current_scope
 from app.db.database import get_db
 from app.models.asset import Asset
-from app.models.remediation import RemediationAction, RemediationKind
+from app.models.remediation import FindingRemediation, RemediationAction, RemediationKind
 from app.models.ticket import (
     ACTIVE_TICKET_STATUSES,
     RemediationTicket,
@@ -71,6 +72,7 @@ def list_actions(
     search: str | None = Query(None, max_length=128),
     kev_only: bool = False,
     db: Session = Depends(get_db),
+    scope: Scope = Depends(current_scope),
 ):
     """What to deploy, the fix removing the most open risk first.
 
@@ -80,26 +82,34 @@ def list_actions(
     filters = ActionFilters(
         kind=kind.value if kind else None, search=search or None, kev_only=kev_only
     )
-    total, items = action_summaries(db, filters, skip, limit)
-    tracked = tracked_counts(db, [item["action"].id for item in items])
+    total, items = action_summaries(db, filters, skip, limit, scope)
+    tracked = tracked_counts(db, [item["action"].id for item in items], scope)
     for item in items:
         item["tracked"] = tracked.get(item["action"].id, 0)
-    return {"total": total, "items": items, "unremediated": unremediated_summary(db)}
+    return {
+        "total": total,
+        "items": items,
+        "unremediated": unremediated_summary(db, scope),
+    }
 
 
 @router.get("/actions/{action_id}", response_model=ActionHostsResponse)
-def get_action(action_id: int, db: Session = Depends(get_db)):
+def get_action(
+    action_id: int, db: Session = Depends(get_db), scope: Scope = Depends(current_scope)
+):
     """A fix, its vendor solution, and every host still waiting for it."""
-    action = get_or_404(db, RemediationAction, action_id)
-    return {"action": action, "hosts": action_hosts(db, action.id)}
+    action = _action_in_scope(db, action_id, scope)
+    return {"action": action, "hosts": action_hosts(db, action.id, scope)}
 
 
 @router.get("/actions/{action_id}/hosts.csv", response_class=Response)
-def export_action_hosts(action_id: int, db: Session = Depends(get_db)):
+def export_action_hosts(
+    action_id: int, db: Session = Depends(get_db), scope: Scope = Depends(current_scope)
+):
     """The hosts to deploy the fix on, for a deployment tool or a ticket."""
-    action = get_or_404(db, RemediationAction, action_id)
+    action = _action_in_scope(db, action_id, scope)
     return _csv_response(
-        hosts_csv(action_hosts(db, action.id)), action.reference, "hosts"
+        hosts_csv(action_hosts(db, action.id, scope)), action.reference, "hosts"
     )
 
 
@@ -112,14 +122,15 @@ def create_action_tickets(
     action_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(current_user),
+    scope: Scope = Depends(current_scope),
 ):
     """Ticket the open findings of a fix, one ticket per team owning the hosts.
 
     Findings already in an active ticket are left there; a team that already
     has one for this fix gets the new findings added to it.
     """
-    action = get_or_404(db, RemediationAction, action_id)
-    created, added = create_tickets(db, action, user)
+    action = _action_in_scope(db, action_id, scope)
+    created, added = create_tickets(db, action, user, scope)
     if not created and not added:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -142,6 +153,7 @@ def list_tickets(
     owner_team: str | None = Query(None, max_length=128),
     action_id: int | None = None,
     db: Session = Depends(get_db),
+    scope: Scope = Depends(current_scope),
 ):
     """Tickets, the one with the most open risk left first."""
     open_risk = (
@@ -168,6 +180,7 @@ def list_tickets(
             joinedload(RemediationTicket.action), joinedload(RemediationTicket.creator)
         )
     )
+    query = scope.filter(query, RemediationTicket.owner_team)
     if ticket_status in (None, "active"):
         query = query.filter(RemediationTicket.status.in_(ACTIVE_TICKET_STATUSES))
     elif ticket_status != "all":
@@ -198,9 +211,11 @@ def list_tickets(
 
 
 @router.get("/tickets/{ticket_id}", response_model=TicketDetailResponse)
-def get_ticket(ticket_id: int, db: Session = Depends(get_db)):
+def get_ticket(
+    ticket_id: int, db: Session = Depends(get_db), scope: Scope = Depends(current_scope)
+):
     """A ticket, the hosts it still waits on, and its history."""
-    ticket = get_or_404(db, RemediationTicket, ticket_id)
+    ticket = get_in_scope_or_404(db, RemediationTicket, ticket_id, scope, _team)
     history = (
         db.query(TicketAuditLog)
         .filter(TicketAuditLog.ticket_id == ticket.id)
@@ -210,16 +225,20 @@ def get_ticket(ticket_id: int, db: Session = Depends(get_db)):
     return {
         "ticket": _ticket_out(ticket, ticket_metrics(db, [ticket.id])),
         "action": ticket.action,
-        "hosts": action_hosts(db, ticket.action_id, ticket_finding_ids(db, ticket.id)),
+        "hosts": action_hosts(
+            db, ticket.action_id, scope, ticket_finding_ids(db, ticket.id)
+        ),
         "history": history,
     }
 
 
 @router.get("/tickets/{ticket_id}/hosts.csv", response_class=Response)
-def export_ticket_hosts(ticket_id: int, db: Session = Depends(get_db)):
+def export_ticket_hosts(
+    ticket_id: int, db: Session = Depends(get_db), scope: Scope = Depends(current_scope)
+):
     """The hosts of one ticket, for the team's deployment tool."""
-    ticket = get_or_404(db, RemediationTicket, ticket_id)
-    hosts = action_hosts(db, ticket.action_id, ticket_finding_ids(db, ticket.id))
+    ticket = get_in_scope_or_404(db, RemediationTicket, ticket_id, scope, _team)
+    hosts = action_hosts(db, ticket.action_id, scope, ticket_finding_ids(db, ticket.id))
     return _csv_response(hosts_csv(hosts), ticket.action.reference, f"ticket-{ticket.id}")
 
 
@@ -229,13 +248,14 @@ def update_ticket(
     update_in: TicketUpdate,
     db: Session = Depends(get_db),
     user: User = Depends(current_user),
+    scope: Scope = Depends(current_scope),
 ):
     """Move a ticket, or record where it lives in an external tool.
 
     The team marks it in progress or deployed; the scans resolve it. Cancelling
     means deciding not to fix: an analyst's call, with a justification.
     """
-    ticket = get_or_404(db, RemediationTicket, ticket_id)
+    ticket = get_in_scope_or_404(db, RemediationTicket, ticket_id, scope, _team)
     changes = update_in.model_dump(exclude_unset=True)
     new_status = changes.pop("status", None)
     note = changes.pop("note", None)
@@ -279,15 +299,16 @@ def update_ticket(
 
 
 @router.get("/teams", response_model=TeamsResponse)
-def list_teams(db: Session = Depends(get_db)):
-    """Teams owning at least one host, for the ticket filters."""
+def list_teams(db: Session = Depends(get_db), scope: Scope = Depends(current_scope)):
+    """Teams owning at least one host, for the ticket filters: those of the
+    caller's scope only."""
     rows = (
         db.query(Asset.owner_team)
         .filter(Asset.owner_team.isnot(None))
         .distinct()
         .order_by(Asset.owner_team)
     )
-    return {"teams": [row.owner_team for row in rows]}
+    return {"teams": scope.visible_teams(row.owner_team for row in rows)}
 
 
 def _ticket_out(ticket: RemediationTicket, metrics: dict[int, dict]) -> dict:
@@ -308,3 +329,31 @@ def _ticket_out(ticket: RemediationTicket, metrics: dict[int, dict]) -> dict:
         "action": ticket.action,
         "metrics": metrics.get(ticket.id, {}),
     }
+
+
+def _team(ticket: RemediationTicket) -> str | None:
+    return ticket.owner_team
+
+
+def _action_in_scope(db: Session, action_id: int, scope: Scope) -> RemediationAction:
+    """A fix the caller's scope has a host for, or the 404 of a missing one.
+
+    A fix is shared, but its title and reference say what another team's
+    hosts are missing.
+    """
+    action = get_or_404(db, RemediationAction, action_id)
+    if scope.restricted:
+        in_scope = scope.filter(
+            db.query(FindingRemediation.finding_id)
+            .join(
+                AssetVulnerability, AssetVulnerability.id == FindingRemediation.finding_id
+            )
+            .join(Asset, Asset.id == AssetVulnerability.asset_id)
+            .filter(FindingRemediation.action_id == action.id)
+        )
+        if in_scope.first() is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="RemediationAction not found",
+            )
+    return action

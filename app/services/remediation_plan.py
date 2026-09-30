@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from sqlalchemy import case, distinct, func, or_, select
 from sqlalchemy.orm import Session
 
+from app.core.scope import Scope
 from app.models.asset import Asset
 from app.models.remediation import FindingRemediation, RemediationAction
 from app.models.vulnerability import AssetVulnerability, Status, Vulnerability
@@ -55,9 +56,10 @@ def _open_links():
 
 
 def action_summaries(
-    db: Session, filters: ActionFilters, skip: int, limit: int
+    db: Session, filters: ActionFilters, skip: int, limit: int, scope: Scope
 ) -> tuple[int, list[dict]]:
-    """Open remediation actions, the one removing the most risk first."""
+    """Open remediation actions, the one removing the most risk first, counted
+    on the hosts ``scope`` covers only."""
     now = datetime.now(UTC)
     links = _open_links()
     findings = func.count(AssetVulnerability.id)
@@ -80,8 +82,10 @@ def action_summaries(
         .join(links, links.c.action_id == RemediationAction.id)
         .join(AssetVulnerability, AssetVulnerability.id == links.c.finding_id)
         .join(Vulnerability, Vulnerability.id == AssetVulnerability.vulnerability_id)
+        .join(Asset, Asset.id == AssetVulnerability.asset_id)
         .filter(AssetVulnerability.status == Status.open)
     )
+    query = scope.filter(query)
     if filters.kind:
         query = query.filter(RemediationAction.kind == filters.kind)
     if filters.search:
@@ -121,10 +125,10 @@ def action_summaries(
     ]
 
 
-def unremediated_summary(db: Session) -> dict:
+def unremediated_summary(db: Session, scope: Scope) -> dict:
     """Open findings no scanner gave a fix for: work nobody can plan yet."""
     linked = select(FindingRemediation.finding_id)
-    row = (
+    query = (
         db.query(
             func.count(AssetVulnerability.id).label("findings"),
             func.count(distinct(AssetVulnerability.asset_id)).label("assets"),
@@ -132,12 +136,13 @@ def unremediated_summary(db: Session) -> dict:
                 "total_risk"
             ),
         )
+        .join(Asset, Asset.id == AssetVulnerability.asset_id)
         .filter(
             AssetVulnerability.status == Status.open,
             AssetVulnerability.id.notin_(linked),
         )
-        .one()
     )
+    row = scope.filter(query).one()
     return {
         "findings": row.findings,
         "assets": row.assets,
@@ -146,10 +151,10 @@ def unremediated_summary(db: Session) -> dict:
 
 
 def action_hosts(
-    db: Session, action_id: int, finding_ids: list[int] | None = None
+    db: Session, action_id: int, scope: Scope, finding_ids: list[int] | None = None
 ) -> list[HostEntry]:
-    """Every host where the action still has open findings to close; only
-    among ``finding_ids`` when given (the findings of one ticket)."""
+    """Every host in ``scope`` where the action still has open findings to
+    close; only among ``finding_ids`` when given (the findings of one ticket)."""
     now = datetime.now(UTC)
     query = (
         db.query(AssetVulnerability, Asset, Vulnerability, FindingRemediation)
@@ -162,6 +167,7 @@ def action_hosts(
         )
         .order_by(AssetVulnerability.risk_score.desc(), Asset.id)
     )
+    query = scope.filter(query)
     if finding_ids is not None:
         query = query.filter(AssetVulnerability.id.in_(finding_ids))
     rows = query.all()

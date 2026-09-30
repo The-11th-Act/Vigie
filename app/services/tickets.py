@@ -15,6 +15,7 @@ from datetime import UTC, datetime
 from sqlalchemy import case, distinct, func
 from sqlalchemy.orm import Session
 
+from app.core.scope import Scope
 from app.models.asset import Asset
 from app.models.remediation import FindingRemediation, RemediationAction, RemediationKind
 from app.models.ticket import (
@@ -93,11 +94,12 @@ def _log(db: Session, ticket, old, new, note, user: User | None) -> None:
 
 
 def create_tickets(
-    db: Session, action: RemediationAction, user: User
+    db: Session, action: RemediationAction, user: User, scope: Scope
 ) -> tuple[list[RemediationTicket], int]:
     """Put every untracked open finding of ``action`` into a ticket.
 
-    One ticket per team owning the hosts; a team that already has an active
+    Only for the teams ``scope`` covers: a scoped user tickets their own
+    hosts, not another team's. One ticket per team owning the hosts; a team that already has an active
     ticket for this fix gets the new findings added to it instead of a second
     ticket. Returns the tickets created and the number of findings added to
     existing ones.
@@ -106,7 +108,7 @@ def create_tickets(
     tracked = {f for a, f in _tracked_finding_ids(db, [action.id])}
     by_team: dict[str | None, list[int]] = defaultdict(list)
     for finding_id, team in _open_findings_of(db, action.id):
-        if finding_id not in tracked:
+        if finding_id not in tracked and scope.allows(team):
             by_team[team].append(finding_id)
     if not by_team:
         return [], 0
@@ -308,8 +310,9 @@ def ticket_metrics(db: Session, ticket_ids: list[int]) -> dict[int, dict]:
     }
 
 
-def tracked_counts(db: Session, action_ids: list[int]) -> dict[int, int]:
-    """Open findings of each action already held by an active ticket."""
+def tracked_counts(db: Session, action_ids: list[int], scope: Scope) -> dict[int, int]:
+    """Open findings of each action already held by an active ticket, among
+    the hosts ``scope`` covers."""
     if not action_ids:
         return {}
     rows = (
@@ -319,6 +322,7 @@ def tracked_counts(db: Session, action_ids: list[int]) -> dict[int, int]:
         )
         .join(TicketFinding, TicketFinding.ticket_id == RemediationTicket.id)
         .join(AssetVulnerability, AssetVulnerability.id == TicketFinding.finding_id)
+        .join(Asset, Asset.id == AssetVulnerability.asset_id)
         .filter(
             RemediationTicket.action_id.in_(action_ids),
             RemediationTicket.status.in_(ACTIVE_TICKET_STATUSES),
@@ -326,6 +330,7 @@ def tracked_counts(db: Session, action_ids: list[int]) -> dict[int, int]:
         )
         .group_by(RemediationTicket.action_id)
     )
+    rows = scope.filter(rows)
     return {row.action_id: row.tracked for row in rows}
 
 

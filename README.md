@@ -225,6 +225,26 @@ from the user as the database knows them now: a tab missing from the sidebar
 does not leave its API open. Administrators always keep the Administration
 module, and the last administrator cannot be demoted.
 
+### Scopes
+
+An administrator can limit an account to some teams (the hosts'
+`owner_team`, set by `OWNER_TEAM_RULES` or by hand), plus "hosts without a
+team" if wanted: Administration screen, or `PUT /api/v1/users/{id}/teams`.
+The account then sees only those hosts and everything attached to them, on
+every screen, export and API extract: findings, fixes, tickets, CVEs found on
+them, dashboard figures and trends. Another team's object answers 404, as if
+it did not exist. The sidebar names the scope.
+
+- An account without teams sees the whole estate, as before scopes existed;
+  an administrator is never scoped (promotion drops the teams).
+- Actions that reach every team are refused to a scoped account: uploading a
+  scan (its ingestion creates hosts and closes findings wherever it covered)
+  and editing the CVE catalogue (a score moves every team's risk).
+- A scoped account cannot create a host for another team or hand one over.
+- `tests/api/test_scopes.py` calls every GET route of the OpenAPI schema as a
+  user scoped to one team, with another team's ids, and fails if any answer
+  shows a trace of the other team: a new route cannot forget the scope.
+
 ## Dashboards and trends
 
 The Dashboard has two views: **Posture** (where the estate stands now) and

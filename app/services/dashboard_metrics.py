@@ -11,6 +11,7 @@ from datetime import UTC, date, datetime, timedelta
 from sqlalchemy import and_, case, func, or_
 from sqlalchemy.orm import Session
 
+from app.core.scope import Scope
 from app.models.asset import Asset
 from app.models.snapshot import BacklogSnapshot
 from app.models.ticket import ACTIVE_TICKET_STATUSES, RemediationTicket
@@ -42,10 +43,12 @@ def _team_key(team: str) -> str:
     return "" if team == NOT_SET else team
 
 
-def trends(db: Session, days: int, team: str | None) -> list[dict]:
-    """One point per stored day, the estate or one team."""
+def trends(db: Session, days: int, team: str | None, scope: Scope) -> list[dict]:
+    """One point per stored day, the estate or one team: the teams of
+    ``scope`` summed, for a scoped user."""
     since = datetime.now(UTC).date() - timedelta(days=days)
     query = db.query(BacklogSnapshot).filter(BacklogSnapshot.day >= since)
+    query = scope.filter(query, BacklogSnapshot.owner_team)
     if team:
         query = query.filter(BacklogSnapshot.owner_team == _team_key(team))
 
@@ -75,7 +78,8 @@ def trends(db: Session, days: int, team: str | None) -> list[dict]:
     return result
 
 
-def _team_filter(query, team: str | None):
+def _team_filter(query, team: str | None, scope: Scope):
+    query = scope.filter(query)
     if not team:
         return query
     if team == NOT_SET:
@@ -91,7 +95,7 @@ def _mean(total: float, count: float) -> float | None:
     return round(total / count, 1) if count else None
 
 
-def performance(db: Session, days: int, team: str | None) -> dict:
+def performance(db: Session, days: int, team: str | None, scope: Scope) -> dict:
     """Remediation over the last ``days`` days, overall and per team."""
     now = datetime.now(UTC)
     since = now - timedelta(days=days)
@@ -111,6 +115,7 @@ def performance(db: Session, days: int, team: str | None) -> dict:
         .join(Asset, Asset.id == av.asset_id)
         .filter(av.status == Status.remediated, av.fixed_at >= since),
         team,
+        scope,
     ).all()
 
     overall = {"fixed": 0, "on_time": 0, "days": 0.0, "risk": 0.0}
@@ -153,6 +158,7 @@ def performance(db: Session, days: int, team: str | None) -> dict:
             func.sum(case((av.detected_at >= since, 1), else_=0)),
         ).join(Asset, Asset.id == av.asset_id),
         team,
+        scope,
     ).one()
     open_count, open_risk, open_start, risk_start, new_findings = totals
 
@@ -171,6 +177,7 @@ def performance(db: Session, days: int, team: str | None) -> dict:
         .filter(open_now)
         .group_by(team_col),
         team,
+        scope,
     ):
         teams[owner] = {
             "open": count,
@@ -186,6 +193,7 @@ def performance(db: Session, days: int, team: str | None) -> dict:
         ),
         func.sum(case((RemediationTicket.resolved_at >= since, 1), else_=0)),
     ).group_by(RemediationTicket.owner_team)
+    tickets = scope.filter(tickets, RemediationTicket.owner_team)
     if team == NOT_SET:
         tickets = tickets.filter(RemediationTicket.owner_team.is_(None))
     elif team:
@@ -232,11 +240,11 @@ def performance(db: Session, days: int, team: str | None) -> dict:
     }
 
 
-def team_names(db: Session) -> list[str]:
+def team_names(db: Session, scope: Scope) -> list[str]:
     rows = (
         db.query(Asset.owner_team)
         .filter(Asset.owner_team.isnot(None))
         .distinct()
         .order_by(Asset.owner_team)
     )
-    return [row.owner_team for row in rows]
+    return scope.visible_teams(row.owner_team for row in rows)

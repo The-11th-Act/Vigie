@@ -5,6 +5,8 @@ import { meService } from '../services';
 // every other module anyway: this only decides what the sidebar offers.
 const ModulesContext = createContext({
   modules: [],
+  // The teams whose hosts this user sees; null: the whole estate.
+  teams: null,
   loading: false,
   error: null,
   refresh: async () => {},
@@ -13,6 +15,7 @@ const ModulesContext = createContext({
 
 export function ModulesProvider({ children }) {
   const [modules, setModules] = useState([]);
+  const [teams, setTeams] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -20,6 +23,7 @@ export function ModulesProvider({ children }) {
     try {
       const res = await meService.getModules();
       setModules(res.data.modules);
+      setTeams(res.data.teams ?? null);
       setError(null);
     } catch (err) {
       setError(err.response?.data?.detail || err.message || 'Could not load your modules');
@@ -33,11 +37,14 @@ export function ModulesProvider({ children }) {
   }, [refresh]);
 
   // Endpoints that change the arrangement answer with the new one.
-  const replace = useCallback((data) => setModules(data.modules), []);
+  const replace = useCallback((data) => {
+    setModules(data.modules);
+    setTeams(data.teams ?? null);
+  }, []);
 
   const value = useMemo(
-    () => ({ modules, loading, error, refresh, replace }),
-    [modules, loading, error, refresh, replace]
+    () => ({ modules, teams, loading, error, refresh, replace }),
+    [modules, teams, loading, error, refresh, replace]
   );
   return <ModulesContext.Provider value={value}>{children}</ModulesContext.Provider>;
 }

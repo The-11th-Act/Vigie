@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, contains_eager, selectinload
 
+from app.core.scope import Scope
 from app.models.asset import Asset, Criticality
 from app.models.remediation import FindingRemediation
 from app.models.vulnerability import AssetVulnerability, Status, Vulnerability
@@ -36,7 +37,12 @@ class FindingFilters:
     internet_facing: bool | None = None
 
 
-def findings_query(db: Session, filters: FindingFilters):
+def findings_query(db: Session, filters: FindingFilters, scope: Scope):
+    """The findings matching ``filters`` among those ``scope`` may see.
+
+    ``scope`` is required on purpose: a caller cannot forget it and list
+    another team's findings (app/core/scope.py).
+    """
     # Explicit joins rather than joinedload: the filters and the ranking read
     # the vulnerability and the asset, which a joinedload alias cannot offer.
     query = (
@@ -52,6 +58,7 @@ def findings_query(db: Session, filters: FindingFilters):
             ),
         )
     )
+    query = scope.filter(query)
 
     if filters.status_filter:
         query = query.filter(AssetVulnerability.status == filters.status_filter)

@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import case, distinct, func
 from sqlalchemy.orm import Session
 
+from app.core.scope import Scope, current_scope
 from app.db.database import get_db
 from app.models.asset import Asset, Criticality
 from app.models.vulnerability import (
@@ -73,6 +74,7 @@ def matrix(
     min_risk: float | None = Query(None, ge=0, le=10),
     owner_team: str | None = Query(None, max_length=128),
     db: Session = Depends(get_db),
+    scope: Scope = Depends(current_scope),
 ):
     """Open findings per kind of software (rows) and property of host (columns).
 
@@ -102,6 +104,7 @@ def matrix(
         .join(Vulnerability, Vulnerability.id == AssetVulnerability.vulnerability_id)
         .filter(AssetVulnerability.status == Status.open)
     )
+    query = scope.filter(query)
     if kev_only:
         query = query.filter(Vulnerability.in_kev.is_(True))
     if min_risk is not None:
@@ -175,6 +178,7 @@ def cell_findings(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
+    scope: Scope = Depends(current_scope),
 ):
     """The open findings of one cell, worst first: what the matrix counted."""
     _dimension(columns)
@@ -201,7 +205,7 @@ def cell_findings(
             return {"total": 0, "items": []}
     else:
         setattr(filters, columns, value)
-    query = findings_query(db, filters)
+    query = findings_query(db, filters, scope)
     total = query.count()
     items = query.order_by(*RISK_ORDER).offset(skip).limit(limit).all()
     return {"total": total, "items": items}

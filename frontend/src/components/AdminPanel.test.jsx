@@ -3,7 +3,7 @@ import { render, screen } from '../test/render'
 import userEvent from '@testing-library/user-event'
 
 import AdminPanel from './AdminPanel'
-import { adminService, userService } from '../services'
+import { adminService, remediationService, userService } from '../services'
 
 vi.mock('../services', () => ({
   adminService: {
@@ -12,7 +12,8 @@ vi.mock('../services', () => ({
     setRoleProfile: vi.fn(),
     resetRoleProfile: vi.fn(),
   },
-  userService: { list: vi.fn(), updateRole: vi.fn() },
+  userService: { list: vi.fn(), updateRole: vi.fn(), updateTeams: vi.fn() },
+  remediationService: { listTeams: vi.fn() },
 }))
 
 const OVERVIEW = {
@@ -31,13 +32,15 @@ const OVERVIEW = {
 }
 
 const USERS = [
-  { id: 1, username: 'admin', email: 'admin@test.com', role: 'admin' },
-  { id: 2, username: 'bob', email: 'bob@test.com', role: 'analyst' },
+  { id: 1, username: 'admin', email: 'admin@test.com', role: 'admin', teams: [] },
+  { id: 2, username: 'bob', email: 'bob@test.com', role: 'analyst', teams: [] },
+  { id: 3, username: 'carol', email: 'carol@test.com', role: 'remediator', teams: ['Workplace'] },
 ]
 
 function renderPanel() {
   adminService.getModules.mockResolvedValue({ data: OVERVIEW })
   userService.list.mockResolvedValue({ data: USERS })
+  remediationService.listTeams.mockResolvedValue({ data: { teams: ['Servers', 'Workplace'] } })
   return render(<AdminPanel />)
 }
 
@@ -94,5 +97,39 @@ describe('AdminPanel', () => {
     await user.selectOptions(await screen.findByLabelText('Role of admin'), 'analyst')
 
     expect(await screen.findByText('The last administrator cannot be demoted')).toBeInTheDocument()
+  })
+
+  it("shows each account's scope", async () => {
+    renderPanel()
+
+    expect(await screen.findByText('Whole estate (administrator)')).toBeInTheDocument()
+    expect(screen.getByText('Workplace')).toBeInTheDocument()
+    expect(screen.getByText('Whole estate')).toBeInTheDocument()
+  })
+
+  it('limits an account to some teams', async () => {
+    userService.updateTeams.mockResolvedValue({ data: { ...USERS[1], teams: ['Servers'] } })
+    const user = userEvent.setup()
+    renderPanel()
+
+    await user.click(await screen.findByRole('button', { name: 'Edit the scope of bob' }))
+    await user.click(await screen.findByRole('checkbox', { name: 'Servers' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Hosts without a team' }))
+    await user.type(screen.getByLabelText('Another team for bob'), 'Lab')
+    await user.click(screen.getByRole('button', { name: 'Save scope' }))
+
+    expect(userService.updateTeams).toHaveBeenCalledWith(2, ['Servers', '__none__', 'Lab'])
+  })
+
+  it('gives back the whole estate when nothing is checked', async () => {
+    userService.updateTeams.mockResolvedValue({ data: { ...USERS[2], teams: [] } })
+    const user = userEvent.setup()
+    renderPanel()
+
+    await user.click(await screen.findByRole('button', { name: 'Edit the scope of carol' }))
+    await user.click(await screen.findByRole('checkbox', { name: 'Workplace' }))
+    await user.click(screen.getByRole('button', { name: 'Save scope' }))
+
+    expect(userService.updateTeams).toHaveBeenCalledWith(3, [])
   })
 })

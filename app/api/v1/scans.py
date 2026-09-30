@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.logging import get_request_id
+from app.core.scope import Scope, current_scope
 from app.core.security import decode_token
 from app.db.database import get_db
 from app.models.scan import ScanJob, ScanStatus
@@ -44,13 +45,16 @@ def upload_scan_file(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     payload: dict = Depends(decode_token),
+    scope: Scope = Depends(current_scope),
 ):
     """Stage a scan report on disk and queue it for background ingestion.
 
     Requires authentication: an unauthenticated upload endpoint lets anyone
     inject arbitrary assets and findings into the platform, or exhaust the
-    worker pool.
+    worker pool. Refused to a scoped account: the ingestion creates hosts and
+    closes findings wherever the scan covered, whatever their team.
     """
+    scope.refuse_if_restricted("Uploading a scan")
     normalized_type = scan_type.strip().lower()
     if normalized_type not in VALID_SCAN_TYPES:
         raise HTTPException(

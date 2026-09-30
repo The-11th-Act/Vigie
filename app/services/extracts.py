@@ -17,6 +17,7 @@ from typing import Any
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
+from app.core.scope import Scope
 from app.models.asset import Asset, Criticality
 from app.models.remediation import RemediationKind
 from app.models.ticket import ACTIVE_TICKET_STATUSES, RemediationTicket, TicketStatus
@@ -71,7 +72,8 @@ class Dataset:
     module: str
     columns: tuple[Column, ...]
     filters: tuple[Filter, ...]
-    rows: Callable[[Session, dict, int | None], Iterator[Any]]
+    # (db, filters, limit, scope): the rows the caller's scope may see.
+    rows: Callable[[Session, dict, int | None, Scope], Iterator[Any]]
     column_keys: tuple[str, ...] = field(init=False)
 
     def __post_init__(self):
@@ -81,7 +83,7 @@ class Dataset:
 # --- findings ---------------------------------------------------------------
 
 
-def _finding_rows(db: Session, filters: dict, limit: int | None):
+def _finding_rows(db: Session, filters: dict, limit: int | None, scope: Scope):
     status = filters.get("status")
     query = findings_query(
         db,
@@ -98,6 +100,7 @@ def _finding_rows(db: Session, filters: dict, limit: int | None):
             environment=filters.get("environment"),
             business_criticality=filters.get("business_criticality"),
         ),
+        scope,
     ).order_by(*RISK_ORDER)
     if limit is not None:
         query = query.limit(limit)
@@ -172,7 +175,7 @@ FINDINGS = Dataset(
 # --- assets -----------------------------------------------------------------
 
 
-def _asset_rows(db: Session, filters: dict, limit: int | None):
+def _asset_rows(db: Session, filters: dict, limit: int | None, scope: Scope):
     open_findings = (
         db.query(
             AssetVulnerability.asset_id.label("asset_id"),
@@ -188,6 +191,7 @@ def _asset_rows(db: Session, filters: dict, limit: int | None):
         func.coalesce(open_findings.c.open_findings, 0),
         func.coalesce(open_findings.c.max_risk, 0.0),
     ).outerjoin(open_findings, open_findings.c.asset_id == Asset.id)
+    query = scope.filter(query)
     if filters.get("criticality"):
         query = query.filter(Asset.business_criticality == filters["criticality"])
     if filters.get("owner_team"):
@@ -240,19 +244,20 @@ ASSETS = Dataset(
 # --- vulnerabilities --------------------------------------------------------
 
 
-def _vulnerability_rows(db: Session, filters: dict, limit: int | None):
-    open_findings = (
+def _vulnerability_rows(db: Session, filters: dict, limit: int | None, scope: Scope):
+    open_findings = scope.filter(
         db.query(
             AssetVulnerability.vulnerability_id.label("vulnerability_id"),
             func.count(AssetVulnerability.id).label("open_findings"),
         )
+        .join(Asset, Asset.id == AssetVulnerability.asset_id)
         .filter(AssetVulnerability.status == Status.open)
-        .group_by(AssetVulnerability.vulnerability_id)
-        .subquery()
     )
+    open_findings = open_findings.group_by(AssetVulnerability.vulnerability_id).subquery()
     query = db.query(
         Vulnerability, func.coalesce(open_findings.c.open_findings, 0)
     ).outerjoin(open_findings, open_findings.c.vulnerability_id == Vulnerability.id)
+    query = scope.filter_vulnerabilities(db, query)
     if filters.get("kev_only"):
         query = query.filter(Vulnerability.in_kev.is_(True))
     if filters.get("min_cvss") is not None:
@@ -289,7 +294,7 @@ VULNERABILITIES = Dataset(
 # --- remediation actions ----------------------------------------------------
 
 
-def _action_rows(db: Session, filters: dict, limit: int | None):
+def _action_rows(db: Session, filters: dict, limit: int | None, scope: Scope):
     _, items = action_summaries(
         db,
         ActionFilters(
@@ -299,6 +304,7 @@ def _action_rows(db: Session, filters: dict, limit: int | None):
         ),
         0,
         limit if limit is not None else MAX_ROWS,
+        scope,
     )
     yield from items
 
@@ -333,8 +339,9 @@ FIXES = Dataset(
 # --- tickets ----------------------------------------------------------------
 
 
-def _ticket_rows(db: Session, filters: dict, limit: int | None):
+def _ticket_rows(db: Session, filters: dict, limit: int | None, scope: Scope):
     query = db.query(RemediationTicket).options(joinedload(RemediationTicket.action))
+    query = scope.filter(query, RemediationTicket.owner_team)
     status = filters.get("status") or "active"
     if status == "active":
         query = query.filter(RemediationTicket.status.in_(ACTIVE_TICKET_STATUSES))
@@ -512,6 +519,7 @@ def run(
     columns: list[str],
     filters: dict,
     fmt: str,
+    scope: Scope,
     limit: int | None = None,
 ) -> Iterator[bytes]:
     """Write the extract to a spooled file, then return a chunk iterator.
@@ -524,7 +532,7 @@ def run(
     spool = tempfile.SpooledTemporaryFile(  # noqa: SIM115 - closed by _chunks
         max_size=SPOOL_IN_MEMORY_BYTES, mode="w+b"
     )
-    rows = dataset.rows(db, filters, limit)
+    rows = dataset.rows(db, filters, limit, scope)
 
     if fmt == "csv":
         # utf-8-sig: the BOM lets Excel open accented values correctly.

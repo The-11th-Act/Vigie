@@ -362,7 +362,17 @@ un admin ne prend effet qu'à l'expiration. Aucun cloisonnement par périmètre.
 
 - [x] Vérifier le rôle en base à chaque requête sensible : `require_admin` relit
       l'utilisateur ; une rétrogradation ou une suppression vaut immédiatement *(25/09/2026)*
-- [ ] Modèle de périmètres / groupes d'assets, filtrage des listings
+- [x] Modèle de périmètres / groupes d'assets, filtrage des listings *(30/09/2026,
+      choix de l'utilisateur : cloisonnement d'accès réel ; un périmètre est une liste
+      d'équipes (`owner_team`), pas des groupes à règles ; un compte sans équipe voit
+      tout, un admin n'est jamais cloisonné. Table `user_teams` (migration 0019),
+      `app/core/scope.py`, périmètre obligatoire dans `findings_query`, le plan de
+      remédiation, les tickets, les tableaux de bord et les extractions ; objet d'une
+      autre équipe en 404 ; upload de scan et édition du catalogue CVE refusés à un
+      compte cloisonné. Test de balayage de toutes les routes GET du schéma OpenAPI)*
+- [ ] Limite connue : créer un asset avec l'IP d'un hôte d'une autre équipe répond
+      409, ce qui révèle que l'IP existe. L'éviter demanderait des doublons ; à
+      retirer du rôle analyste cloisonné si cela gêne
 
 ### D11. Un seul environnement
 - [x] Environnement de staging réutilisant la surcouche de production *(30/09/2026 :
@@ -522,7 +532,7 @@ Les parseurs jetaient tout ce que les scanners disent du correctif. Les fichiers
 - [x] Taxonomie des findings (titre puis famille du scanner), stockée par finding, rattrapée au passage quotidien
 - [x] Module `categorization` : matrice catégorie × type, environnement, criticité, équipe ou exposition ; findings d'une case
 - [x] Filtres du backlog et des extractions : catégorie, type, environnement, criticité, exposition exacte, valeur « non renseignée » (`__none__`)
-- [ ] Groupes d'assets à règles en base (moitié restante de T7), et filtrage des listings par périmètre
+- [x] Groupes d'assets à règles en base (moitié restante de T7), et filtrage des listings par périmètre *(30/09/2026 : périmètres par équipe, voir T7 ; des groupes à règles (sous-réseau, environnement) restent possibles plus tard si le découpage par équipe ne suffit pas)*
 - [ ] Affiner la taxonomie sur un vrai export : les règles sont écrites d'après les titres documentés de Nessus et OpenVAS
 
 ## ✅ 5. Extractions API

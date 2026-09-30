@@ -170,6 +170,30 @@ describe('App shell', () => {
     expect(screen.queryByText('777')).not.toBeInTheDocument()
   })
 
+  it('names the scope of a scoped account', async () => {
+    authService.getMe.mockResolvedValue({ data: { username: 'alice', role: 'analyst' } })
+    meService.getModules.mockResolvedValue({
+      data: {
+        role: 'analyst',
+        modules: [{ key: 'dashboard', label: 'Dashboard', hidden: false }],
+        teams: ['Workplace', '__none__'],
+      },
+    })
+    renderAt('/')
+
+    expect(await screen.findByTestId('scope')).toHaveTextContent(
+      'Scope: Workplace, Hosts without a team'
+    )
+  })
+
+  it('says nothing of a scope to an account that sees everything', async () => {
+    signedInWith([{ key: 'dashboard', label: 'Dashboard', hidden: false }])
+    renderAt('/')
+
+    await sidebarLinks()
+    expect(screen.queryByTestId('scope')).not.toBeInTheDocument()
+  })
+
   it('says so when the modules cannot be loaded', async () => {
     authService.getMe.mockResolvedValue({ data: { username: 'alice', role: 'analyst' } })
     meService.getModules.mockRejectedValue({ message: 'Network Error' })

@@ -10,7 +10,7 @@ FastAPI + SQLAlchemy + Celery/Redis + PostgreSQL ; React 19 + Vite 8.
   exploitation, sauvegarde, audits. **`TODO.md` : l'état de référence** — la
   section « Modules et remédiation » en fin de fichier suit la feuille de route
   en cours.
-- Migrations : tête `0018`. Chaque colonne de modèle doit avoir sa migration
+- Migrations : tête `0019`. Chaque colonne de modèle doit avoir sa migration
   (`alembic check` en CI).
 
 ## Façon de travailler (convenue avec l'utilisateur)
@@ -63,6 +63,15 @@ gh run list --workflow CI --branch main --limit 1          # pas seulement --lim
 - Tout nouveau réglage de `Settings` doit être câblé dans `x-app-settings` de
   `docker-compose.yml` (sinon `test_deployment_config` échoue) ; un réglage
   métier mérite une vérification dans le test de la pile de production.
+- **Périmètres** (`app/core/scope.py`, décidé avec l'utilisateur : cloisonnement
+  réel, périmètre = liste d'équipes, sans équipe = tout, admin jamais
+  cloisonné). Toute requête qui lit des hôtes ou ce qui en dépend passe par
+  `scope.filter(...)` ; le périmètre est un paramètre **obligatoire** des
+  services (`findings_query`, `action_summaries`, `create_tickets`…). Un objet
+  hors périmètre répond 404 (`get_in_scope_or_404`). Une action globale
+  appelle `scope.refuse_if_restricted(...)`. Une nouvelle route GET est
+  vérifiée d'office par le balayage de `tests/api/test_scopes.py` : si elle
+  exige un paramètre de requête, l'ajouter à `QUERY`.
 - Modèles : `Mapped[datetime]` / `Mapped[date]` (type Python), jamais
   `Mapped[DateTime]` ; le type SQL va dans `mapped_column(DateTime(timezone=True))`.
 - Jamais d'`async def` dans `app/` hors `main.py` : l'API est synchrone
@@ -119,8 +128,7 @@ gh run list --workflow CI --branch main --limit 1          # pas seulement --lim
    Métriques en mode multiprocessus, compteur d'ingestion et `mypy` faits.
    Le worker n'expose aucune métrique : ce qu'il fait se mesure depuis la
    base, au scrape de l'API.
-3. ~~TanStack Query~~ fait le 30/09/2026. Reste : groupes d'assets et
-   filtrage par périmètre (T7).
+3. ~~TanStack Query~~ et ~~périmètres (T7)~~ faits le 30/09/2026.
 4. **Plus tard, à la demande de l'utilisateur** : connecteur de ticketing
    (Jira, ServiceNow ou GLPI, à lui faire choisir) sur les champs
    `external_*` des tickets, et webhooks. Garder la conception ouverte.

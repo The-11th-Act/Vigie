@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { RotateCcw } from 'lucide-react';
-import { adminService, userService } from '../services';
+import { adminService, remediationService, userService } from '../services';
+import { NO_TEAM, scopeLabel, teamLabel } from '../teams';
 import { useApiQuery } from '../hooks/useApiQuery';
 import { useModules } from '../auth/ModulesContext';
+import { controlStyle } from './RemediationShared';
 
 const MODULES_KEY = ['admin', 'modules'];
 
@@ -131,11 +133,99 @@ function ModulesSection() {
   );
 }
 
+// The teams a user sees. Known teams (those owning hosts) as boxes, plus a
+// field for a team no host belongs to yet.
+function ScopeEditor({ user, knownTeams, onSaved }) {
+  const [editing, setEditing] = useState(false);
+  const [chosen, setChosen] = useState(user.teams);
+  const [extra, setExtra] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  if (user.role === 'admin') {
+    return <span style={{ color: 'var(--text-muted)' }}>Whole estate (administrator)</span>;
+  }
+  if (!editing) {
+    return (
+      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+        <span>{scopeLabel(user.teams)}</span>
+        <button
+          type="button"
+          className="icon-button"
+          onClick={() => {
+            setChosen(user.teams);
+            setEditing(true);
+          }}
+          aria-label={`Edit the scope of ${user.username}`}
+        >
+          Edit
+        </button>
+      </div>
+    );
+  }
+
+  const options = [...new Set([...knownTeams, ...chosen.filter((t) => t !== NO_TEAM)])].sort();
+  const toggle = (team) =>
+    setChosen((prev) => (prev.includes(team) ? prev.filter((t) => t !== team) : [...prev, team]));
+
+  const save = async () => {
+    setSaving(true);
+    setError(null);
+    const teams = extra.trim() ? [...chosen, extra.trim()] : chosen;
+    try {
+      await userService.updateTeams(user.id, teams);
+      setEditing(false);
+      setExtra('');
+      onSaved();
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <fieldset style={{ border: 'none', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+      <legend style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+        Nothing checked: the whole estate
+      </legend>
+      {[...options, NO_TEAM].map((team) => (
+        <label key={team} style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+          <input type="checkbox" checked={chosen.includes(team)} onChange={() => toggle(team)} />
+          {teamLabel(team)}
+        </label>
+      ))}
+      <input
+        style={controlStyle}
+        value={extra}
+        onChange={(e) => setExtra(e.target.value)}
+        placeholder="Another team"
+        aria-label={`Another team for ${user.username}`}
+        maxLength={128}
+      />
+      <div style={{ display: 'flex', gap: '0.5rem' }}>
+        <button type="button" className="button" onClick={save} disabled={saving}>
+          Save scope
+        </button>
+        <button type="button" className="icon-button" onClick={() => setEditing(false)}>
+          Cancel
+        </button>
+      </div>
+      {error && <div className="error-message">{error}</div>}
+    </fieldset>
+  );
+}
+
 function UsersSection() {
   const { refresh: refreshMyModules } = useModules();
   const { data, loading, error, refetch } = useApiQuery(
     ['admin', 'users'],
     async () => (await userService.list()).data
+  );
+  // An administrator is never scoped: every team owning a host is listed.
+  const { data: knownTeams } = useApiQuery(
+    ['remediation', 'teams'],
+    async () => (await remediationService.listTeams()).data.teams
   );
   const [rowError, setRowError] = useState({});
 
@@ -163,6 +253,7 @@ function UsersSection() {
               <th>User</th>
               <th>Email</th>
               <th>Role</th>
+              <th>Scope</th>
             </tr>
           </thead>
           <tbody>
@@ -186,6 +277,9 @@ function UsersSection() {
                       {rowError[user.id]}
                     </div>
                   )}
+                </td>
+                <td>
+                  <ScopeEditor user={user} knownTeams={knownTeams || []} onSaved={refetch} />
                 </td>
               </tr>
             ))}

@@ -2,10 +2,11 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func
-from sqlalchemy.orm import Session, contains_eager, joinedload
+from sqlalchemy.orm import Session, contains_eager
 
 from app.core.config import settings
-from app.core.security import decode_token, require_admin
+from app.core.scope import Scope, current_scope
+from app.core.security import require_admin
 from app.db.database import get_db
 from app.models.asset import Asset
 from app.models.vulnerability import (
@@ -28,15 +29,23 @@ router = APIRouter()
 
 @router.get("/stats")
 def get_dashboard_stats(
-    db: Session = Depends(get_db), payload: dict = Depends(decode_token)
+    db: Session = Depends(get_db), scope: Scope = Depends(current_scope)
 ):
     now = datetime.now(UTC)
 
-    total_assets = db.query(func.count(Asset.id)).scalar() or 0
+    def findings(*columns):
+        """The findings of the hosts in scope, joined to their host and CVE."""
+        return scope.filter(
+            db.query(*columns)
+            .select_from(AssetVulnerability)
+            .join(Asset, Asset.id == AssetVulnerability.asset_id)
+            .join(Vulnerability, Vulnerability.id == AssetVulnerability.vulnerability_id)
+        )
+
+    total_assets = scope.filter(db.query(func.count(Asset.id))).scalar() or 0
 
     severity_counts = (
-        db.query(Vulnerability.severity, func.count(AssetVulnerability.id))
-        .join(AssetVulnerability, AssetVulnerability.vulnerability_id == Vulnerability.id)
+        findings(Vulnerability.severity, func.count(AssetVulnerability.id))
         .filter(AssetVulnerability.status == Status.open)
         .group_by(Vulnerability.severity)
         .all()
@@ -51,7 +60,7 @@ def get_dashboard_stats(
     total_open_vulns = sum(severity_dict.values())
 
     status_counts = (
-        db.query(AssetVulnerability.status, func.count(AssetVulnerability.id))
+        findings(AssetVulnerability.status, func.count(AssetVulnerability.id))
         .group_by(AssetVulnerability.status)
         .all()
     )
@@ -60,7 +69,7 @@ def get_dashboard_stats(
         status_dict[_value_of(finding_status)] = count
 
     overdue_count = (
-        db.query(func.count(AssetVulnerability.id))
+        findings(func.count(AssetVulnerability.id))
         .filter(
             AssetVulnerability.status == Status.open,
             AssetVulnerability.remediation_deadline.isnot(None),
@@ -71,8 +80,7 @@ def get_dashboard_stats(
 
     def open_findings_where(*criteria) -> int:
         return (
-            db.query(func.count(AssetVulnerability.id))
-            .join(AssetVulnerability.vulnerability)
+            findings(func.count(AssetVulnerability.id))
             .filter(AssetVulnerability.status == Status.open, *criteria)
             .scalar()
         ) or 0
@@ -89,12 +97,11 @@ def get_dashboard_stats(
     )
 
     open_aggregates = (
-        db.query(
+        findings(
             func.avg(Vulnerability.cvss_score),
             func.avg(AssetVulnerability.risk_score),
             func.max(AssetVulnerability.risk_score),
         )
-        .join(AssetVulnerability, AssetVulnerability.vulnerability_id == Vulnerability.id)
         .filter(AssetVulnerability.status == Status.open)
         .one()
     )
@@ -102,7 +109,7 @@ def get_dashboard_stats(
 
     # Remediation rate: how much of everything ever detected is now closed out
     # as actually fixed. This is the number leadership asks for.
-    total_findings = db.query(func.count(AssetVulnerability.id)).scalar() or 0
+    total_findings = findings(func.count(AssetVulnerability.id)).scalar() or 0
     remediated = status_dict.get(Status.remediated.value, 0)
     remediation_rate = (
         round(remediated / total_findings * 100, 1) if total_findings else 0.0
@@ -132,21 +139,20 @@ def get_dashboard_stats(
 def get_top_risks(
     limit: int = Query(10, ge=1, le=50),
     db: Session = Depends(get_db),
-    payload: dict = Depends(decode_token),
+    scope: Scope = Depends(current_scope),
 ):
     """The highest-risk open findings — what to fix first."""
-    findings = (
+    query = (
         db.query(AssetVulnerability)
         .join(AssetVulnerability.vulnerability)
+        .join(AssetVulnerability.asset)
         .options(
             contains_eager(AssetVulnerability.vulnerability),
-            joinedload(AssetVulnerability.asset),
+            contains_eager(AssetVulnerability.asset),
         )
         .filter(AssetVulnerability.status == Status.open)
-        .order_by(*RISK_ORDER)
-        .limit(limit)
-        .all()
     )
+    findings = scope.filter(query).order_by(*RISK_ORDER).limit(limit).all()
 
     now = datetime.now(UTC)
     return [
@@ -202,14 +208,14 @@ def get_trends(
     days: int = Query(90, ge=7, le=365),
     owner_team: str | None = Query(None, max_length=128),
     db: Session = Depends(get_db),
-    payload: dict = Depends(decode_token),
+    scope: Scope = Depends(current_scope),
 ):
     """The backlog day by day (from the daily snapshots), the estate or a team.
 
     Days rebuilt from detection and fix dates rather than recorded that day
     are flagged ``estimated``.
     """
-    return {"days": days, "points": trends(db, days, owner_team)}
+    return {"days": days, "points": trends(db, days, owner_team, scope)}
 
 
 @router.get("/performance")
@@ -217,11 +223,14 @@ def get_performance(
     days: int = Query(30, ge=1, le=365),
     owner_team: str | None = Query(None, max_length=128),
     db: Session = Depends(get_db),
-    payload: dict = Depends(decode_token),
+    scope: Scope = Depends(current_scope),
 ):
     """Remediation over a recent window: fixes, deadlines kept, time to fix
     (overall and by criticality), risk removed, and every team's standing."""
-    return {**performance(db, days, owner_team), "team_names": team_names(db)}
+    return {
+        **performance(db, days, owner_team, scope),
+        "team_names": team_names(db, scope),
+    }
 
 
 @router.post("/snapshots/rebuild")

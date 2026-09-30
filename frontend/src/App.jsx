@@ -10,6 +10,7 @@ import { AuthProvider, useAuth } from './auth/AuthContext'
 import { ModulesProvider, useModules } from './auth/ModulesContext'
 import { MODULE_SCREENS, PREFERENCES_PATH, homePath, knownModules } from './modules'
 import { createQueryClient } from './queryClient'
+import { scopeLabel } from './teams'
 
 const navClass = ({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')
 
@@ -17,6 +18,7 @@ function Sidebar({ modules }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { user, logout } = useAuth()
+  const { teams } = useModules()
   const username = user?.username
 
   const handleLogout = async () => {
@@ -45,6 +47,13 @@ function Sidebar({ modules }) {
         {username && (
           <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
             Signed in as <strong style={{ color: 'var(--text-main)' }}>{username}</strong>
+          </div>
+        )}
+        {teams && (
+          // Everything shown is limited to these teams: say so, or an empty
+          // screen reads as an empty estate.
+          <div data-testid="scope" style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
+            Scope: <strong style={{ color: 'var(--text-main)' }}>{scopeLabel(teams)}</strong>
           </div>
         )}
         <NavLink to={PREFERENCES_PATH} className={navClass}>
