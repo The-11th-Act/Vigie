@@ -105,8 +105,9 @@ gh run list --workflow CI --branch main --limit 1          # pas seulement --lim
 1. ~~Préproduction (D11)~~ fait le 30/09/2026 : `docs/PREPRODUCTION.md`.
    Reste le bandeau « préproduction » dans l'interface.
 2. ~~T1~~ fait le 30/09/2026 : synchrone assumé (`docs/EXPLOITATION.md`).
-   Métriques en mode multiprocessus faites. Reste : compteur d'ingestion
-   tiré de la base (le worker n'expose rien) ; `mypy`.
+   Métriques en mode multiprocessus et compteur d'ingestion faits. Reste
+   `mypy`. Le worker n'expose aucune métrique : ce qu'il fait se mesure
+   depuis la base, au scrape de l'API.
 3. TanStack Query côté frontend ; groupes d'assets et filtrage par périmètre.
 4. **Plus tard, à la demande de l'utilisateur** : connecteur de ticketing
    (Jira, ServiceNow ou GLPI, à lui faire choisir) sur les champs

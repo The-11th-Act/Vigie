@@ -215,6 +215,23 @@ class TestCrowdStrikeSync:
         # Polled findings go through the same pipeline as uploaded ones.
         asset = worker_session.query(Asset).filter_by(ip_address="10.8.0.1").one()
         assert asset.hostname == "cs-host"
+        # And leave the same trace in the scan history.
+        job = worker_session.query(ScanJob).filter_by(scan_type="crowdstrike").one()
+        assert job.status == ScanStatus.success
+        assert job.processed_records == 1
+        assert job.finished_at is not None
+
+    def test_retries_of_a_sync_share_one_history_row(self, worker_session):
+        from app.worker.tasks import _crowdstrike_job
+
+        first = _crowdstrike_job(worker_session, "celery-task-1")
+        again = _crowdstrike_job(worker_session, "celery-task-1")
+        other = _crowdstrike_job(worker_session, "celery-task-2")
+
+        assert first == again != other
+        assert (
+            worker_session.query(ScanJob).filter_by(scan_type="crowdstrike").count() == 2
+        )
 
 
 class TestDailyRescoring:

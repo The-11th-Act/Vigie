@@ -4,7 +4,6 @@ from datetime import UTC, datetime
 
 from app.core.config import settings
 from app.core.logging import set_request_id
-from app.core.metrics import observe_ingestion
 from app.db.database import SessionLocal
 from app.models.scan import ScanJob, ScanStatus
 from app.parsers.nessus import parse_nessus_scan
@@ -73,7 +72,6 @@ def process_scan_file_task(self, scan_file_path: str, scan_type: str, scan_job_i
             db, scan.findings, scan_type, scanned_addresses=scan.scanned_addresses
         )
 
-        observe_ingestion(scan_type, result.processed_records)
         _apply_result(db, scan_job_id, result)
         # Only drop the staged file once its contents are safely persisted.
         _discard(scan_file_path)
@@ -133,10 +131,11 @@ def sync_crowdstrike_task(self):
         return {"status": "skipped", "message": "CrowdStrike credentials are missing"}
 
     db = SessionLocal()
+    job_id = _crowdstrike_job(db, self.request.id)
     try:
         findings = fetch_vulnerabilities_from_settings()
         result = ingest_findings(db, findings, "crowdstrike")
-        observe_ingestion("crowdstrike", result.processed_records)
+        _apply_result(db, job_id, result)
         return {"status": "success", **result.as_dict()}
     except Exception as exc:
         db.rollback()
@@ -148,10 +147,33 @@ def sync_crowdstrike_task(self):
             exc_info=True,
         )
         if self.request.retries >= self.max_retries:
+            _finalize_job(job_id, ScanStatus.failed, message=str(exc))
             return {"status": "error", "message": str(exc)}
         raise
     finally:
         db.close()
+
+
+CROWDSTRIKE_JOB_NAME = "Falcon Spotlight"
+
+
+def _crowdstrike_job(db, task_id) -> int:
+    """The scan history row of this sync, kept across its retries.
+
+    A polled source leaves the same trace as an upload: when it ran, what it
+    brought, why it failed. Retries share the Celery task id, hence one row.
+    """
+    job = None
+    if task_id:
+        job = db.query(ScanJob).filter_by(task_id=task_id).one_or_none()
+    if job is None:
+        job = ScanJob(
+            scan_type="crowdstrike", filename=CROWDSTRIKE_JOB_NAME, task_id=task_id
+        )
+        db.add(job)
+    job.status = ScanStatus.running
+    db.commit()
+    return job.id
 
 
 @celery_app.task(

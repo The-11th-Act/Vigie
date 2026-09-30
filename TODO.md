@@ -337,9 +337,11 @@ expose `UVICORN_WORKERS`, mais le lien avec `pool_size` n'est pas documenté.
       `PROMETHEUS_MULTIPROC_DIR` sur le tmpfs de l'API ; jauges des process morts
       oubliées ; requêtes en cours, threads, connexions utilisées et maximum ;
       vérifié dans la pile réelle, où la capacité vaut la somme des 4 process)*
-- [ ] `vigie_findings_ingested_total` reste à 0 : il est incrémenté dans le worker
-      Celery, qui n'expose aucune métrique. Le tirer de la base, et tracer la
-      synchro CrowdStrike comme un scan
+- [x] `vigie_findings_ingested_total` restait à 0 : il était incrémenté dans le
+      worker Celery, qui n'expose aucune métrique *(30/09/2026 : lu dans l'historique
+      des scans réussis ; chaque synchro CrowdStrike y figure désormais comme un
+      scan, une ligne par synchro malgré les nouvelles tentatives ; vérifié dans la
+      pile réelle)*
 
 ### T5 (suite). Frontend
 - [ ] TanStack Query en remplacement de `useFetch` (cache, déduplication, invalidation)

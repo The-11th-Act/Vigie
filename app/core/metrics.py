@@ -23,6 +23,7 @@ from prometheus_client import (
     generate_latest,
     multiprocess,
 )
+from prometheus_client.core import CounterMetricFamily
 from sqlalchemy import event, func
 from sqlalchemy.orm import Session
 
@@ -53,12 +54,32 @@ REQUEST_LATENCY = Histogram(
     registry=REGISTRY,
 )
 
-FINDINGS_INGESTED = Counter(
-    "vigie_findings_ingested_total",
-    "Findings processed by the ingestion pipeline, by scan source.",
-    ["source"],
-    registry=REGISTRY,
-)
+
+class _IngestedFindings:
+    """``vigie_findings_ingested_total``, read from the scan history.
+
+    Ingestion runs in the Celery worker, which serves no /metrics: a counter
+    incremented there never reached Prometheus and stayed at 0. The successful
+    scan jobs hold the same count, uploads and CrowdStrike syncs alike, and it
+    only grows, since the history is never pruned. Refreshed at scrape time.
+    """
+
+    def __init__(self) -> None:
+        self.by_source: dict[str, int] = {}
+
+    def collect(self):
+        family = CounterMetricFamily(
+            "vigie_findings_ingested",
+            "Findings processed by the ingestion pipeline, by scan source.",
+            labels=["source"],
+        )
+        for source, total in sorted(self.by_source.items()):
+            family.add_metric([source], total)
+        yield family
+
+
+INGESTED_FINDINGS = _IngestedFindings()
+REGISTRY.register(INGESTED_FINDINGS)
 
 OPEN_FINDINGS = Gauge(
     "vigie_open_findings",
@@ -149,6 +170,8 @@ def exposition() -> bytes:
     _forget_dead_processes()
     registry = CollectorRegistry()
     multiprocess.MultiProcessCollector(registry, path=MULTIPROCESS_DIR)
+    # Not a multiprocess metric: this process has just read it from the base.
+    registry.register(INGESTED_FINDINGS)
     return generate_latest(registry)
 
 
@@ -176,11 +199,6 @@ def observe_request(method: str, route: str, status: int, duration: float) -> No
     REQUEST_LATENCY.labels(method=method, route=route).observe(duration)
 
 
-def observe_ingestion(source: str, processed: int) -> None:
-    if processed:
-        FINDINGS_INGESTED.labels(source=source or "unknown").inc(processed)
-
-
 def refresh_backlog_gauges(db: Session) -> None:
     """Recompute the backlog gauges at scrape time.
 
@@ -189,6 +207,7 @@ def refresh_backlog_gauges(db: Session) -> None:
     """
     from datetime import datetime
 
+    from app.models.scan import ScanJob, ScanStatus
     from app.models.threat_intel import FEEDS, ThreatFeedStatus
     from app.models.vulnerability import AssetVulnerability, Status, Vulnerability
 
@@ -226,6 +245,14 @@ def refresh_backlog_gauges(db: Session) -> None:
             row.feed: row.last_success_at
             for row in db.query(ThreatFeedStatus.feed, ThreatFeedStatus.last_success_at)
         }
+        ingested = {
+            source: int(total or 0)
+            for source, total in db.query(
+                ScanJob.scan_type, func.sum(ScanJob.processed_records)
+            )
+            .filter(ScanJob.status == ScanStatus.success)
+            .group_by(ScanJob.scan_type)
+        }
     except Exception as exc:
         # A scrape must never take the application down.
         logger.warning("Could not refresh backlog gauges: %s", exc)
@@ -235,6 +262,7 @@ def refresh_backlog_gauges(db: Session) -> None:
     OVERDUE_FINDINGS.set(overdue_count)
     OPEN_KEV_FINDINGS.set(open_kev_count)
     OVERDUE_KEV_FINDINGS.set(overdue_kev_count)
+    INGESTED_FINDINGS.by_source = ingested
     for feed in FEEDS:
         moment = last_success.get(feed)
         if moment is not None and moment.tzinfo is None:

@@ -205,6 +205,14 @@ done
 [ "$STATUS" = "Success" ] || fail "le scan n'a jamais été traité (statut : $STATUS)"
 echo "Scan ingéré par le worker via le volume partagé."
 
+# Le worker n'expose aucune métrique : le compteur d'ingestion, lu dans
+# l'historique des scans, doit tout de même le montrer côté API.
+INGESTED=$("${COMPOSE[@]}" exec -T web curl -fsS http://localhost:8000/metrics \
+  | sed -n 's/^vigie_findings_ingested_total{source="nessus"} //p')
+[ "$INGESTED" = "1.0" ] \
+  || fail "vigie_findings_ingested_total{source=\"nessus\"} vaut « $INGESTED », 1.0 attendu"
+echo "ok - l'ingestion faite par le worker apparaît dans les métriques de l'API"
+
 # LOG_FORMAT=json atteint les conteneurs, et l'id de la requête d'upload
 # suit le scan jusqu'au worker : sa ligne d'ingestion le porte.
 "${COMPOSE[@]}" logs --no-color --no-log-prefix worker | grep '^{' \

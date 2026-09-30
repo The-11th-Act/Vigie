@@ -446,7 +446,9 @@ the beat scheduler then pulls open findings every
 - `GET /ready` — readiness: PostgreSQL, Redis and the presence of Celery
   workers, reported one by one; 503 if any is unusable.
 - `GET /metrics` — Prometheus exposition: HTTP volume and latency by route,
-  findings ingested by source, the size of the open/overdue backlog, open and
+  findings ingested by source (read from the scan history, since ingestion
+  runs in the worker, which serves no metrics; CrowdStrike syncs are recorded
+  there like uploads), the size of the open/overdue backlog, open and
   overdue KEV findings, and `vigie_threat_feed_last_success_timestamp_seconds`
   per feed (0 until first applied — alert on `time() - value > 2 * 86400`).
   Saturation: `vigie_http_requests_in_progress` against `vigie_api_threads`,

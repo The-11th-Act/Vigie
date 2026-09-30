@@ -158,6 +158,33 @@ class TestMetrics:
         assert 'route="/api/v1/assets/{asset_id}"' in body
         assert f'route="/api/v1/assets/{asset.id}"' not in body
 
+    def test_counts_ingested_findings_from_the_scan_history(self, client, db_session):
+        """Ingestion runs in the worker, which serves no /metrics: the count
+        comes from the successful scan jobs, whatever process answers."""
+        from app.models.scan import ScanJob, ScanStatus
+
+        for scan_type, status, processed in [
+            ("nessus", ScanStatus.success, 3),
+            ("nessus", ScanStatus.success, 4),
+            ("nessus", ScanStatus.failed, 50),
+            ("crowdstrike", ScanStatus.success, 2),
+        ]:
+            db_session.add(
+                ScanJob(
+                    scan_type=scan_type,
+                    filename="report",
+                    status=status,
+                    processed_records=processed,
+                )
+            )
+        db_session.commit()
+
+        body = client.get("/metrics").text
+
+        assert "# TYPE vigie_findings_ingested_total counter" in body
+        assert 'vigie_findings_ingested_total{source="nessus"} 7.0' in body
+        assert 'vigie_findings_ingested_total{source="crowdstrike"} 2.0' in body
+
     def test_exposes_the_threat_context_gauges(self, client, db_session):
         from datetime import UTC, datetime
 
