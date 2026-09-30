@@ -1,3 +1,15 @@
+# Le dépôt stocke tout en LF, quelle que soit la configuration de chacun
+# (core.autocrlf) : sans cette règle, un poste sans autocrlf pouvait committer
+# du CRLF, et l'arbre de travail mélangeait les deux. L'index était déjà
+# entièrement en LF (git ls-files --eol) : rien à renormaliser.
+* text=auto
+
+# Binaires : jamais convertis.
+*.png binary
+*.jpg binary
+*.ico binary
+*.gz binary
+
 # Les scripts exécutés dans les conteneurs ou par la CI doivent garder des fins
 # de ligne LF : sous Windows, core.autocrlf les convertirait en CRLF à
 # l'extraction, et une image construite depuis ce poste casserait sur
