@@ -142,6 +142,9 @@ services:
       - ADMIN_PASSWORD=
       - PREVIOUS_SECRET_KEYS=
       - PREVIOUS_SECRET_KEYS_FILE=/run/secrets/previous_secret_keys
+      # Plusieurs process uvicorn : chacun ecrit ses metriques ici, et
+      # /metrics les additionne. Sur le tmpfs, vide a chaque demarrage.
+      - PROMETHEUS_MULTIPROC_DIR=/tmp/prometheus
     secrets: [secret_key, previous_secret_keys, postgres_password, redis_password]
     healthcheck:
       # /ready et non /health : inclut Redis et la presence d'un worker

@@ -3,16 +3,37 @@
 Labels use the *route template* (``/api/v1/assets/{asset_id}``) rather than the
 resolved path: labelling by raw path would mint a new time series per asset id
 and blow up cardinality.
+
+In production the API runs several uvicorn processes, and a scrape reaches only
+one of them. Each would report its own counters, which Prometheus reads as a
+counter reset at every scrape. With PROMETHEUS_MULTIPROC_DIR set, every process
+writes its values to that directory and /metrics sums them all.
 """
 
+import glob
 import logging
+import os
 from datetime import UTC
 
-from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram
-from sqlalchemy import func
+from prometheus_client import (
+    CollectorRegistry,
+    Counter,
+    Gauge,
+    Histogram,
+    generate_latest,
+    multiprocess,
+)
+from sqlalchemy import event, func
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
+
+# Read by prometheus_client itself, not a setting of the application. On a
+# tmpfs: it starts empty with the container, as the counters must.
+MULTIPROCESS_DIR = os.environ.get("PROMETHEUS_MULTIPROC_DIR")
+if MULTIPROCESS_DIR:
+    # Metrics without labels write their file as soon as they are declared.
+    os.makedirs(MULTIPROCESS_DIR, exist_ok=True)
 
 # A registry of our own rather than the global default: it keeps the exposition
 # limited to what this app declares, and lets tests build a clean one.
@@ -43,12 +64,14 @@ OPEN_FINDINGS = Gauge(
     "vigie_open_findings",
     "Findings currently open — the size of the remediation backlog.",
     registry=REGISTRY,
+    multiprocess_mode="mostrecent",
 )
 
 OVERDUE_FINDINGS = Gauge(
     "vigie_overdue_findings",
     "Open findings past their remediation deadline.",
     registry=REGISTRY,
+    multiprocess_mode="mostrecent",
 )
 
 
@@ -56,12 +79,14 @@ OPEN_KEV_FINDINGS = Gauge(
     "vigie_open_kev_findings",
     "Open findings on a CVE listed in CISA KEV (exploited in the wild).",
     registry=REGISTRY,
+    multiprocess_mode="mostrecent",
 )
 
 OVERDUE_KEV_FINDINGS = Gauge(
     "vigie_overdue_kev_findings",
     "Open KEV findings past their remediation deadline.",
     registry=REGISTRY,
+    multiprocess_mode="mostrecent",
 )
 
 # Read from the database at scrape time: the worker that refreshes the feeds
@@ -72,7 +97,78 @@ THREAT_FEED_LAST_SUCCESS = Gauge(
     "Unix time of the last successful application of a threat feed.",
     ["feed"],
     registry=REGISTRY,
+    multiprocess_mode="mostrecent",
 )
+
+
+# Saturation of the API (docs/EXPLOITATION.md, "Dimensionnement"), summed over
+# the live processes. Requests in progress beyond the thread capacity are
+# waiting for a thread; connections in use near their maximum mean requests
+# will soon wait for the pool.
+REQUESTS_IN_PROGRESS = Gauge(
+    "vigie_http_requests_in_progress",
+    "Requests being handled or waiting for a thread.",
+    registry=REGISTRY,
+    multiprocess_mode="livesum",
+)
+API_THREADS = Gauge(
+    "vigie_api_threads",
+    "Requests the API can run at once (API_THREADS x processes).",
+    registry=REGISTRY,
+    multiprocess_mode="livesum",
+)
+DB_CONNECTIONS_IN_USE = Gauge(
+    "vigie_db_connections_in_use",
+    "Database connections checked out of the API's pools.",
+    registry=REGISTRY,
+    multiprocess_mode="livesum",
+)
+DB_CONNECTIONS_MAX = Gauge(
+    "vigie_db_connections_max",
+    "Connections the API's pools may open (DB_POOL_SIZE + DB_MAX_OVERFLOW, per process).",
+    registry=REGISTRY,
+    multiprocess_mode="livesum",
+)
+
+
+def record_capacity(threads: int, connections: int) -> None:
+    API_THREADS.set(threads)
+    DB_CONNECTIONS_MAX.set(connections)
+
+
+def instrument_pool(engine) -> None:
+    """Count the connections checked out of ``engine``'s pool."""
+    event.listen(engine, "checkout", lambda *_: DB_CONNECTIONS_IN_USE.inc())
+    event.listen(engine, "checkin", lambda *_: DB_CONNECTIONS_IN_USE.dec())
+
+
+def exposition() -> bytes:
+    """The metrics of this process, or of all of them in multiprocess mode."""
+    if not MULTIPROCESS_DIR:
+        return generate_latest(REGISTRY)
+    _forget_dead_processes()
+    registry = CollectorRegistry()
+    multiprocess.MultiProcessCollector(registry, path=MULTIPROCESS_DIR)
+    return generate_latest(registry)
+
+
+def _forget_dead_processes() -> None:
+    """Drop the live gauges of processes that are gone.
+
+    uvicorn replaces a worker that dies; its in-progress requests and
+    connections would otherwise be counted forever. Counters and histograms
+    keep their files: what a dead process counted still happened. Liveness is
+    read from /proc, as in the Linux containers this mode is meant for.
+    """
+    if not os.path.isdir("/proc"):
+        return
+    pids = {
+        int(os.path.basename(path).rsplit("_", 1)[1].removesuffix(".db"))
+        for path in glob.glob(os.path.join(MULTIPROCESS_DIR, "gauge_live*_*.db"))
+    }
+    for pid in pids:
+        if not os.path.exists(f"/proc/{pid}"):
+            multiprocess.mark_process_dead(pid, MULTIPROCESS_DIR)
 
 
 def observe_request(method: str, route: str, status: int, duration: float) -> None:

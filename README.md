@@ -449,6 +449,11 @@ the beat scheduler then pulls open findings every
   findings ingested by source, the size of the open/overdue backlog, open and
   overdue KEV findings, and `vigie_threat_feed_last_success_timestamp_seconds`
   per feed (0 until first applied — alert on `time() - value > 2 * 86400`).
+  Saturation: `vigie_http_requests_in_progress` against `vigie_api_threads`,
+  `vigie_db_connections_in_use` against `vigie_db_connections_max`. In
+  production the uvicorn processes write to `PROMETHEUS_MULTIPROC_DIR` and a
+  scrape sums them all; without it, each scrape saw one process, and every
+  switch between processes looked like a counter reset.
 - Every response carries an `X-Request-ID`; an inbound one is reused, and the
   id is propagated to Celery tasks and stamped on every log line, the
   worker's and uvicorn's included (they are routed through the application's

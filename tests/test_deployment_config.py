@@ -128,6 +128,15 @@ class TestProductionOverlay:
     def test_resource_limits_are_set(self, prod_config):
         assert "limits" in prod_config
 
+    def test_metrics_add_up_across_api_processes(self, prod_services):
+        """Sans répertoire multiprocessus, chaque scrape ne voit qu'un des
+        process uvicorn : ses compteurs, que Prometheus lit comme remis à zéro.
+        Sur un tmpfs, pour repartir de zéro avec le conteneur."""
+        web = prod_services["web"]
+        directory = web["environment"]["PROMETHEUS_MULTIPROC_DIR"]
+        assert any(directory.startswith(mount + "/") for mount in web["tmpfs"])
+        assert "--workers" in " ".join(web["command"])
+
     def test_api_and_worker_share_the_upload_volume(self, prod_services):
         """L'API dépose le scan sur disque et ne transmet que son chemin à
         Celery : si le worker ne voit pas le même volume, chaque upload est

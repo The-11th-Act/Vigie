@@ -332,8 +332,14 @@ expose `UVICORN_WORKERS`, mais le lien avec `pool_size` n'est pas documenté.
       budget de connexions dans `docs/EXPLOITATION.md`, recalculé par les tests.
       L'ancien pool figé, 4 × (10 + 20) = 120 connexions, dépassait les 100 de
       PostgreSQL)*
-- [ ] Métriques Prometheus justes avec plusieurs workers uvicorn (mode
-      multiprocessus), plus l'occupation des threads et du pool
+- [x] Métriques Prometheus justes avec plusieurs workers uvicorn (mode
+      multiprocessus), plus l'occupation des threads et du pool *(30/09/2026 :
+      `PROMETHEUS_MULTIPROC_DIR` sur le tmpfs de l'API ; jauges des process morts
+      oubliées ; requêtes en cours, threads, connexions utilisées et maximum ;
+      vérifié dans la pile réelle, où la capacité vaut la somme des 4 process)*
+- [ ] `vigie_findings_ingested_total` reste à 0 : il est incrémenté dans le worker
+      Celery, qui n'expose aucune métrique. Le tirer de la base, et tracer la
+      synchro CrowdStrike comme un scan
 
 ### T5 (suite). Frontend
 - [ ] TanStack Query en remplacement de `useFetch` (cache, déduplication, invalidation)

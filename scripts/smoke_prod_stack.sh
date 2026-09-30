@@ -139,6 +139,21 @@ for image in vigie-frontend:smoke vigie-backup:smoke; do
 done
 echo "ok - une image par version : vigie-api, vigie-frontend et vigie-backup en :smoke"
 
+# --- Métriques additionnées sur les process uvicorn ------------------------
+# Chaque process déclare sa capacité (API_THREADS, 10) au démarrage : seule la
+# somme des 4 process par défaut donne 40. Un scrape qui ne verrait qu'un
+# process, comme avant le mode multiprocessus, lirait 10.
+# Les 4 process démarrent ensemble mais pas au même instant : on attend.
+for _ in $(seq 1 15); do
+  THREADS=$("${COMPOSE[@]}" exec -T web curl -fsS http://localhost:8000/metrics \
+    | sed -n 's/^vigie_api_threads //p')
+  [ "$THREADS" = "40.0" ] && break
+  sleep 2
+done
+[ "$THREADS" = "40.0" ] \
+  || fail "vigie_api_threads vaut « $THREADS » : les métriques des 4 process ne sont pas additionnées"
+echo "ok - métriques additionnées sur les 4 process uvicorn (capacité : $THREADS threads)"
+
 # --- Premier administrateur, par le chemin documenté ------------------------
 "${COMPOSE[@]}" run --rm -T -e ADMIN_PASSWORD="$ADMIN_PASSWORD" web \
   python -m scripts.create_admin --username admin --email admin@example.com \

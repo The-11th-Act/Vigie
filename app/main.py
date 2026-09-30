@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from anyio import to_thread
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from prometheus_client import CONTENT_TYPE_LATEST
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -32,9 +32,10 @@ from app.core.config import settings
 from app.core.logging import configure_logging, get_request_id, set_request_id
 from app.core.modules import require_module
 from app.core.security import CSRF_HEADER, SESSION_MODE_HEADER
-from app.db.database import SessionLocal, get_db
+from app.db.database import SessionLocal, engine, get_db
 
 configure_logging()
+metrics.instrument_pool(engine)
 logger = logging.getLogger(__name__)
 
 REQUEST_ID_HEADER = "X-Request-ID"
@@ -49,6 +50,10 @@ def configure_threadpool() -> None:
     loop, measurable, instead of in threads blocked on the pool.
     """
     to_thread.current_default_thread_limiter().total_tokens = settings.API_THREADS
+    metrics.record_capacity(
+        threads=settings.API_THREADS,
+        connections=settings.DB_POOL_SIZE + settings.DB_MAX_OVERFLOW,
+    )
 
 
 @asynccontextmanager
@@ -98,6 +103,7 @@ async def request_context(request: Request, call_next):
     set_request_id(request_id)
 
     started = time.perf_counter()
+    metrics.REQUESTS_IN_PROGRESS.inc()
     try:
         response = await call_next(request)
     except Exception:
@@ -110,6 +116,8 @@ async def request_context(request: Request, call_next):
             time.perf_counter() - started,
         )
         raise
+    finally:
+        metrics.REQUESTS_IN_PROGRESS.dec()
 
     metrics.observe_request(
         request.method,
@@ -235,9 +243,7 @@ def readiness_check(db: Session = Depends(get_db)):
 @app.get("/metrics", tags=["Health"], include_in_schema=False)
 def prometheus_metrics(db: Session = Depends(get_db)):
     metrics.refresh_backlog_gauges(db)
-    return Response(
-        content=generate_latest(metrics.REGISTRY), media_type=CONTENT_TYPE_LATEST
-    )
+    return Response(content=metrics.exposition(), media_type=CONTENT_TYPE_LATEST)
 
 
 def _route_of(request: Request) -> str:
