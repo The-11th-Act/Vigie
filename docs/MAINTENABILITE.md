@@ -46,30 +46,23 @@ qui ne les ont pas**, plutôt qu'à réécrire quoi que ce soit.
 
 ## 1. Les cinq points de douleur réels
 
-### M1 — Le contrat entre parseurs et ingestion n'est vérifié par rien
+### M1 — Le contrat entre parseurs et ingestion n'est vérifié par rien ✅ *traité*
 
-`app/parsers/utils.py:1-16` décrit en docstring la forme exacte que chaque parseur doit
-émettre. C'est la bonne intention, mais c'est du texte : rien ne l'applique.
+`app/parsers/utils.py:1-16` décrivait en docstring la forme exacte que chaque parseur devait
+émettre. C'était la bonne intention, mais c'était du texte : rien ne l'appliquait.
 
-`ingestion.py` fait ensuite `finding["ip_address"]`, `finding["cve_id"]`, `finding["hostname"]`…
-en accès direct. Un parseur qui oublie une clé provoque un `KeyError` **dans le worker
+`ingestion.py` faisait ensuite `finding["ip_address"]`, `finding["cve_id"]`, `finding["hostname"]`…
+en accès direct. Un parseur qui oublie une clé provoquait un `KeyError` **dans le worker
 Celery**, c'est-à-dire dans le composant le moins observable de la plateforme, sur un
 scan client, en production.
 
-C'est le point le plus coûteux du projet, parce qu'ajouter un parseur (Qualys, Rapid7,
-CrowdStrike un jour) est **le scénario d'évolution le plus probable** — c'est même la
-promesse d'un produit RBVM.
-
-> **Correction** : une dataclass `ParsedFinding` (ou un modèle Pydantic) retournée par
-> tous les parseurs. Le contrat devient exécutable, l'erreur passe du worker à l'appel de
-> fonction, et l'autocomplétion de l'IDE remplace la lecture de la docstring.
-> Effort : 3 h. C'est le meilleur rapport valeur/coût du document.
-
-> **Mise à jour du 25/09/2026** : les parseurs de fichiers renvoient désormais un
-> `ParsedScan` (`app/parsers/utils.py`) : les findings plus les adresses couvertes par
-> le scan, dont dépend la clôture automatique. L'enveloppe est typée, mais les findings
-> restent des dictionnaires : M1 reste ouvert, et `ParsedScan` est l'endroit naturel où
-> accrocher `ParsedFinding`.
+> **Corrigé.** Les dataclasses `ParsedFinding` et `ParsedRemediation` formalisent le contrat
+> dans `app/parsers/utils.py`. Elles valident à l'instanciation la présence des champs
+> obligatoires (`ip_address`, `cve_id`, `title`, `kind`, `reference`), normalisent le CVE et le score CVSS,
+> et intègrent le duck-typing dictionnaire (`__getitem__`, `__contains__`, `get()`, `as_dict()`)
+> pour assurer une rétro-compatibilité totale. Tous les parseurs (`nessus.py`, `openvas.py`,
+> `crowdstrike.py`) ainsi que le service d'ingestion (`ingestion.py`) sont désormais typés.
+> Une suite de tests dédiée (`TestParsedContract`) valide ce contrat à 100 %.
 
 ### M2 — Le worker Celery est le point le moins couvert, et le plus risqué ✅ *traité*
 
@@ -206,7 +199,7 @@ en priorité, indépendamment de leur gravité actuelle :
 
 Trié par (valeur × urgence) / coût, pas par gravité :
 
-### ✅ Fait le 07/08/2026
+### ✅ Réalisé
 
 | # | Action | Résultat |
 |---|---|---|
@@ -214,20 +207,18 @@ Trié par (valeur × urgence) / coût, pas par gravité :
 | M2 | 11 tests du worker + CrowdStrike qui refuse de servir | `tasks.py` 37 % → 100 % |
 | M4 | 15 tests de cohérence de la politique de risque | Dérive des seuils détectée, vérifié par mutation |
 | — | Seuil de couverture bloquant (`fail_under = 90`) | La régression de couverture échoue en CI |
-
-Couverture globale : **90 % → 94 %**. Tests : 143 → 175. Plus aucun module à 0 %.
+| M1 | `ParsedFinding` & `ParsedRemediation` : contrat exécutable | Types stricts, validation, rétro-compatibilité duck-typing |
 
 ### Reste à faire
 
 | # | Action | Effort | Pourquoi maintenant |
 |---|---|---|---|
 | 10 | Table d'audit du triage | 3 h | Chaque jour d'attente perd de l'information définitivement |
-| M1 | `ParsedFinding` : contrat de parseur exécutable | 3 h | Débloque tout ajout de scanner |
 | M4b | `policy.py` + surcharge par variables d'environnement | 2 h | La politique SLA appartient au client, pas au code |
 | M3 | Vitest sur 3 parcours, puis extraction de composants | 6 h | Le frontend n'a toujours aucun filet |
 | — | `mypy` graduel + Dependabot | 2 h | Complète l'outillage de la CI |
 
-**Environ 16 h restantes.**
+**Environ 13 h restantes.**
 
 ---
 

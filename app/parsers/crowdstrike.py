@@ -21,6 +21,8 @@ import requests
 from app.core.http_retry import backoff_seconds, retry_after_seconds
 from app.models.remediation import RemediationKind
 from app.parsers.utils import (
+    ParsedFinding,
+    ParsedRemediation,
     clean_text,
     is_valid_cve,
     kb_reference,
@@ -217,9 +219,9 @@ class CrowdstrikeClient:
 
     def fetch_vulnerabilities(
         self, filter_expr: str = DEFAULT_FILTER
-    ) -> list[dict[str, Any]]:
+    ) -> list[ParsedFinding]:
         """Return open Spotlight findings in the platform's normalised shape."""
-        findings: list[dict[str, Any]] = []
+        findings: list[ParsedFinding] = []
         skipped = 0
 
         for id_page in self._iter_id_pages(filter_expr):
@@ -238,7 +240,7 @@ class CrowdstrikeClient:
         return findings
 
 
-def _normalize(entity: dict[str, Any]) -> dict[str, Any] | None:
+def _normalize(entity: dict[str, Any]) -> ParsedFinding | None:
     """Map a Spotlight entity onto the shared finding shape.
 
     Entries without a well-formed CVE or without an IP are dropped: the first
@@ -259,32 +261,31 @@ def _normalize(entity: dict[str, Any]) -> dict[str, Any] | None:
     cvss_score = safe_float(cve.get("base_score"))
     description = clean_text(cve.get("description"))
 
-    finding: dict[str, Any] = {
-        "ip_address": ip_address,
-        "hostname": clean_text(host.get("hostname")),
-        "operating_system": clean_text(host.get("os_version")),
-        "cve_id": cve_id,
+    entities = (entity.get("remediation") or {}).get("entities")
+    remediations: list[ParsedRemediation] | None = None
+    if isinstance(entities, list):
+        remediations = _remediations(entities, entity.get("apps") or [])
+
+    return ParsedFinding(
+        ip_address=ip_address,
+        hostname=clean_text(host.get("hostname")),
+        operating_system=clean_text(host.get("os_version")),
+        cve_id=cve_id,
         # Spotlight carries no title field; the CVE id plus the opening of the
         # description is the most useful label available.
-        "title": _title_for(cve_id, description),
-        "description": description,
-        "cvss_score": cvss_score,
+        title=_title_for(cve_id, description),
+        description=description,
+        cvss_score=cvss_score,
         # Spotlight severities arrive upper-case ("HIGH"); normalize_severity
         # folds them into the enum and falls back to the CVSS band when absent.
-        "severity": normalize_severity(cve.get("severity"), cvss_score),
-    }
-    # Only with the remediation details expanded: an entity carrying nothing
-    # but remediation ids says nothing usable, and must not erase what an
-    # earlier sync recorded.
-    entities = (entity.get("remediation") or {}).get("entities")
-    if isinstance(entities, list):
-        finding["remediations"] = _remediations(entities, entity.get("apps") or [])
-    return finding
+        severity=normalize_severity(cve.get("severity"), cvss_score),
+        remediations=remediations,
+    )
 
 
 def _remediations(
     entities: list[dict[str, Any]], apps: list[dict[str, Any]]
-) -> list[dict[str, Any]]:
+) -> list[ParsedRemediation]:
     """Spotlight's recommended actions, keyed by KB when they name one."""
     installed = next(
         (
@@ -294,7 +295,7 @@ def _remediations(
         ),
         None,
     )
-    remediations = []
+    remediations: list[ParsedRemediation] = []
     for item in entities:
         if not isinstance(item, dict):
             continue
@@ -328,7 +329,7 @@ def _title_for(cve_id: str, description: str | None) -> str:
     return f"{cve_id}: {first_sentence[:400]}"
 
 
-def fetch_vulnerabilities_from_settings() -> list[dict[str, Any]]:
+def fetch_vulnerabilities_from_settings() -> list[ParsedFinding]:
     """Build a client from application settings and pull open findings."""
     from app.core.config import settings
 

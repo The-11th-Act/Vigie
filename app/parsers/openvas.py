@@ -1,11 +1,12 @@
 import logging
-from typing import Any
 
 from defusedxml import ElementTree as ET
 from defusedxml.common import DefusedXmlException
 
 from app.models.remediation import RemediationKind
 from app.parsers.utils import (
+    ParsedFinding,
+    ParsedRemediation,
     ParsedScan,
     clean_text,
     is_valid_cve,
@@ -61,7 +62,7 @@ def _extract_cve_ids(nvt_el) -> list[str]:
     return valid
 
 
-def parse_openvas_report(xml_content: bytes) -> list[dict[str, Any]]:
+def parse_openvas_report(xml_content: bytes) -> list[ParsedFinding]:
     """Parse an OpenVAS/GVM XML report into normalised findings."""
     return parse_openvas_scan(xml_content).findings
 
@@ -134,17 +135,17 @@ def parse_openvas_scan(xml_content: bytes) -> ParsedScan:
 
         for cve_id in cve_ids:
             results.append(
-                {
-                    "ip_address": ip_address,
-                    "hostname": hostname,
-                    "operating_system": None,
-                    "cve_id": cve_id,
-                    "title": title,
-                    "description": description,
-                    "cvss_score": cvss_score,
-                    "severity": severity,
-                    "remediations": remediations,
-                }
+                ParsedFinding(
+                    ip_address=ip_address,
+                    hostname=hostname,
+                    operating_system=None,
+                    cve_id=cve_id,
+                    title=title,
+                    description=description,
+                    cvss_score=cvss_score,
+                    severity=severity,
+                    remediations=remediations,
+                )
             )
 
     logger.info(
@@ -174,7 +175,7 @@ def _solution(nvt_el) -> tuple[str | None, str | None]:
     return clean_text(tags.get("solution")), tags.get("solution_type")
 
 
-def _remediations(nvt_el, title: str, description: str | None) -> list[dict[str, Any]]:
+def _remediations(nvt_el, title: str, description: str | None) -> list[ParsedRemediation]:
     """How to fix an NVT result: its KB when it names one, otherwise the NVT.
 
     One NVT is one fix instruction, so the NVT's OID keys the action; a

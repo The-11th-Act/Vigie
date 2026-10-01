@@ -5,9 +5,12 @@ values outside the enum, unparseable CVSS scores, junk CVE identifiers, and
 XML entity expansion attacks.
 """
 
+import pytest
+
 from app.models.vulnerability import Severity
 from app.parsers.nessus import parse_nessus_report, parse_nessus_scan
 from app.parsers.openvas import parse_openvas_report, parse_openvas_scan
+from app.parsers.utils import ParsedFinding, ParsedRemediation
 
 VALID_SEVERITIES = {s.value for s in Severity}
 
@@ -235,3 +238,128 @@ class TestXmlHardening:
 
     def test_nessus_rejects_external_entities(self):
         assert parse_nessus_report(XXE_ATTACK) == []
+
+
+class TestParsedContract:
+    """Verifies that the parser contract is strictly typed, self-validating,
+    and backwards compatible with dictionary duck-typing."""
+
+    def test_parsed_finding_requires_mandatory_fields(self):
+        with pytest.raises(ValueError, match="non-empty ip_address"):
+            ParsedFinding(
+                ip_address="",
+                cve_id="CVE-2024-0001",
+                title="Vulnerability",
+                cvss_score=5.0,
+                severity="Medium",
+            )
+
+        with pytest.raises(ValueError, match="non-empty cve_id"):
+            ParsedFinding(
+                ip_address="10.0.0.1",
+                cve_id="",
+                title="Vulnerability",
+                cvss_score=5.0,
+                severity="Medium",
+            )
+
+        with pytest.raises(ValueError, match="non-empty title"):
+            ParsedFinding(
+                ip_address="10.0.0.1",
+                cve_id="CVE-2024-0001",
+                title="",
+                cvss_score=5.0,
+                severity="Medium",
+            )
+
+    def test_parsed_finding_normalizes_cve_and_cvss(self):
+        finding = ParsedFinding(
+            ip_address="10.0.0.1",
+            cve_id=" cve-2024-1234  ",
+            title="Sample",
+            cvss_score="7.8",  # type: ignore[arg-type]
+            severity="High",
+        )
+        assert finding.cve_id == "CVE-2024-1234"
+        assert finding.cvss_score == 7.8
+        assert finding["cve_id"] == "CVE-2024-1234"
+
+    def test_parsed_finding_duck_typing_and_dict_compatibility(self):
+        finding = ParsedFinding(
+            ip_address="10.0.0.1",
+            cve_id="CVE-2024-0001",
+            title="Issue",
+            cvss_score=9.0,
+            severity="Critical",
+            hostname="srv-01",
+        )
+        assert finding["ip_address"] == "10.0.0.1"
+        assert finding.get("hostname") == "srv-01"
+        assert finding.get("nonexistent", "default") == "default"
+        assert "ip_address" in finding
+        assert "nonexistent" not in finding
+        assert "remediations" not in finding
+        with pytest.raises(KeyError):
+            _ = finding["remediations"]
+
+    def test_parsed_finding_normalizes_remediations(self):
+        finding = ParsedFinding(
+            ip_address="10.0.0.1",
+            cve_id="CVE-2024-0001",
+            title="Issue",
+            cvss_score=9.0,
+            severity="Critical",
+            remediations=[
+                {"kind": "kb", "reference": "KB5034441", "title": "Update KB"},
+                ParsedRemediation(kind="vendor_fix", reference="pkg:1.0"),
+            ],
+        )
+        assert "remediations" in finding
+        assert finding.remediations is not None
+        assert len(finding.remediations) == 2
+        assert all(isinstance(r, ParsedRemediation) for r in finding.remediations)
+        assert finding.remediations[0].reference == "KB5034441"
+        assert finding.remediations[1].reference == "pkg:1.0"
+
+    def test_parsed_finding_rejects_invalid_remediation_entry(self):
+        with pytest.raises(TypeError, match="Invalid remediation entry"):
+            ParsedFinding(
+                ip_address="10.0.0.1",
+                cve_id="CVE-2024-0001",
+                title="Issue",
+                cvss_score=9.0,
+                severity="Critical",
+                remediations=["invalid_string"],  # type: ignore[list-item]
+            )
+
+    def test_parsed_finding_from_dict_and_as_dict(self):
+        data = {
+            "ip_address": "192.168.1.1",
+            "cve_id": "CVE-2024-9999",
+            "title": "Dict finding",
+            "cvss_score": 4.5,
+            "severity": "Medium",
+            "hostname": "test-box",
+            "extra_unknown_key": "ignored",
+        }
+        finding = ParsedFinding.from_dict(data)
+        assert finding.ip_address == "192.168.1.1"
+        assert finding.cve_id == "CVE-2024-9999"
+        as_dict = finding.as_dict()
+        assert as_dict["ip_address"] == "192.168.1.1"
+        assert "remediations" not in as_dict
+
+    def test_parsed_remediation_requires_kind_and_reference(self):
+        with pytest.raises(ValueError, match="non-empty kind"):
+            ParsedRemediation(kind="", reference="KB1234")
+        with pytest.raises(ValueError, match="non-empty reference"):
+            ParsedRemediation(kind="kb", reference="")
+
+    def test_parsed_remediation_duck_typing(self):
+        rem = ParsedRemediation(kind="kb", reference="KB1234", title="Title")
+        assert rem["kind"] == "kb"
+        assert rem.get("title") == "Title"
+        assert rem.get("unknown", "none") == "none"
+        assert "kind" in rem
+        assert "unknown" not in rem
+        assert rem.as_dict()["reference"] == "KB1234"

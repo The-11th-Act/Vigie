@@ -24,7 +24,8 @@ ordered by what actually needs fixing first.
   `vulnerabilities`, `scans`, `dashboard`).
 - `app/services/`: business logic — risk scoring, remediation SLA, ingestion,
   asset policy.
-- `app/parsers/`: ingestors for Nessus, OpenVAS and CrowdStrike Spotlight, and
+- `app/parsers/`: ingestors for Nessus, OpenVAS and CrowdStrike Spotlight
+  (standardized via typed `ParsedFinding` / `ParsedRemediation`), and
   the CISA KEV / FIRST EPSS feed readers.
 - `app/worker/`: Celery worker and scheduled tasks.
 - `frontend/`: React SPA (dashboard, assets, vulnerabilities, risk backlog,

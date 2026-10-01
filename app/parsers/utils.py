@@ -1,27 +1,6 @@
-"""Shared helpers for scan report parsers.
+"""Shared helpers for scan report parsers."""
 
-Every parser must emit findings in the same normalised shape so the ingestion
-task can treat them uniformly:
-
-    {
-        "ip_address": str,
-        "hostname": str | None,
-        "operating_system": str | None,
-        "cve_id": str,
-        "title": str,
-        "description": str | None,
-        "cvss_score": float,   # clamped to [0, 10]
-        "severity": str,       # always a valid Severity enum value
-        "remediations": list,  # optional, see remediation() below
-    }
-
-``remediations`` absent means the source says nothing about how to fix the
-finding; an empty list means it reported the finding without any fix.
-
-File-based parsers also report which hosts the scan covered (``ParsedScan``),
-including hosts that came back clean: that is what tells ingestion a finding
-disappeared because it was fixed, not because its host was out of scope.
-"""
+from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
@@ -34,10 +13,205 @@ CVE_PATTERN = re.compile(r"^CVE-\d{4}-\d{4,}$", re.IGNORECASE)
 
 
 @dataclass
+class ParsedRemediation:
+    """One remediation entry (KB, vendor fix, workaround), lengths bounded."""
+
+    kind: str
+    reference: str
+    title: str | None = None
+    solution: str | None = None
+    url: str | None = None
+    family: str | None = None
+    installed_version: str | None = None
+    fixed_version: str | None = None
+
+    def __post_init__(self) -> None:
+        if not self.kind:
+            raise ValueError("ParsedRemediation requires a non-empty kind")
+        if not self.reference:
+            raise ValueError("ParsedRemediation requires a non-empty reference")
+
+    def __getitem__(self, key: str) -> Any:
+        try:
+            return getattr(self, key)
+        except AttributeError:
+            raise KeyError(key) from None
+
+    def __contains__(self, key: Any) -> bool:
+        if not isinstance(key, str):
+            return False
+        return hasattr(self, key)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return getattr(self, key, default)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ParsedRemediation:
+        return cls(
+            kind=data["kind"],
+            reference=data["reference"],
+            title=data.get("title"),
+            solution=data.get("solution"),
+            url=data.get("url"),
+            family=data.get("family"),
+            installed_version=data.get("installed_version"),
+            fixed_version=data.get("fixed_version"),
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "kind": self.kind,
+            "reference": self.reference,
+            "title": self.title,
+            "solution": self.solution,
+            "url": self.url,
+            "family": self.family,
+            "installed_version": self.installed_version,
+            "fixed_version": self.fixed_version,
+        }
+
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, dict):
+            return self.as_dict() == other
+        if isinstance(other, ParsedRemediation):
+            return (
+                self.kind == other.kind
+                and self.reference == other.reference
+                and self.title == other.title
+                and self.solution == other.solution
+                and self.url == other.url
+                and self.family == other.family
+                and self.installed_version == other.installed_version
+                and self.fixed_version == other.fixed_version
+            )
+        return False
+
+
+@dataclass
+class ParsedFinding:
+    """A single finding emitted by a vulnerability scanner."""
+
+    ip_address: str
+    cve_id: str
+    title: str
+    cvss_score: float
+    severity: str
+    hostname: str | None = None
+    operating_system: str | None = None
+    description: str | None = None
+    remediations: list[ParsedRemediation] | None = None
+
+    def __post_init__(self) -> None:
+        if not self.ip_address:
+            raise ValueError("ParsedFinding requires a non-empty ip_address")
+        if not self.cve_id:
+            raise ValueError("ParsedFinding requires a non-empty cve_id")
+        if not self.title:
+            raise ValueError("ParsedFinding requires a non-empty title")
+        self.cve_id = self.cve_id.strip().upper()
+        self.cvss_score = safe_float(self.cvss_score)
+        if hasattr(self.severity, "value"):
+            self.severity = str(self.severity.value)
+        else:
+            self.severity = str(self.severity) if self.severity is not None else ""
+        if self.remediations is not None:
+            normalized: list[ParsedRemediation] = []
+            for r in self.remediations:
+                if isinstance(r, ParsedRemediation):
+                    normalized.append(r)
+                elif isinstance(r, dict):
+                    normalized.append(
+                        ParsedRemediation(
+                            kind=r["kind"],
+                            reference=r["reference"],
+                            title=r.get("title"),
+                            solution=r.get("solution"),
+                            url=r.get("url"),
+                            family=r.get("family"),
+                            installed_version=r.get("installed_version"),
+                            fixed_version=r.get("fixed_version"),
+                        )
+                    )
+                else:
+                    raise TypeError(f"Invalid remediation entry: {r!r}")
+            self.remediations = normalized
+
+    def __getitem__(self, key: str) -> Any:
+        if key == "remediations" and self.remediations is None:
+            raise KeyError(key)
+        try:
+            return getattr(self, key)
+        except AttributeError:
+            raise KeyError(key) from None
+
+    def __contains__(self, key: Any) -> bool:
+        if not isinstance(key, str):
+            return False
+        if key == "remediations":
+            return self.remediations is not None
+        return hasattr(self, key)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        if key == "remediations" and self.remediations is None:
+            return default
+        return getattr(self, key, default)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ParsedFinding:
+        """Create a ParsedFinding from a dictionary, tolerating extra keys."""
+        return cls(
+            ip_address=data["ip_address"],
+            cve_id=data["cve_id"],
+            title=data.get("title", ""),
+            cvss_score=data.get("cvss_score", 0.0),
+            severity=data.get("severity", "Unknown"),
+            hostname=data.get("hostname"),
+            operating_system=data.get("operating_system"),
+            description=data.get("description"),
+            remediations=data.get("remediations"),
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        data: dict[str, Any] = {
+            "ip_address": self.ip_address,
+            "hostname": self.hostname,
+            "operating_system": self.operating_system,
+            "cve_id": self.cve_id,
+            "title": self.title,
+            "description": self.description,
+            "cvss_score": self.cvss_score,
+            "severity": self.severity,
+        }
+        if self.remediations is not None:
+            data["remediations"] = [
+                r.as_dict() if isinstance(r, ParsedRemediation) else r
+                for r in self.remediations
+            ]
+        return data
+
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, dict):
+            return self.as_dict() == other
+        if isinstance(other, ParsedFinding):
+            return (
+                self.ip_address == other.ip_address
+                and self.cve_id == other.cve_id
+                and self.title == other.title
+                and self.cvss_score == other.cvss_score
+                and self.severity == other.severity
+                and self.hostname == other.hostname
+                and self.operating_system == other.operating_system
+                and self.description == other.description
+                and self.remediations == other.remediations
+            )
+        return False
+
+
+@dataclass
 class ParsedScan:
     """Findings of a scan file plus the addresses it actually scanned."""
 
-    findings: list[dict[str, Any]] = field(default_factory=list)
+    findings: list[ParsedFinding] = field(default_factory=list)
     scanned_addresses: set[str] = field(default_factory=set)
 
 
@@ -169,18 +343,18 @@ def remediation(
     family: str | None = None,
     installed_version: str | None = None,
     fixed_version: str | None = None,
-) -> dict[str, Any]:
+) -> ParsedRemediation:
     """One entry of a finding's ``remediations``, lengths already bounded."""
     # Shown as a link: a scanner-supplied javascript: or data: URL is dropped.
     if url and not url.strip().lower().startswith(("https://", "http://")):
         url = None
-    return {
-        "kind": kind,
-        "reference": reference[:MAX_REFERENCE_LENGTH],
-        "title": clean_text(title, MAX_TITLE_LENGTH),
-        "solution": clean_text(solution, MAX_SOLUTION_LENGTH),
-        "url": clean_text(url, MAX_URL_LENGTH),
-        "family": clean_text(family, MAX_FAMILY_LENGTH),
-        "installed_version": clean_text(installed_version, MAX_VERSION_LENGTH),
-        "fixed_version": clean_text(fixed_version, MAX_VERSION_LENGTH),
-    }
+    return ParsedRemediation(
+        kind=kind,
+        reference=reference[:MAX_REFERENCE_LENGTH],
+        title=clean_text(title, MAX_TITLE_LENGTH),
+        solution=clean_text(solution, MAX_SOLUTION_LENGTH),
+        url=clean_text(url, MAX_URL_LENGTH),
+        family=clean_text(family, MAX_FAMILY_LENGTH),
+        installed_version=clean_text(installed_version, MAX_VERSION_LENGTH),
+        fixed_version=clean_text(fixed_version, MAX_VERSION_LENGTH),
+    )

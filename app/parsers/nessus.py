@@ -1,12 +1,13 @@
 import logging
 import re
-from typing import Any
 
 from defusedxml import ElementTree as ET
 from defusedxml.common import DefusedXmlException
 
 from app.models.remediation import RemediationKind
 from app.parsers.utils import (
+    ParsedFinding,
+    ParsedRemediation,
     ParsedScan,
     clean_text,
     first_url,
@@ -44,7 +45,7 @@ NO_FIX = re.compile(
 )
 
 
-def parse_nessus_report(xml_content: bytes) -> list[dict[str, Any]]:
+def parse_nessus_report(xml_content: bytes) -> list[ParsedFinding]:
     """Parse a .nessus report into normalised findings.
 
     Returns an empty list on malformed input — ingestion callers treat that as
@@ -119,17 +120,17 @@ def parse_nessus_scan(xml_content: bytes) -> ParsedScan:
                     continue
 
                 results.append(
-                    {
-                        "ip_address": ip_address,
-                        "hostname": hostname,
-                        "operating_system": os_name,
-                        "cve_id": cve_id.upper(),
-                        "title": title,
-                        "description": description,
-                        "cvss_score": cvss_score,
-                        "severity": severity,
-                        "remediations": remediations,
-                    }
+                    ParsedFinding(
+                        ip_address=ip_address,
+                        hostname=hostname,
+                        operating_system=os_name,
+                        cve_id=cve_id.upper(),
+                        title=title,
+                        description=description,
+                        cvss_score=cvss_score,
+                        severity=severity,
+                        remediations=remediations,
+                    )
                 )
 
     logger.info(
@@ -158,7 +159,7 @@ def _missing_kbs(output: str | None) -> list[str]:
     return list(dict.fromkeys(kbs))
 
 
-def _remediations(item, title: str) -> list[dict[str, Any]]:
+def _remediations(item, title: str) -> list[ParsedRemediation]:
     """How to fix a ReportItem, as the remediation team will act on it.
 
     A Microsoft update is keyed by its KB, so every plugin asking for it lands

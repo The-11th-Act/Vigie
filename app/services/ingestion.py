@@ -22,6 +22,7 @@ from app.models.vulnerability import (
     Status,
     Vulnerability,
 )
+from app.parsers.utils import ParsedFinding, ParsedRemediation
 from app.services.asset_policy import (
     criticality_for,
     environment_for,
@@ -69,7 +70,7 @@ class IngestionResult:
 
 def ingest_findings(
     db: Session,
-    findings: Iterable[dict[str, Any]],
+    findings: Iterable[ParsedFinding | dict[str, Any]],
     scan_source: str,
     scanned_addresses: set[str] | None = None,
 ) -> IngestionResult:
@@ -83,25 +84,36 @@ def ingest_findings(
     those hosts can count a miss. ``None`` means the source reports its whole
     inventory at once (the CrowdStrike sync), so the sweep spans the source.
     """
-    findings = list(findings)
-    if not findings and not scanned_addresses:
+    raw_findings = list(findings)
+    if not raw_findings and not scanned_addresses:
         return IngestionResult(message="No findings in scan file")
+
+    parsed_findings: list[ParsedFinding] = [
+        f if isinstance(f, ParsedFinding) else ParsedFinding.from_dict(f)
+        for f in raw_findings
+    ]
 
     now = datetime.now(UTC)
     new_assets = new_vulns = new_links = reopened = 0
     seen_ids: set = set()
     covered_asset_ids: set = set()
 
-    if findings:
-        trusted_hostnames = _unambiguous_hostnames(findings)
+    if parsed_findings:
+        trusted_hostnames = _unambiguous_hostnames(parsed_findings)
 
-        asset_cache, new_assets = _upsert_assets(db, findings, trusted_hostnames)
-        vuln_cache, new_vulns = _upsert_vulnerabilities(db, findings)
+        asset_cache, new_assets = _upsert_assets(db, parsed_findings, trusted_hostnames)
+        vuln_cache, new_vulns = _upsert_vulnerabilities(db, parsed_findings)
         # Flush so freshly created rows get their primary keys before we link them.
         db.flush()
 
         new_links, reopened, assoc_cache = _upsert_associations(
-            db, findings, asset_cache, vuln_cache, scan_source, now, trusted_hostnames
+            db,
+            parsed_findings,
+            asset_cache,
+            vuln_cache,
+            scan_source,
+            now,
+            trusted_hostnames,
         )
         # Flushed by _upsert_associations, so the new rows now have ids and can
         # be excluded from the stale sweep along with the ones already known.
@@ -110,13 +122,13 @@ def ingest_findings(
             assoc_cache[
                 (
                     asset_cache[_asset_key(finding, trusted_hostnames)].id,
-                    vuln_cache[finding["cve_id"]].id,
+                    vuln_cache[finding.cve_id].id,
                 )
             ]
-            for finding in findings
+            for finding in parsed_findings
         ]
-        _sync_remediations(db, findings, assocs, scan_source, now)
-        _categorize(findings, assocs)
+        _sync_remediations(db, parsed_findings, assocs, scan_source, now)
+        _categorize(parsed_findings, assocs)
         covered_asset_ids = {asset.id for asset in asset_cache.values()}
 
     scope = None
@@ -128,13 +140,13 @@ def ingest_findings(
     db.commit()
 
     result = IngestionResult(
-        processed_records=len(findings),
+        processed_records=len(parsed_findings),
         new_assets=new_assets,
         new_vulnerabilities=new_vulns,
         new_associations=new_links,
         reopened=reopened,
         auto_remediated=auto_remediated,
-        message="" if findings else "No findings in scan file",
+        message="" if parsed_findings else "No findings in scan file",
     )
     logger.info(
         "Ingested %d findings from %s: %d new assets, %d new vulns, %d new links, "
@@ -275,24 +287,24 @@ def _touch_detection(
     detections[id(finding)] = detection
 
 
-def _asset_key(finding: dict[str, Any], trusted_hostnames: set) -> str:
+def _asset_key(finding: ParsedFinding, trusted_hostnames: set[str]) -> str:
     """Stable lookup key for the asset a finding belongs to.
 
     Prefers the hostname, which survives a DHCP lease change, and falls back to
     the address when the source reports no name — or when the name turned out
     to be ambiguous within this scan.
     """
-    hostname = _normalized_hostname(finding.get("hostname"))
+    hostname = _normalized_hostname(finding.hostname)
     if hostname and hostname in trusted_hostnames:
         return f"h:{hostname}"
-    return f"i:{finding['ip_address']}"
+    return f"i:{finding.ip_address}"
 
 
 def _normalized_hostname(hostname: Any) -> str:
     return str(hostname).strip().lower() if hostname else ""
 
 
-def _unambiguous_hostnames(findings: list[dict[str, Any]]) -> set:
+def _unambiguous_hostnames(findings: list[ParsedFinding]) -> set[str]:
     """Hostnames safe to match on, i.e. seen at exactly one address here.
 
     A single scan reporting the same name at several addresses proves the name
@@ -304,9 +316,9 @@ def _unambiguous_hostnames(findings: list[dict[str, Any]]) -> set:
     """
     addresses_by_hostname: dict[str, set] = {}
     for finding in findings:
-        hostname = _normalized_hostname(finding.get("hostname"))
+        hostname = _normalized_hostname(finding.hostname)
         if hostname:
-            addresses_by_hostname.setdefault(hostname, set()).add(finding["ip_address"])
+            addresses_by_hostname.setdefault(hostname, set()).add(finding.ip_address)
 
     return {
         hostname
@@ -316,7 +328,7 @@ def _unambiguous_hostnames(findings: list[dict[str, Any]]) -> set:
 
 
 def _upsert_assets(
-    db: Session, findings: list[dict[str, Any]], trusted_hostnames: set
+    db: Session, findings: list[ParsedFinding], trusted_hostnames: set[str]
 ) -> tuple[dict[str, Asset], int]:
     """Resolve each finding to an asset, creating one only when truly new.
 
@@ -325,7 +337,7 @@ def _upsert_assets(
     hostname is checked first when the scan provides one, and an asset already
     known by address is enriched rather than duplicated.
     """
-    unique_ips = {f["ip_address"] for f in findings}
+    unique_ips = {f.ip_address for f in findings}
 
     query = db.query(Asset).filter(Asset.ip_address.in_(unique_ips))
     if trusted_hostnames:
@@ -346,8 +358,8 @@ def _upsert_assets(
     created = 0
 
     for finding in findings:
-        ip = finding["ip_address"]
-        hostname = _normalized_hostname(finding.get("hostname"))
+        ip = finding.ip_address
+        hostname = _normalized_hostname(finding.hostname)
         if hostname not in trusted_hostnames:
             hostname = ""
 
@@ -358,12 +370,12 @@ def _upsert_assets(
         if asset is None:
             asset = Asset(
                 ip_address=ip,
-                hostname=finding["hostname"],
-                operating_system=finding["operating_system"],
+                hostname=finding.hostname,
+                operating_system=finding.operating_system,
                 business_criticality=criticality_for(ip),
                 internet_facing=exposure_for(ip),
                 owner_team=owner_team_for(ip),
-                asset_type=asset_type_for(finding["operating_system"]),
+                asset_type=asset_type_for(finding.operating_system),
                 environment=environment_for(ip),
             )
             db.add(asset)
@@ -371,10 +383,10 @@ def _upsert_assets(
         else:
             # Enrich an existing asset when the scan knows something we do not.
             # Never overwrite a value an operator may have curated by hand.
-            if not asset.hostname and finding["hostname"]:
-                asset.hostname = finding["hostname"]
-            if not asset.operating_system and finding["operating_system"]:
-                asset.operating_system = finding["operating_system"]
+            if not asset.hostname and finding.hostname:
+                asset.hostname = finding.hostname
+            if not asset.operating_system and finding.operating_system:
+                asset.operating_system = finding.operating_system
             # A team rule added later still reaches hosts nobody assigned.
             if not asset.owner_team:
                 asset.owner_team = owner_team_for(ip)
@@ -398,24 +410,24 @@ def _upsert_assets(
 
 
 def _upsert_vulnerabilities(
-    db: Session, findings: list[dict[str, Any]]
+    db: Session, findings: list[ParsedFinding]
 ) -> tuple[dict[str, Vulnerability], int]:
-    unique_cves = {f["cve_id"] for f in findings}
+    unique_cves = {f.cve_id for f in findings}
     existing = db.query(Vulnerability).filter(Vulnerability.cve_id.in_(unique_cves)).all()
     cache: dict[str, Vulnerability] = {v.cve_id: v for v in existing}
     created = 0
 
     new_vulns: list[Vulnerability] = []
     for finding in findings:
-        cve = finding["cve_id"]
+        cve = finding.cve_id
         if cve in cache:
             continue
         vuln = Vulnerability(
             cve_id=cve,
-            title=finding["title"],
-            description=finding["description"],
-            cvss_score=finding["cvss_score"],
-            severity=finding["severity"],
+            title=finding.title,
+            description=finding.description,
+            cvss_score=finding.cvss_score,
+            severity=finding.severity,
             in_kev=False,
             kev_ransomware=False,
         )
@@ -434,12 +446,12 @@ def _upsert_vulnerabilities(
 
 def _upsert_associations(
     db: Session,
-    findings: list[dict[str, Any]],
+    findings: list[ParsedFinding],
     asset_cache: dict[str, Asset],
     vuln_cache: dict[str, Vulnerability],
     scan_source: str,
     now: datetime,
-    trusted_hostnames: set,
+    trusted_hostnames: set[str],
 ) -> tuple[int, int, dict[tuple[int, int], AssetVulnerability]]:
     asset_ids = {a.id for a in asset_cache.values()}
     vuln_ids = {v.id for v in vuln_cache.values()}
@@ -462,12 +474,10 @@ def _upsert_associations(
 
     for finding in findings:
         asset = asset_cache[_asset_key(finding, trusted_hostnames)]
-        vuln = vuln_cache[finding["cve_id"]]
+        vuln = vuln_cache[finding.cve_id]
         key = (asset.id, vuln.id)
 
-        deadline: datetime | None = calculate_remediation_deadline(
-            finding["severity"], now
-        )
+        deadline: datetime | None = calculate_remediation_deadline(finding.severity, now)
         if vuln.in_kev:
             deadline = apply_kev_sla(
                 deadline, now, vuln.kev_date_added, is_ransomware=vuln.kev_ransomware
@@ -523,7 +533,7 @@ def _upsert_associations(
 
 def _sync_remediations(
     db: Session,
-    findings: list[dict[str, Any]],
+    findings: list[ParsedFinding],
     assocs: list[AssetVulnerability],
     scan_source: str,
     now: datetime,
@@ -536,15 +546,15 @@ def _sync_remediations(
     whose parser said nothing about remediation (key absent) is left alone; one
     reported with an empty list loses this source's links.
     """
-    wanted: dict[int, dict[str, dict[str, Any]]] = {}
+    wanted: dict[int, dict[str, ParsedRemediation]] = {}
     for finding, assoc in zip(findings, assocs, strict=True):
-        entries = finding.get("remediations")
+        entries = finding.remediations
         if entries is None:
             continue
         # One (asset, CVE) can come from several plugins of the same file.
         per_finding = wanted.setdefault(assoc.id, {})
         for entry in entries:
-            per_finding.setdefault(entry["reference"], entry)
+            per_finding.setdefault(entry.reference, entry)
     if not wanted:
         return
 
@@ -562,11 +572,11 @@ def _sync_remediations(
         for row in rows:
             existing.setdefault(row.finding_id, {})[row.action_id] = row
 
-    for finding_id, entries in wanted.items():
+    for finding_id, action_map in wanted.items():
         current = existing.get(finding_id, {})
         kept = set()
-        for entry in entries.values():
-            action = actions[entry["reference"]]
+        for entry in action_map.values():
+            action = actions[entry.reference]
             kept.add(action.id)
             link = current.get(action.id)
             if link is None:
@@ -574,8 +584,8 @@ def _sync_remediations(
                     finding_id=finding_id, action_id=action.id, source=scan_source
                 )
                 db.add(link)
-            link.installed_version = entry.get("installed_version")
-            link.fixed_version = entry.get("fixed_version")
+            link.installed_version = entry.installed_version
+            link.fixed_version = entry.fixed_version
             link.last_seen_at = now
         for action_id, link in current.items():
             if action_id not in kept:
@@ -583,27 +593,27 @@ def _sync_remediations(
     db.flush()
 
 
-def _categorize(findings: list[dict[str, Any]], assocs: list[AssetVulnerability]) -> None:
+def _categorize(findings: list[ParsedFinding], assocs: list[AssetVulnerability]) -> None:
     """Kind of software each finding hits, from what this scan says of it.
 
     A pair reported by several checks keeps the most specific answer: a
     generic "application" never overwrites "browser".
     """
     for finding, assoc in zip(findings, assocs, strict=True):
-        families = [r.get("family") for r in finding.get("remediations") or []]
-        category = classify_finding(finding.get("title"), families)
+        families = [r.family for r in finding.remediations or []]
+        category = classify_finding(finding.title, families)
         assoc.category = more_specific(assoc.category, category)
 
 
 def _upsert_actions(
-    db: Session, entries: list[dict[str, Any]]
+    db: Session, entries: list[ParsedRemediation]
 ) -> dict[str, RemediationAction]:
     """The action row of every reference, created on first sight.
 
     An existing action only has its gaps filled: the same KB is named by several
     plugins, and the first description should not flip with each new report.
     """
-    references = list({entry["reference"] for entry in entries})
+    references = list({entry.reference for entry in entries})
     actions: dict[str, RemediationAction] = {}
     for i in range(0, len(references), CHUNK_SIZE):
         rows = db.query(RemediationAction).filter(
@@ -612,22 +622,23 @@ def _upsert_actions(
         actions.update({action.reference: action for action in rows})
 
     for entry in entries:
-        action = actions.get(entry["reference"])
+        action = actions.get(entry.reference)
         if action is None:
             action = RemediationAction(
-                reference=entry["reference"],
-                kind=entry["kind"],
-                title=entry.get("title"),
-                solution=entry.get("solution"),
-                url=entry.get("url"),
-                family=entry.get("family"),
+                reference=entry.reference,
+                kind=entry.kind,
+                title=entry.title,
+                solution=entry.solution,
+                url=entry.url,
+                family=entry.family,
             )
             db.add(action)
             actions[action.reference] = action
             continue
         for field in ("title", "solution", "url", "family"):
-            if getattr(action, field) is None and entry.get(field):
-                setattr(action, field, entry[field])
+            val = getattr(entry, field)
+            if getattr(action, field) is None and val:
+                setattr(action, field, val)
 
     # The links about to be written need the new actions' ids.
     db.flush()
