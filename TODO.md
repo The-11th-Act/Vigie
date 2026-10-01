@@ -570,6 +570,11 @@ Les parseurs jetaient tout ce que les scanners disent du correctif. Les fichiers
       Chaque webhook est scellé par la clé de signature de l'instance : une
       préproduction restaurée depuis la production ne peut pas appeler ses
       destinataires. Vérifié de bout en bout contre un vrai récepteur HTTP local)*
+      *Corrigé le 01/10/2026 : le worker, qui envoie et rescelle les webhooks, ne
+      recevait pas `PREVIOUS_SECRET_KEYS` ; après chaque rotation de la clé, il
+      aurait abandonné tous les envois comme « autre instance ». La pile de
+      production vérifie désormais la réception du webhook et la lecture des clés
+      retirées par l'API et le worker.*
 - [ ] Webhooks : le contrôle d'adresse précède la connexion sans la fixer ; un DNS
       qui change entre les deux (rebinding) le contournerait. Épingler l'adresse
       vérifiée si des destinataires non maîtrisés sont un jour enregistrés

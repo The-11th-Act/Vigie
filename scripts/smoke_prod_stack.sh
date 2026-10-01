@@ -67,7 +67,9 @@ install -d -m 700 "$SECRETS"
 openssl rand -base64 48 | tr -d '\n' > "$SECRETS/secret_key"
 echo "smoke-$(openssl rand -hex 12)" > "$SECRETS/postgres_password"
 echo "smoke-$(openssl rand -hex 12)" > "$SECRETS/redis_password"
-echo '{}' > "$SECRETS/previous_secret_keys"
+# Une clé retirée, comme en pleine rotation : l'API et le worker doivent la lire.
+RETIRED_KEY=$(openssl rand -hex 32)
+printf '{"k0": "%s"}' "$RETIRED_KEY" > "$SECRETS/previous_secret_keys"
 printf '[offsite]\ntype = local\n' > "$SECRETS/rclone.conf"
 chmod 444 "$SECRETS"/*
 
@@ -231,9 +233,11 @@ EOF
 RECEIVER=("${COMPOSE[@]}" -f "$WORK/receiver.yml")
 "${RECEIVER[@]}" up -d --no-deps receiver || fail "destinataire de webhooks non démarré"
 
-WEBHOOK_SECRET=$(curl -fsS "${AUTH[@]}" -H 'Content-Type: application/json' \
+WEBHOOK=$(curl -fsS "${AUTH[@]}" -H 'Content-Type: application/json' \
   -d '{"name":"smoke","url":"http://receiver:8080/hook","events":["scan.completed"]}' \
-  "$API/admin/webhooks/" | jq -r .secret) || fail "webhook refusé par l'API"
+  "$API/admin/webhooks/") || fail "webhook refusé par l'API"
+WEBHOOK_ID=$(jq -r .id <<<"$WEBHOOK")
+WEBHOOK_SECRET=$(jq -r .secret <<<"$WEBHOOK")
 [ -n "$WEBHOOK_SECRET" ] && [ "$WEBHOOK_SECRET" != null ] || fail "webhook créé sans secret"
 
 # --- Upload -> Redis -> worker -> base --------------------------------------
@@ -284,14 +288,26 @@ echo "ok - logs JSON, request_id propagé de l'API au worker ($UPLOAD_ID)"
 # Le scan ingéré a mis un événement dans la boîte d'envoi ; le beat déclenche
 # l'envoi (WEBHOOK_DELIVERY_INTERVAL_SECONDS=5), le worker l'adresse au
 # destinataire (WEBHOOK_ALLOW_*), signé avec le secret rendu à l'enregistrement.
+received_call() {
+  # Tant que rien n'est arrivé, grep ne trouve aucune ligne et sort en 1 :
+  # sous pipefail, set -e arrêterait le script sans message.
+  "${RECEIVER[@]}" logs --no-color --no-log-prefix receiver \
+    | grep '^{' | jq -c 'select(.event == "scan.completed")' | head -n 1 || true
+}
 CALL=""
 for _ in $(seq 1 30); do
-  CALL=$("${RECEIVER[@]}" logs --no-color --no-log-prefix receiver \
-    | grep '^{' | jq -c 'select(.event == "scan.completed")' | head -n 1)
+  CALL=$(received_call)
   [ -n "$CALL" ] && break
   sleep 2
 done
-[ -n "$CALL" ] || fail "aucun webhook scan.completed reçu en 60 s"
+if [ -z "$CALL" ]; then
+  echo "----- journaux : receiver -----"
+  "${RECEIVER[@]}" logs --no-color --tail=40 receiver || true
+  echo "----- livraisons du webhook vues par l'API -----"
+  curl -fsS "${AUTH[@]}" "$API/admin/webhooks/$WEBHOOK_ID/deliveries" || true
+  echo
+  fail "aucun webhook scan.completed reçu en 60 s"
+fi
 BODY=$(jq -r .body <<<"$CALL")
 EXPECTED="sha256=$(printf '%s.%s' "$(jq -r .timestamp <<<"$CALL")" "$BODY" \
   | openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" | sed 's/^.*= //')"
@@ -299,6 +315,17 @@ EXPECTED="sha256=$(printf '%s.%s' "$(jq -r .timestamp <<<"$CALL")" "$BODY" \
 [ "$(jq -r .data.scan.status <<<"$BODY")" = Success ] \
   || fail "webhook reçu sans le scan réussi : $BODY"
 echo "ok - webhook scan.completed reçu, signé, par le beat et le worker"
+
+# Après une rotation de la clé, le worker rescelle les webhooks scellés par
+# l'ancienne : il doit lire les clés retirées, comme l'API (seuls les
+# identifiants sont affichés, jamais les clés).
+for service in web worker; do
+  RETIRED=$("${COMPOSE[@]}" exec -T "$service" python -c \
+    "from app.core.config import settings; print(','.join(sorted(settings.PREVIOUS_SECRET_KEYS)))") \
+    || fail "réglages illisibles dans le conteneur $service"
+  [ "$RETIRED" = k0 ] || fail "PREVIOUS_SECRET_KEYS n'atteint pas $service (lu : « $RETIRED »)"
+done
+echo "ok - l'API et le worker lisent les clés retirées (rotation sans perte des webhooks)"
 
 # Aucun secret dans ce que `docker inspect` montre : environnement et
 # commande de chaque conteneur. Redis n'y voit que "$(cat ...)".
@@ -313,6 +340,10 @@ for service in db redis migrate web worker beat backup; do
       fail "le secret $(basename "$secret") est visible dans docker inspect ($service)"
     fi
   done
+  # La clé retirée seule : son fichier JSON y apparaîtrait échappé.
+  if grep -qF -- "$RETIRED_KEY" <<<"$config"; then
+    fail "la clé retirée est visible dans docker inspect ($service)"
+  fi
 done
 echo "ok - aucun secret dans l'environnement ni la commande des conteneurs"
 

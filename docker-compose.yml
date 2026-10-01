@@ -130,8 +130,8 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-vigie_user}:${POSTGRES_PASSWORD:-vigie_password}@db:5432/${POSTGRES_DB:-vigie}
       REDIS_URL: redis://redis:6379/0
       BACKEND_CORS_ORIGINS: '["http://localhost:5173","http://localhost:3000","http://frontend:5173"]'
-      # Retired signing keys, still accepted to verify their tokens. Secret,
-      # and only the API verifies tokens.
+      # Retired signing keys, still accepted to verify their tokens. Secret:
+      # only the API (tokens) and the worker (webhook seals) get them.
       PREVIOUS_SECRET_KEYS: ${PREVIOUS_SECRET_KEYS:-}
       # Requests served at once by each API process (docs/EXPLOITATION.md).
       API_THREADS: ${API_THREADS:-}
@@ -174,6 +174,9 @@ services:
       ENVIRONMENT: ${ENVIRONMENT:-development}
       DATABASE_URL: postgresql://${POSTGRES_USER:-vigie_user}:${POSTGRES_PASSWORD:-vigie_password}@db:5432/${POSTGRES_DB:-vigie}
       REDIS_URL: redis://redis:6379/0
+      # The worker sends and reseals the webhooks: after a key rotation it
+      # must still recognise those sealed with the retired key.
+      PREVIOUS_SECRET_KEYS: ${PREVIOUS_SECRET_KEYS:-}
       # Credentials only where the Spotlight client runs.
       CROWDSTRIKE_CLIENT_ID: ${CROWDSTRIKE_CLIENT_ID:-}
       CROWDSTRIKE_CLIENT_SECRET: ${CROWDSTRIKE_CLIENT_SECRET:-}

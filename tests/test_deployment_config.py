@@ -187,13 +187,12 @@ class TestProductionOverlay:
 # un chemin figé par l'image et ses volumes.
 NOT_DEPLOYMENT_SETTINGS = {"PROJECT_NAME", "API_V1_STR", "ALGORITHM", "SCAN_UPLOAD_DIR"}
 
-# Réglages volontairement limités au seul service qui s'en sert : un secret ou
+# Réglages volontairement limités aux services qui s'en servent : un secret ou
 # un identifiant administrateur n'a rien à faire dans l'environnement des autres.
 ONLY_ON = {
-    "web": {
+    ("web",): {
         "API_THREADS",
         "INSTANCE_BANNER",
-        "PREVIOUS_SECRET_KEYS",
         "BACKEND_CORS_ORIGINS",
         "RATE_LIMIT_ENABLED",
         "LOGIN_MAX_ATTEMPTS",
@@ -203,7 +202,10 @@ ONLY_ON = {
         "ADMIN_EMAIL",
         "ADMIN_PASSWORD",
     },
-    "worker": {"CROWDSTRIKE_CLIENT_ID", "CROWDSTRIKE_CLIENT_SECRET"},
+    ("worker",): {"CROWDSTRIKE_CLIENT_ID", "CROWDSTRIKE_CLIENT_SECRET"},
+    # Les clés retirées : l'API vérifie les tokens qu'elles ont signés, le
+    # worker reconnaît et rescelle les webhooks qu'elles ont scellés.
+    ("web", "worker"): {"PREVIOUS_SECRET_KEYS"},
 }
 
 
@@ -234,11 +236,19 @@ class TestSecrets:
             prod_services[service]
         )
 
-    def test_retired_keys_only_reach_the_api(self, prod_services):
-        web = prod_services["web"]
-        assert web["environment"]["PREVIOUS_SECRET_KEYS"] == ""
-        assert "previous_secret_keys" in _secret_names(web)
-        for name in ("worker", "beat", "migrate"):
+    def test_retired_keys_only_reach_the_api_and_the_worker(self, prod_services):
+        # Le worker en a besoin aussi : c'est lui qui envoie les webhooks et
+        # les rescelle au passage quotidien. Sans elles, chaque rotation de la
+        # clé faisait abandonner tous les envois (« another instance »).
+        for name in ("web", "worker"):
+            service = prod_services[name]
+            assert service["environment"]["PREVIOUS_SECRET_KEYS"] == ""
+            assert (
+                service["environment"]["PREVIOUS_SECRET_KEYS_FILE"]
+                == "/run/secrets/previous_secret_keys"
+            )
+            assert "previous_secret_keys" in _secret_names(service)
+        for name in ("beat", "migrate"):
             assert "previous_secret_keys" not in _secret_names(prod_services[name])
 
     def test_the_database_and_its_backup_too(self, prod_services):
@@ -413,8 +423,8 @@ class TestSettingsReachTheContainers:
         from app.core.config import Settings
 
         expected = set(Settings.model_fields) - NOT_DEPLOYMENT_SETTINGS
-        for owner, scoped in ONLY_ON.items():
-            if owner != service:
+        for owners, scoped in ONLY_ON.items():
+            if service not in owners:
                 expected -= scoped
 
         # Un secret est câblé par son fichier (NAME_FILE) plutôt que par sa valeur.

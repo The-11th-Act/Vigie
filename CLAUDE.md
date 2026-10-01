@@ -81,7 +81,14 @@ gh run list --workflow CI --branch main --limit 1          # pas seulement --lim
   tout service construit porte `image: …:${VIGIE_VERSION}` (promotion sans
   reconstruction). `TestStagingAndPromotion` le vérifie.
 - Un secret est un fichier en production (`secrets/`, convention `*_FILE`) :
-  jamais de nouveau secret en variable d'environnement.
+  jamais de nouveau secret en variable d'environnement. Le donner à chaque
+  service dont le **code** le lit, pas seulement à l'API : `seal_state` tourne
+  aussi dans le worker (`PREVIOUS_SECRET_KEYS`). `ONLY_ON` de
+  `test_deployment_config.py` liste les services autorisés par réglage.
+- `smoke_prod_stack.sh` est en `set -euo pipefail` : un `x=$(… | grep …)` qui
+  ne trouve rien arrête le script **sans message** (ajouter `|| true` et
+  tester la valeur). Une vérification ajoutée à ce script n'est prouvée
+  qu'au premier passage vert de la CI.
 - **Scripts sur ce poste Windows** : heredoc bash et `python -c` abîment les
   apostrophes, les accents, les `\n` et les `\` de fin de ligne. Écrire le
   script avec l'outil Write dans le scratchpad, le lancer avec

@@ -256,6 +256,25 @@ class TestDelivery:
         assert delivery.attempts == len(RETRY_DELAYS) + 1
         assert len(calls) == len(RETRY_DELAYS) + 1
 
+    def test_a_key_rotation_does_not_strand_the_deliveries(
+        self, db_session, hook, receiver, monkeypatch
+    ):
+        """The worker sends with the new key and the old one retired: it must
+        know the retired key (PREVIOUS_SECRET_KEYS), or it gives up on every
+        webhook as registered by another instance."""
+        calls, _ = receiver
+        webhook = hook()
+        emit(db_session, "scan.completed", {})
+        db_session.commit()
+        old_key = settings.SECRET_KEY
+        monkeypatch.setattr(settings, "SECRET_KEY", OTHER_KEY)
+        monkeypatch.setattr(settings, "PREVIOUS_SECRET_KEYS", {"k1": old_key})
+
+        assert deliver_due(db_session).delivered == 1
+        assert len(calls) == 1
+        # Resealed on the way: still sent once the old key is dropped.
+        assert seal_state(webhook) == "current"
+
     def test_a_disabled_webhook_sends_nothing(self, db_session, hook, receiver):
         calls, _ = receiver
         webhook = hook()

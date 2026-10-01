@@ -189,7 +189,11 @@ services:
       - REDIS_PASSWORD_FILE=/run/secrets/redis_password
       - REDIS_URL=redis://redis:6379/0
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
-    secrets: [secret_key, postgres_password, redis_password]
+      # Le worker envoie et rescelle les webhooks : apres une rotation de la
+      # cle, il doit reconnaitre ceux scelles par l'ancienne.
+      - PREVIOUS_SECRET_KEYS=
+      - PREVIOUS_SECRET_KEYS_FILE=/run/secrets/previous_secret_keys
+    secrets: [secret_key, previous_secret_keys, postgres_password, redis_password]
     healthcheck:
       test: ["CMD-SHELL", "celery -A app.worker.celery_app inspect ping -d celery@$$HOSTNAME || exit 1"]
       interval: 60s
