@@ -39,6 +39,7 @@ from app.services.remediation_plan import (
 )
 from app.services.tickets import (
     create_tickets,
+    log_ticket_change,
     ticket_finding_ids,
     ticket_metrics,
     tracked_counts,
@@ -279,15 +280,13 @@ def update_ticket(
     for key, value in changes.items():
         setattr(ticket, key, value)
     if new_status or note:
-        db.add(
-            TicketAuditLog(
-                ticket_id=ticket.id,
-                user_id=user.id,
-                username=user.username,
-                old_status=ticket.status if new_status else None,
-                new_status=new_status or ticket.status,
-                note=note,
-            )
+        log_ticket_change(
+            db,
+            ticket,
+            ticket.status if new_status else None,
+            new_status or ticket.status,
+            note,
+            user,
         )
         if note:
             ticket.note = note

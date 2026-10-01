@@ -56,6 +56,14 @@ Ce qui doit différer entre les deux `.env` :
 La copie hors site (`docker-compose.offsite.yml`) n'a pas lieu d'être en
 préproduction.
 
+Les webhooks n'ont rien à régler : chacun est scellé par la clé de signature
+de l'instance qui l'a enregistré. Une préproduction restaurée depuis la
+production en contient la liste, marquée « Other instance », mais ne peut
+pas appeler les destinataires de la production. « Use here (new secret) »
+lui donne un secret propre et le réactive **vers la même URL** : seul un
+destinataire qui vérifie la signature refusera ces appels. En préproduction,
+supprimer plutôt ces webhooks et enregistrer des destinataires de test.
+
 > **Production existante** : `COMPOSE_PROJECT_NAME` doit reprendre le nom sous
 > lequel la pile tourne déjà (par défaut, le nom du répertoire du checkout ;
 > `docker volume ls` montre `<projet>_pgdata`). Avec un autre nom, compose

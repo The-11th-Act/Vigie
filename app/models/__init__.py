@@ -13,6 +13,7 @@ from app.models.vulnerability import (
     FindingDetection,
     Vulnerability,
 )
+from app.models.webhook import Webhook, WebhookDelivery
 
 __all__ = [
     "Asset",
@@ -38,4 +39,6 @@ __all__ = [
     "ThreatFeedStatus",
     "KevCatalogEntry",
     "EpssScoreEntry",
+    "Webhook",
+    "WebhookDelivery",
 ]

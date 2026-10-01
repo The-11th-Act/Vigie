@@ -15,6 +15,13 @@ from app.services.risk_acceptance import expire_risk_acceptances
 from app.services.snapshots import record_snapshots
 from app.services.threat_intel import refresh_threat_intel
 from app.services.tickets import sync_tickets
+from app.services.webhooks import (
+    deliver_due,
+    emit,
+    purge_deliveries,
+    reseal_webhooks,
+    scan_data,
+)
 from app.worker.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -199,6 +206,8 @@ def rescore_open_findings_task():
         categorize_missing(db)
         # Yesterday as it ended, and any missing day of history rebuilt.
         record_snapshots(db)
+        purge_deliveries(db)
+        reseal_webhooks(db)
         db.commit()
         logger.info(
             "Daily run: %d risk acceptance(s) expired, %d open finding(s) rescored",
@@ -275,6 +284,7 @@ def _apply_result(db, scan_job_id, result) -> None:
     job.auto_remediated = result.auto_remediated
     job.message = result.message or None
     job.finished_at = datetime.now(UTC)
+    emit(db, "scan.completed", scan_data(job))
     db.commit()
 
 
@@ -294,6 +304,8 @@ def _finalize_job(scan_job_id, status: ScanStatus, message: str | None = None) -
         job.status = status
         job.message = message
         job.finished_at = datetime.now(UTC)
+        if status == ScanStatus.failed:
+            emit(db, "scan.failed", scan_data(job))
         db.commit()
     except Exception:
         db.rollback()
@@ -307,3 +319,29 @@ def _discard(path: str) -> None:
         os.remove(path)
     except OSError:
         pass
+
+
+@celery_app.task(
+    name="app.worker.tasks.deliver_webhooks_task",
+    soft_time_limit=600,
+    time_limit=660,
+)
+def deliver_webhooks_task():
+    """Send the webhook deliveries that are due. Every few seconds, by beat.
+
+    No Celery retry: a delivery that fails is rescheduled in the outbox
+    itself, and the next run picks it up when its time comes.
+    """
+    if not settings.WEBHOOKS_ENABLED:
+        return {"status": "skipped", "message": "Webhooks are disabled"}
+
+    db = SessionLocal()
+    try:
+        run = deliver_due(db)
+        return {"status": "success", **run.as_dict()}
+    except Exception:
+        db.rollback()
+        logger.exception("Webhook delivery run failed")
+        raise
+    finally:
+        db.close()

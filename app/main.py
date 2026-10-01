@@ -25,6 +25,7 @@ from app.api.v1 import (
     threat_intel,
     users,
     vulnerabilities,
+    webhooks,
 )
 from app.core import metrics
 from app.core.bootstrap import bootstrap_admin_user
@@ -155,6 +156,9 @@ app.include_router(auth.router, prefix=f"{settings.API_V1_STR}/auth", tags=["Aut
 app.include_router(users.router, prefix=f"{settings.API_V1_STR}/users", tags=["Users"])
 app.include_router(me.router, prefix=f"{settings.API_V1_STR}/me", tags=["Me"])
 app.include_router(admin.router, prefix=f"{settings.API_V1_STR}/admin", tags=["Admin"])
+app.include_router(
+    webhooks.router, prefix=f"{settings.API_V1_STR}/admin/webhooks", tags=["Admin"]
+)
 # Each module's routes check that the user has it: a tab missing from the
 # sidebar would otherwise leave its API wide open.
 app.include_router(

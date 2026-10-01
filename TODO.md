@@ -481,7 +481,7 @@ lançait les images une par une. Le faire a révélé trois défauts, corrigés 
       par l'acteur « system »)*
 - [x] Export CSV du backlog *(26/09/2026 : mêmes filtres que l'écran, formules
       neutralisées, écrit via un fichier temporaire)*
-- [ ] Webhooks
+- [x] Webhooks *(01/10/2026 : voir « 7. Connecteur de ticketing et webhooks »)*
 - [x] `.gitattributes` pour fixer les fins de ligne *(30/09/2026 : `* text=auto` ;
       l'index était déjà en LF, la renormalisation n'a changé aucun fichier)*
 
@@ -557,5 +557,19 @@ Les parseurs jetaient tout ce que les scanners disent du correctif. Les fichiers
 ## 7. Connecteur de ticketing et webhooks
 - [ ] Interface `TicketConnector`, première implémentation, synchronisation du statut
 - [ ] Une cible par environnement : une préproduction restaurée depuis la production
-      ne doit jamais écrire dans l'outil de ticketing de production
-- [ ] Webhooks sortants
+      ne doit jamais écrire dans l'outil de ticketing de production *(fait pour les
+      webhooks par le scellement ci-dessous, à reprendre pour le connecteur)*
+- [x] Webhooks sortants *(01/10/2026 : migration 0021, écran Administration.
+      Événements `scan.completed` / `scan.failed`, `ticket.created`,
+      `ticket.status_changed` (y compris résolution et réouverture par les scans),
+      `threat.kev_listed` (un événement par rafraîchissement). Boîte d'envoi en base
+      écrite dans la transaction du changement, envoyée par le worker toutes les 30 s,
+      7 tentatives sur ~21 h, `SKIP LOCKED` contre les envois en double. Signature
+      HMAC-SHA256 horodatée, secret montré une fois. HTTPS seul, pas d'adresse privée
+      sauf réglage, jamais boucle locale ni métadonnées cloud, pas de redirection.
+      Chaque webhook est scellé par la clé de signature de l'instance : une
+      préproduction restaurée depuis la production ne peut pas appeler ses
+      destinataires. Vérifié de bout en bout contre un vrai récepteur HTTP local)*
+- [ ] Webhooks : le contrôle d'adresse précède la connexion sans la fixer ; un DNS
+      qui change entre les deux (rebinding) le contournerait. Épingler l'adresse
+      vérifiée si des destinataires non maîtrisés sont un jour enregistrés

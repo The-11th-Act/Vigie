@@ -123,6 +123,35 @@ export const adminService = {
     api.delete(`/admin/roles/${role}/modules`),
 }
 
+export const webhookService = {
+  list: () =>
+    api.get('/admin/webhooks/'),
+
+  events: () =>
+    api.get('/admin/webhooks/events'),
+
+  create: (data) =>
+    api.post('/admin/webhooks/', data),
+
+  update: (id, data) =>
+    api.patch(`/admin/webhooks/${id}`, data),
+
+  remove: (id) =>
+    api.delete(`/admin/webhooks/${id}`),
+
+  rotateSecret: (id) =>
+    api.post(`/admin/webhooks/${id}/rotate-secret`),
+
+  ping: (id) =>
+    api.post(`/admin/webhooks/${id}/ping`),
+
+  deliveries: (id) =>
+    api.get(`/admin/webhooks/${id}/deliveries`),
+
+  retryDelivery: (id, deliveryId) =>
+    api.post(`/admin/webhooks/${id}/deliveries/${deliveryId}/retry`),
+}
+
 export const userService = {
   list: () =>
     api.get('/users/'),

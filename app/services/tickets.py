@@ -27,6 +27,7 @@ from app.models.ticket import (
 )
 from app.models.user import User
 from app.models.vulnerability import AssetVulnerability, Status, Vulnerability
+from app.services.webhooks import emit, ticket_data
 
 logger = logging.getLogger(__name__)
 
@@ -82,17 +83,26 @@ def _tracked_finding_ids(db: Session, action_ids) -> set[tuple[int, int]]:
     return {(row.action_id, row.finding_id) for row in rows}
 
 
-def _log(db: Session, ticket, old, new, note, user: User | None) -> None:
+def log_ticket_change(db: Session, ticket, old, new, note, user: User | None) -> None:
+    """Record a step of a ticket's history, and tell the webhooks of a move.
+
+    Every change goes through here, the scans' and the people's alike: a
+    status that moved without a trail, or without its event, is a bug.
+    ``old`` is None for a note alone.
+    """
+    actor = user.username if user else SYSTEM_ACTOR
     db.add(
         TicketAuditLog(
             ticket_id=ticket.id,
             user_id=user.id if user else None,
-            username=user.username if user else SYSTEM_ACTOR,
+            username=actor,
             old_status=old,
             new_status=new,
             note=note,
         )
     )
+    if old is not None and old != new:
+        emit(db, "ticket.status_changed", ticket_data(ticket, new, old, actor, note))
 
 
 def create_tickets(
@@ -139,7 +149,12 @@ def create_tickets(
             )
             db.add(ticket)
             db.flush()
-            _log(db, ticket, None, ticket.status, None, user)
+            log_ticket_change(db, ticket, None, ticket.status, None, user)
+            emit(
+                db,
+                "ticket.created",
+                ticket_data(ticket, ticket.status, None, user.username, None),
+            )
             created.append(ticket)
         else:
             added += len(finding_ids)
@@ -186,7 +201,7 @@ def sync_tickets(db: Session, now: datetime | None = None) -> SyncResult:
         RemediationTicket.status == TicketStatus.resolved.value
     ):
         if counts.get(ticket.id, (0, 0))[1] > 0:
-            _log(
+            log_ticket_change(
                 db,
                 ticket,
                 ticket.status,
@@ -242,7 +257,7 @@ def sync_tickets(db: Session, now: datetime | None = None) -> SyncResult:
     for ticket in active:
         total, opened = counts.get(ticket.id, (0, 0))
         if not total and ticket.id in released:
-            _log(
+            log_ticket_change(
                 db,
                 ticket,
                 ticket.status,
@@ -253,7 +268,7 @@ def sync_tickets(db: Session, now: datetime | None = None) -> SyncResult:
             ticket.status = TicketStatus.cancelled.value
             result.cancelled += 1
         elif total and not opened:
-            _log(
+            log_ticket_change(
                 db,
                 ticket,
                 ticket.status,
@@ -316,7 +331,7 @@ def _release_moved_findings(db: Session) -> dict[int, int]:
             f"{count} finding(s) moved with their host to {team}"
             for team, count in sorted(teams.items())
         )
-        _log(db, ticket, ticket.status, ticket.status, note, None)
+        log_ticket_change(db, ticket, ticket.status, ticket.status, note, None)
     db.flush()
     return {ticket_id: sum(teams.values()) for ticket_id, teams in moved.items()}
 

@@ -84,6 +84,11 @@ INTERNET_FACING_SUBNETS=["203.0.113.0/24"]
 OWNER_TEAM_RULES={"203.0.113.0/24":"Perimeter"}
 ENVIRONMENT_RULES={"203.0.113.0/24":"production"}
 KEV_SLA_DAYS=7
+# Le destinataire de test est un conteneur du réseau du projet : adresse
+# privée, en HTTP.
+WEBHOOK_ALLOW_PRIVATE_TARGETS=true
+WEBHOOK_ALLOW_HTTP=true
+WEBHOOK_DELIVERY_INTERVAL_SECONDS=5
 LOG_FORMAT=json
 THREAT_INTEL_ENABLED=true
 INSTANCE_BANNER=Smoke
@@ -185,6 +190,52 @@ for attribute in HttpOnly Secure "SameSite=strict"; do
 done
 echo "ok - session navigateur : cookie HttpOnly, Secure, SameSite=Strict"
 
+# --- Destinataire de webhooks ------------------------------------------------
+# Un conteneur de l'image de l'API, sur le réseau du projet, qui écrit chaque
+# appel reçu sur une ligne JSON. Démarré une fois l'image construite : il n'a
+# pas de build à lui, compose chercherait sinon à la télécharger.
+cat > "$WORK/receiver.py" <<'PY'
+import json
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+
+class Receiver(BaseHTTPRequestHandler):
+    def do_POST(self):
+        body = self.rfile.read(int(self.headers["Content-Length"])).decode()
+        print(json.dumps({
+            "event": self.headers["X-Vigie-Event"],
+            "timestamp": self.headers["X-Vigie-Timestamp"],
+            "signature": self.headers["X-Vigie-Signature"],
+            "body": body,
+        }), flush=True)
+        self.send_response(204)
+        self.end_headers()
+
+    def log_message(self, *args):
+        pass
+
+
+HTTPServer(("0.0.0.0", 8080), Receiver).serve_forever()
+PY
+chmod 644 "$WORK/receiver.py"
+cat > "$WORK/receiver.yml" <<EOF
+services:
+  receiver:
+    image: vigie-api:smoke
+    command: ["python", "-u", "/receiver.py"]
+    volumes:
+      - "$WORK/receiver.py:/receiver.py:ro"
+    healthcheck:
+      disable: true
+EOF
+RECEIVER=("${COMPOSE[@]}" -f "$WORK/receiver.yml")
+"${RECEIVER[@]}" up -d --no-deps receiver || fail "destinataire de webhooks non démarré"
+
+WEBHOOK_SECRET=$(curl -fsS "${AUTH[@]}" -H 'Content-Type: application/json' \
+  -d '{"name":"smoke","url":"http://receiver:8080/hook","events":["scan.completed"]}' \
+  "$API/admin/webhooks/" | jq -r .secret) || fail "webhook refusé par l'API"
+[ -n "$WEBHOOK_SECRET" ] && [ "$WEBHOOK_SECRET" != null ] || fail "webhook créé sans secret"
+
 # --- Upload -> Redis -> worker -> base --------------------------------------
 cat > "$WORK/report.nessus" <<'XML'
 <?xml version="1.0"?>
@@ -229,6 +280,25 @@ echo "ok - l'ingestion faite par le worker apparaît dans les métriques de l'AP
 [ "$("${COMPOSE[@]}" logs --no-color --no-log-prefix web | grep -c '^{')" -gt 0 ] \
   || fail "l'API n'écrit pas ses logs en JSON"
 echo "ok - logs JSON, request_id propagé de l'API au worker ($UPLOAD_ID)"
+
+# Le scan ingéré a mis un événement dans la boîte d'envoi ; le beat déclenche
+# l'envoi (WEBHOOK_DELIVERY_INTERVAL_SECONDS=5), le worker l'adresse au
+# destinataire (WEBHOOK_ALLOW_*), signé avec le secret rendu à l'enregistrement.
+CALL=""
+for _ in $(seq 1 30); do
+  CALL=$("${RECEIVER[@]}" logs --no-color --no-log-prefix receiver \
+    | grep '^{' | jq -c 'select(.event == "scan.completed")' | head -n 1)
+  [ -n "$CALL" ] && break
+  sleep 2
+done
+[ -n "$CALL" ] || fail "aucun webhook scan.completed reçu en 60 s"
+BODY=$(jq -r .body <<<"$CALL")
+EXPECTED="sha256=$(printf '%s.%s' "$(jq -r .timestamp <<<"$CALL")" "$BODY" \
+  | openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" | sed 's/^.*= //')"
+[ "$EXPECTED" = "$(jq -r .signature <<<"$CALL")" ] || fail "signature du webhook invalide"
+[ "$(jq -r .data.scan.status <<<"$BODY")" = Success ] \
+  || fail "webhook reçu sans le scan réussi : $BODY"
+echo "ok - webhook scan.completed reçu, signé, par le beat et le worker"
 
 # Aucun secret dans ce que `docker inspect` montre : environnement et
 # commande de chaque conteneur. Redis n'y voit que "$(cat ...)".
@@ -284,6 +354,7 @@ SCHEDULE=$("${COMPOSE[@]}" exec -T beat python -c \
 echo "Calendrier du beat : $SCHEDULE"
 [[ "$SCHEDULE" == *threat-intel-refresh* ]] || fail "THREAT_INTEL_ENABLED n'atteint pas le beat"
 [[ "$SCHEDULE" == *rescore-open-findings* ]] || fail "le recalcul quotidien n'est pas planifié"
+[[ "$SCHEDULE" == *webhook-delivery* ]] || fail "l'envoi des webhooks n'est pas planifié"
 echo "ok - le beat planifie le recalcul et le rafraîchissement des flux"
 
 # --- Sauvegarde, perte de la base, restauration ----------------------------

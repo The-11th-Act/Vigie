@@ -47,6 +47,15 @@ def build_beat_schedule() -> dict:
             "task": "app.worker.tasks.refresh_threat_intel_task",
             "schedule": crontab(hour=settings.THREAT_INTEL_REFRESH_HOUR_UTC, minute=15),
         }
+    if settings.WEBHOOKS_ENABLED:
+        interval = settings.WEBHOOK_DELIVERY_INTERVAL_SECONDS
+        schedule["webhook-delivery"] = {
+            "task": "app.worker.tasks.deliver_webhooks_task",
+            "schedule": timedelta(seconds=interval),
+            # A run still queued when the next one is due is redundant: the
+            # outbox, not the queue, holds what remains to send.
+            "options": {"expires": interval},
+        }
     if settings.CROWDSTRIKE_SYNC_ENABLED:
         schedule["crowdstrike-sync"] = {
             "task": "app.worker.tasks.sync_crowdstrike_task",

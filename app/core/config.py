@@ -186,7 +186,8 @@ class Settings(BaseSettings):
     KEV_SLA_DAYS: int = Field(default=14, ge=0)
 
     # Days to fix a CVE with known ransomware campaign use, counted from detection
-    # or KEV listing. Ransoms demand immediate response. 0 disables it.
+    # or from the day the flag became known here. Only ever shortens a deadline.
+    # 0 disables it.
     RANSOMWARE_SLA_DAYS: int = Field(default=7, ge=0)
 
     # Remediation SLA windows in days, by severity.
@@ -233,6 +234,19 @@ class Settings(BaseSettings):
     THREAT_INTEL_MAX_FEED_BYTES: int = Field(default=64 * 1024 * 1024, gt=0)
     # A feed not refreshed for this long is reported as stale.
     THREAT_INTEL_STALE_AFTER_HOURS: int = Field(default=72, gt=0)
+
+    # Outgoing webhooks (app/services/webhooks.py), registered by an admin. Off,
+    # the worker sends nothing and deliveries wait in the outbox.
+    WEBHOOKS_ENABLED: bool = True
+    WEBHOOK_DELIVERY_INTERVAL_SECONDS: int = Field(default=30, ge=5)
+    WEBHOOK_TIMEOUT_SECONDS: int = Field(default=10, gt=0, le=60)
+    # Receivers on private addresses (an internal chat, a SOAR). Loopback,
+    # link-local and cloud metadata addresses stay refused regardless.
+    WEBHOOK_ALLOW_PRIVATE_TARGETS: bool = False
+    # Plain HTTP receivers: the body is signed, but readable on the way.
+    WEBHOOK_ALLOW_HTTP: bool = False
+    # Sent and abandoned deliveries are purged after this, by the daily pass.
+    WEBHOOK_RETENTION_DAYS: int = Field(default=30, ge=1)
 
     @field_validator("THREAT_INTEL_KEV_URL", "THREAT_INTEL_EPSS_URL")
     @classmethod

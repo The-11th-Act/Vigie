@@ -18,7 +18,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime, timedelta
 
-from sqlalchemy import delete, insert
+from sqlalchemy import delete, func, insert
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -44,6 +44,7 @@ from app.services.remediation import apply_kev_sla
 from app.services.rescoring import rescore_open_findings
 from app.services.risk_acceptance import reopen_for_kev
 from app.services.risk_scoring import epss_band
+from app.services.webhooks import emit
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,8 @@ MIN_KEV_RETENTION = 0.9
 
 SOURCE_NETWORK = "network"
 SOURCE_IMPORT = "import"
+# CVEs named in one threat.kev_listed webhook event.
+KEV_EVENT_MAX_CVES = 100
 
 
 class FeedRejected(ThreatFeedError):
@@ -217,6 +220,7 @@ def apply_kev(
         ],
         now,
     )
+    _announce_kev(db, newly_listed, newly_ransomware, now)
 
     _replace_table(
         db,
@@ -417,6 +421,63 @@ def _assign(vuln: Vulnerability, values: dict, now: datetime) -> bool:
     if changed:
         vuln.threat_intel_updated_at = now
     return changed
+
+
+def _announce_kev(
+    db: Session, newly_listed: list[int], newly_ransomware: list[int], now: datetime
+) -> None:
+    """One webhook event per refresh: the CVEs that became urgent on open
+    findings. CVEs nothing is exposed to are left out."""
+    ids = [*newly_listed, *newly_ransomware]
+    open_counts: dict[int, int] = {}
+    for i in range(0, len(ids), CHUNK_SIZE):
+        chunk = ids[i : i + CHUNK_SIZE]
+        open_counts.update(
+            db.query(
+                AssetVulnerability.vulnerability_id, func.count(AssetVulnerability.id)
+            )
+            .filter(
+                AssetVulnerability.vulnerability_id.in_(chunk),
+                AssetVulnerability.status == Status.open,
+            )
+            .group_by(AssetVulnerability.vulnerability_id)
+            .all()
+        )
+    if not open_counts:
+        return
+
+    listed = set(newly_listed)
+    cves: list[dict] = []
+    open_counts_by_cve: dict[str, int] = {}
+    vulnerability_ids = list(open_counts)
+    for i in range(0, len(vulnerability_ids), CHUNK_SIZE):
+        chunk = vulnerability_ids[i : i + CHUNK_SIZE]
+        for vuln in db.query(Vulnerability).filter(Vulnerability.id.in_(chunk)):
+            open_counts_by_cve[vuln.cve_id] = open_counts[vuln.id]
+            cves.append(
+                {
+                    "cve_id": vuln.cve_id,
+                    "title": vuln.title,
+                    "cvss_score": vuln.cvss_score,
+                    "reason": "listed" if vuln.id in listed else "ransomware",
+                    "kev_date_added": vuln.kev_date_added,
+                    "ransomware": vuln.kev_ransomware,
+                    "open_findings": open_counts[vuln.id],
+                }
+            )
+    cves.sort(key=lambda cve: (-open_counts_by_cve[cve["cve_id"]], cve["cve_id"]))
+    # A first catalogue lists every tracked CVE at once: the event names the
+    # most widespread and counts the rest.
+    emit(
+        db,
+        "threat.kev_listed",
+        {
+            "total": len(cves),
+            "truncated": len(cves) > KEV_EVENT_MAX_CVES,
+            "cves": cves[:KEV_EVENT_MAX_CVES],
+        },
+        now,
+    )
 
 
 def _ransomware_since(

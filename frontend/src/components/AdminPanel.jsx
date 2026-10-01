@@ -7,6 +7,7 @@ import { useApiQuery } from '../hooks/useApiQuery';
 import { useModules } from '../auth/ModulesContext';
 import { controlStyle } from './RemediationShared';
 import { move } from '../order';
+import AdminWebhooks from './AdminWebhooks';
 
 const MODULES_KEY = ['admin', 'modules'];
 
@@ -347,6 +348,7 @@ export default function AdminPanel() {
       <h1 style={{ marginBottom: '1.5rem' }}>Administration</h1>
       <ModulesSection />
       <UsersSection />
+      <AdminWebhooks />
     </div>
   );
 }

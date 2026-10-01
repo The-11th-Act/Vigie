@@ -166,7 +166,8 @@ QUERY = {
 def _calls(path, ids, saved_id):
     if path == "/api/v1/extracts/{dataset_key}":
         return [f"/api/v1/extracts/{key}" for key in DATASETS]
-    values = {**ids, "saved_id": saved_id}
+    # Webhooks are admin only: refused before any lookup, so any id will do.
+    values = {**ids, "saved_id": saved_id, "webhook_id": 1}
     return [re.sub(r"\{(\w+)\}", lambda m: str(values[m.group(1)]), path)]
 
 

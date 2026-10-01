@@ -121,6 +121,18 @@ THREAT_FEED_LAST_SUCCESS = Gauge(
     multiprocess_mode="mostrecent",
 )
 
+# The outbox of the webhooks, sent by the worker: pending deliveries piling up
+# mean the worker or a receiver is down; failed ones were abandoned.
+WEBHOOK_DELIVERIES = Gauge(
+    "vigie_webhook_deliveries",
+    "Webhook deliveries still owed (pending) or abandoned (failed).",
+    ["status"],
+    registry=REGISTRY,
+    multiprocess_mode="mostrecent",
+)
+
+WEBHOOK_DELIVERY_STATUSES = ("pending", "failed")
+
 
 # Saturation of the API (docs/EXPLOITATION.md, "Dimensionnement"), summed over
 # the live processes. Requests in progress beyond the thread capacity are
@@ -210,6 +222,7 @@ def refresh_backlog_gauges(db: Session) -> None:
     from app.models.scan import ScanJob, ScanStatus
     from app.models.threat_intel import FEEDS, ThreatFeedStatus
     from app.models.vulnerability import AssetVulnerability, Status, Vulnerability
+    from app.models.webhook import WebhookDelivery
 
     try:
         now = datetime.now(UTC)
@@ -253,6 +266,12 @@ def refresh_backlog_gauges(db: Session) -> None:
             .filter(ScanJob.status == ScanStatus.success)
             .group_by(ScanJob.scan_type)
         }
+        deliveries = dict(
+            db.query(WebhookDelivery.status, func.count(WebhookDelivery.id))
+            .filter(WebhookDelivery.status.in_(WEBHOOK_DELIVERY_STATUSES))
+            .group_by(WebhookDelivery.status)
+            .all()
+        )
     except Exception as exc:
         # A scrape must never take the application down.
         logger.warning("Could not refresh backlog gauges: %s", exc)
@@ -263,6 +282,10 @@ def refresh_backlog_gauges(db: Session) -> None:
     OPEN_KEV_FINDINGS.set(open_kev_count)
     OVERDUE_KEV_FINDINGS.set(overdue_kev_count)
     INGESTED_FINDINGS.by_source = ingested
+    for delivery_status in WEBHOOK_DELIVERY_STATUSES:
+        WEBHOOK_DELIVERIES.labels(status=delivery_status).set(
+            deliveries.get(delivery_status, 0)
+        )
     for feed in FEEDS:
         moment = last_success.get(feed)
         if moment is not None and moment.tzinfo is None:

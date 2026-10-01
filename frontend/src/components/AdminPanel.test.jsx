@@ -14,6 +14,11 @@ vi.mock('../services', () => ({
   },
   userService: { list: vi.fn(), updateRole: vi.fn(), updateTeams: vi.fn() },
   remediationService: { listTeams: vi.fn() },
+  // Its own section, tested in AdminWebhooks.test.jsx.
+  webhookService: {
+    list: vi.fn(() => Promise.resolve({ data: [] })),
+    events: vi.fn(() => Promise.resolve({ data: [] })),
+  },
 }))
 
 const OVERVIEW = {

@@ -315,6 +315,37 @@ curl -H "Authorization: Bearer $VIGIE_TOKEN" \
 - Values starting with `= + - @` are neutralised in CSV, as in the backlog
   export; files are streamed from a temporary file.
 
+## Webhooks
+
+Administrators register HTTP endpoints (Administration screen, or
+`/api/v1/admin/webhooks/`) that Vigie calls when something happens:
+
+| Event | When |
+|---|---|
+| `scan.completed` / `scan.failed` | A scan file or a CrowdStrike sync was ingested, or failed for good |
+| `ticket.created` | A remediation ticket was opened |
+| `ticket.status_changed` | A ticket moved, by a person or by the scans (resolved, reopened) |
+| `threat.kev_listed` | CVEs with open findings entered CISA KEV or became known for ransomware use (one event per refresh, the 100 most widespread named) |
+
+Each event is a JSON `POST` of `{"id", "event", "created_at", "data"}`,
+signed: `X-Vigie-Signature: sha256=<HMAC-SHA256 of "<X-Vigie-Timestamp>.<body>">`
+under the webhook's secret (`whsec_…`, shown once, rotatable). Receivers should
+check the signature, refuse old timestamps, and deduplicate on
+`X-Vigie-Delivery` (the event id, unchanged across retries).
+
+- **Outbox.** Deliveries are written in the transaction of the change they
+  report and sent by the worker every `WEBHOOK_DELIVERY_INTERVAL_SECONDS`. A
+  non-2xx answer or a network error is retried 6 times over about 21 hours,
+  then abandoned (an admin can send it again). Redirects are not followed.
+  `vigie_webhook_deliveries{status="pending"|"failed"}` in `/metrics`.
+- **Targets.** HTTPS only (`WEBHOOK_ALLOW_HTTP`), no credentials in the URL,
+  no private address (`WEBHOOK_ALLOW_PRIVATE_TARGETS`, for an internal
+  receiver). Loopback, link-local and cloud metadata addresses are always
+  refused. The address is checked at registration and at every delivery.
+- **One instance.** A webhook is sealed with the instance's signing key. A
+  staging restored from production holds production's webhooks but cannot
+  send them; "Use here" gives one a new secret, sealed to the staging.
+
 ## Health probes
 
 | Endpoint | Checks | Use it for |
@@ -475,7 +506,8 @@ the beat scheduler then pulls open findings every
   runs in the worker, which serves no metrics; CrowdStrike syncs are recorded
   there like uploads), the size of the open/overdue backlog, open and
   overdue KEV findings, and `vigie_threat_feed_last_success_timestamp_seconds`
-  per feed (0 until first applied — alert on `time() - value > 2 * 86400`).
+  per feed (0 until first applied — alert on `time() - value > 2 * 86400`),
+  and the webhook deliveries pending or abandoned.
   Saturation: `vigie_http_requests_in_progress` against `vigie_api_threads`,
   `vigie_db_connections_in_use` against `vigie_db_connections_max`. In
   production the uvicorn processes write to `PROMETHEUS_MULTIPROC_DIR` and a

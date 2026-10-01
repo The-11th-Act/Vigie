@@ -10,7 +10,7 @@ FastAPI + SQLAlchemy + Celery/Redis + PostgreSQL ; React 19 + Vite 8.
   exploitation, sauvegarde, audits. **`TODO.md` : l'état de référence** — la
   section « Modules et remédiation » en fin de fichier suit la feuille de route
   en cours.
-- Migrations : tête `0020`. Chaque colonne de modèle doit avoir sa migration
+- Migrations : tête `0021`. Chaque colonne de modèle doit avoir sa migration
   (`alembic check` en CI).
 
 ## Façon de travailler (convenue avec l'utilisateur)
@@ -118,6 +118,12 @@ gh run list --workflow CI --branch main --limit 1          # pas seulement --lim
 - **Extractions** : jeux déclaratifs (`app/services/extracts.py`), jetons
   personnels en lecture seule (`app/core/api_tokens.py`).
 - La requête filtrée du backlog est unique : `app/services/findings.py`.
+- **Webhooks** (`app/services/webhooks.py`) : `emit(db, événement, data)` dans
+  la transaction du changement (boîte d'envoi `webhook_deliveries`), envoi par
+  `deliver_webhooks_task` (beat). Un nouvel événement s'ajoute à `EVENTS`, sans
+  jamais en renommer un. Tout changement de statut de ticket passe par
+  `log_ticket_change` (`app/services/tickets.py`), qui écrit l'historique et
+  émet l'événement : ne pas écrire `TicketAuditLog` directement.
 
 ## Suite prévue
 
@@ -129,9 +135,11 @@ gh run list --workflow CI --branch main --limit 1          # pas seulement --lim
    Le worker n'expose aucune métrique : ce qu'il fait se mesure depuis la
    base, au scrape de l'API.
 3. ~~TanStack Query~~ et ~~périmètres (T7)~~ faits le 30/09/2026.
-4. **Plus tard, à la demande de l'utilisateur** : connecteur de ticketing
-   (Jira, ServiceNow ou GLPI, à lui faire choisir) sur les champs
-   `external_*` des tickets, et webhooks. Garder la conception ouverte.
+4. ~~Webhooks sortants~~ faits le 01/10/2026. **Plus tard, à la demande de
+   l'utilisateur** : connecteur de ticketing (Jira, ServiceNow ou GLPI, à lui
+   faire choisir) sur les champs `external_*` des tickets. Il pourra
+   s'abonner aux mêmes événements et reprendre le scellement par instance des
+   webhooks pour ne jamais écrire en production depuis une préproduction.
 5. À valider sur des données réelles quand l'utilisateur les fournira : un
    export Nessus (taxonomie, KB des cumulatives Windows) et un tenant
    CrowdStrike (remédiations Spotlight).
