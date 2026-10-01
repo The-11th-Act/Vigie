@@ -140,6 +140,28 @@ describe('RemediationTickets', () => {
     )
   })
 
+  it('pages past the first tickets, and a filter goes back to the first page', async () => {
+    ticketsListed()
+    remediationService.listTickets.mockResolvedValue({ data: { total: 120, items: [TICKET] } })
+    const user = userEvent.setup()
+    render(withRole('analyst', <RemediationTickets />))
+
+    await user.click(await screen.findByRole('button', { name: 'Next page' }))
+    await waitFor(() =>
+      expect(remediationService.listTickets).toHaveBeenLastCalledWith(
+        expect.objectContaining({ skip: 50, limit: 50 })
+      )
+    )
+    expect(await screen.findByText('Page 2 of 3')).toBeInTheDocument()
+
+    await user.selectOptions(screen.getByLabelText('Ticket status filter'), 'all')
+    await waitFor(() =>
+      expect(remediationService.listTickets).toHaveBeenLastCalledWith(
+        expect.objectContaining({ status: 'all', skip: 0 })
+      )
+    )
+  })
+
   it('moves a ticket along', async () => {
     ticketsListed()
     remediationService.updateTicket.mockResolvedValue({ data: TICKET })

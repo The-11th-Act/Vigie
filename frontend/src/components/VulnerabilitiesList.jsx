@@ -1,7 +1,9 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import { vulnerabilityService } from '../services';
 import { useApiQuery } from '../hooks/useApiQuery';
-import { Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useDebouncedValue } from '../hooks/useDebouncedValue';
+import Pagination from './Pagination';
+import SearchInput from './SearchInput';
 
 const PAGE_SIZE = 20;
 const SEVERITIES = ['Critical', 'High', 'Medium', 'Low'];
@@ -9,7 +11,7 @@ const SEVERITIES = ['Critical', 'High', 'Medium', 'Low'];
 export default function VulnerabilitiesList() {
   const [page, setPage] = useState(0);
   const [search, setSearch] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search);
   const [severity, setSeverity] = useState('');
 
   const { data, loading, error } = useApiQuery(
@@ -25,17 +27,10 @@ export default function VulnerabilitiesList() {
     }
   );
 
-  // Debounce held in a ref rather than on `window`: a module-level global was
-  // shared with every other list and leaked its timer between components.
-  const searchTimer = useRef(null);
-
-  useEffect(() => {
-    searchTimer.current = setTimeout(() => {
-      setDebouncedSearch(search);
-      setPage(0);
-    }, 300);
-    return () => clearTimeout(searchTimer.current);
-  }, [search]);
+  const handleSearchChange = (value) => {
+    setSearch(value);
+    setPage(0);
+  };
 
   const handleSeverityChange = (e) => {
     setSeverity(e.target.value);
@@ -49,21 +44,14 @@ export default function VulnerabilitiesList() {
       <h1>Vulnerability Database ({data?.total || 0})</h1>
 
       <div className="filters" style={{marginBottom: '1rem', display: 'flex', gap: '0.75rem', flexWrap: 'wrap'}}>
-        <div style={{position: 'relative', flex: 1, maxWidth: 400}}>
-          <Search size={16} style={{position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)'}} />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by CVE or title..."
-            style={{
-              width: '100%', padding: '0.6rem 0.75rem 0.6rem 2.25rem',
-              background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)',
-              borderRadius: '8px', color: 'var(--text-main)', fontSize: '0.875rem', outline: 'none',
-            }}
-          />
-        </div>
+        <SearchInput
+          value={search}
+          onChange={handleSearchChange}
+          placeholder="Search by CVE or title..."
+          style={{flex: 1, maxWidth: 400}}
+        />
         <select
+          aria-label="Severity"
           value={severity}
           onChange={handleSeverityChange}
           style={{
@@ -115,27 +103,7 @@ export default function VulnerabilitiesList() {
             </table>
           </div>
 
-          {totalPages > 1 && (
-            <div className="pagination" style={{display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1rem', marginTop: '1.5rem'}}>
-              <button
-                onClick={() => setPage(p => Math.max(0, p - 1))}
-                disabled={page === 0}
-                style={{background: 'none', border: '1px solid var(--border)', borderRadius: '6px', padding: '0.4rem 0.6rem', color: 'var(--text-main)', cursor: page === 0 ? 'not-allowed' : 'pointer', opacity: page === 0 ? 0.4 : 1}}
-              >
-                <ChevronLeft size={18} />
-              </button>
-              <span style={{color: 'var(--text-muted)', fontSize: '0.875rem'}}>
-                Page {page + 1} of {totalPages}
-              </span>
-              <button
-                onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
-                disabled={page >= totalPages - 1}
-                style={{background: 'none', border: '1px solid var(--border)', borderRadius: '6px', padding: '0.4rem 0.6rem', color: 'var(--text-main)', cursor: page >= totalPages - 1 ? 'not-allowed' : 'pointer', opacity: page >= totalPages - 1 ? 0.4 : 1}}
-              >
-                <ChevronRight size={18} />
-              </button>
-            </div>
-          )}
+          <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
         </>
       )}
     </div>

@@ -1,8 +1,11 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import { assetService } from '../services';
 import { useApiQuery } from '../hooks/useApiQuery';
+import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { useAuth } from '../auth/AuthContext';
-import { Search, ChevronLeft, ChevronRight, Plus, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Pencil, Trash2 } from 'lucide-react';
+import Pagination from './Pagination';
+import SearchInput from './SearchInput';
 
 const PAGE_SIZE = 20;
 const CRITICALITIES = ['Low', 'Medium', 'High', 'Critical'];
@@ -41,7 +44,7 @@ const inputStyle = {
 export default function AssetsList() {
   const [page, setPage] = useState(0);
   const [search, setSearch] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search);
 
   const [editing, setEditing] = useState(null); // null | 'new' | asset
   const [form, setForm] = useState(EMPTY_FORM);
@@ -55,17 +58,10 @@ export default function AssetsList() {
   // Criticality and exposure weigh on every score: a remediator reads them.
   const canEdit = role !== 'remediator';
 
-  // Debounce held in a ref rather than on `window`: a module-level global was
-  // shared with every other list and leaked its timer between components.
-  const searchTimer = useRef(null);
-
-  useEffect(() => {
-    searchTimer.current = setTimeout(() => {
-      setDebouncedSearch(search);
-      setPage(0);
-    }, 300);
-    return () => clearTimeout(searchTimer.current);
-  }, [search]);
+  const handleSearchChange = (value) => {
+    setSearch(value);
+    setPage(0);
+  };
 
   const { data, loading, error, refetch } = useApiQuery(
     ['assets', 'list', { page, search: debouncedSearch }],
@@ -160,16 +156,12 @@ export default function AssetsList() {
       <h1>Assets Inventory ({data?.total || 0})</h1>
 
       <div style={{marginBottom: '1rem', display: 'flex', gap: '0.75rem', alignItems: 'center'}}>
-        <div style={{position: 'relative', flex: 1, maxWidth: 400}}>
-          <Search size={16} style={{position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)'}} />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by IP or hostname..."
-            style={{...inputStyle, paddingLeft: '2.25rem'}}
-          />
-        </div>
+        <SearchInput
+          value={search}
+          onChange={handleSearchChange}
+          placeholder="Search by IP or hostname..."
+          style={{flex: 1, maxWidth: 400}}
+        />
         {canEdit && (
           <button className="button" onClick={openCreate}>
             <Plus size={16} />
@@ -374,27 +366,7 @@ export default function AssetsList() {
             </table>
           </div>
 
-          {totalPages > 1 && (
-            <div className="pagination" style={{display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1rem', marginTop: '1.5rem'}}>
-              <button
-                onClick={() => setPage(p => Math.max(0, p - 1))}
-                disabled={page === 0}
-                style={{background: 'none', border: '1px solid var(--border)', borderRadius: '6px', padding: '0.4rem 0.6rem', color: 'var(--text-main)', cursor: page === 0 ? 'not-allowed' : 'pointer', opacity: page === 0 ? 0.4 : 1}}
-              >
-                <ChevronLeft size={18} />
-              </button>
-              <span style={{color: 'var(--text-muted)', fontSize: '0.875rem'}}>
-                Page {page + 1} of {totalPages}
-              </span>
-              <button
-                onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
-                disabled={page >= totalPages - 1}
-                style={{background: 'none', border: '1px solid var(--border)', borderRadius: '6px', padding: '0.4rem 0.6rem', color: 'var(--text-main)', cursor: page >= totalPages - 1 ? 'not-allowed' : 'pointer', opacity: page >= totalPages - 1 ? 0.4 : 1}}
-              >
-                <ChevronRight size={18} />
-              </button>
-            </div>
-          )}
+          <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
         </>
       )}
     </div>

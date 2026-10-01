@@ -255,6 +255,49 @@ select option {
   cursor: not-allowed;
 }
 
+/* Pager under a paginated list (components/Pagination.jsx). */
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.pagination .icon-button {
+  padding: 0.4rem 0.6rem;
+}
+
+.pagination-status {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+/* Search box with its magnifier (components/SearchInput.jsx). */
+.search-field {
+  position: relative;
+}
+
+.search-field-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.search-field input {
+  width: 100%;
+  padding: 0.6rem 0.75rem 0.6rem 2.25rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-main);
+  font-size: 0.875rem;
+  outline: none;
+}
+
 .select {
   padding: 0.4rem 0.5rem;
   background: rgba(255, 255, 255, 0.05);

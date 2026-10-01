@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { vulnerabilityService } from '../services';
 import { useApiQuery } from '../hooks/useApiQuery';
 import { useAuth } from '../auth/AuthContext';
-import { ChevronLeft, ChevronRight, Download } from 'lucide-react';
+import { Download } from 'lucide-react';
+import Pagination from './Pagination';
 
 const PAGE_SIZE = 20;
 const STATUSES = ['Open', 'False Positive', 'Risk Accepted', 'Remediated'];
@@ -450,27 +451,7 @@ export default function FindingsBacklog() {
             </table>
           </div>
 
-          {totalPages > 1 && (
-            <div className="pagination" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1rem', marginTop: '1.5rem' }}>
-              <button
-                onClick={() => setPage((p) => Math.max(0, p - 1))}
-                disabled={page === 0}
-                style={{ background: 'none', border: '1px solid var(--border)', borderRadius: '6px', padding: '0.4rem 0.6rem', color: 'var(--text-main)', cursor: page === 0 ? 'not-allowed' : 'pointer', opacity: page === 0 ? 0.4 : 1 }}
-              >
-                <ChevronLeft size={18} />
-              </button>
-              <span style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-                Page {page + 1} of {totalPages}
-              </span>
-              <button
-                onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-                disabled={page >= totalPages - 1}
-                style={{ background: 'none', border: '1px solid var(--border)', borderRadius: '6px', padding: '0.4rem 0.6rem', color: 'var(--text-main)', cursor: page >= totalPages - 1 ? 'not-allowed' : 'pointer', opacity: page >= totalPages - 1 ? 0.4 : 1 }}
-              >
-                <ChevronRight size={18} />
-              </button>
-            </div>
-          )}
+          <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
         </>
       )}
     </div>

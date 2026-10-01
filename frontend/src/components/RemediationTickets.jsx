@@ -4,6 +4,7 @@ import { ChevronDown, ChevronUp, Download, ExternalLink } from 'lucide-react';
 import { remediationService } from '../services';
 import { useApiQuery } from '../hooks/useApiQuery';
 import { useAuth } from '../auth/AuthContext';
+import Pagination from './Pagination';
 import {
   FixLabel,
   HostsTable,
@@ -31,6 +32,7 @@ const STATUS_BADGES = {
 // What a person may set: resolution belongs to the scans.
 const SETTABLE = ['open', 'in_progress', 'deployed', 'cancelled'];
 const UNASSIGNED = '__unassigned__';
+const PAGE_SIZE = 50;
 
 function errorText(err) {
   return err.response?.data?.detail || err.message || 'The change was refused';
@@ -197,6 +199,7 @@ function TicketDetail({ ticketId }) {
 export default function RemediationTickets() {
   const [status, setStatus] = useState('active');
   const [team, setTeam] = useState('');
+  const [page, setPage] = useState(0);
   const [openId, setOpenId] = useState(null);
 
   const { data: teams } = useApiQuery(
@@ -204,17 +207,21 @@ export default function RemediationTickets() {
     async () => (await remediationService.listTeams()).data.teams
   );
 
+  // Paged like the other lists: a single request capped at 200 left every
+  // ticket past the 200th out of sight, with nothing saying so.
   const { data, loading, error } = useApiQuery(
-    ['remediation', 'tickets', { status, team }],
+    ['remediation', 'tickets', { status, team, page }],
     async () => {
       const res = await remediationService.listTickets({
         status,
         owner_team: team || undefined,
-        limit: 200,
+        skip: page * PAGE_SIZE,
+        limit: PAGE_SIZE,
       });
       return res.data;
     }
   );
+  const totalPages = data ? Math.ceil(data.total / PAGE_SIZE) : 0;
 
   return (
     <div>
@@ -222,7 +229,10 @@ export default function RemediationTickets() {
         <select
           aria-label="Ticket status filter"
           value={status}
-          onChange={(e) => setStatus(e.target.value)}
+          onChange={(e) => {
+            setStatus(e.target.value);
+            setPage(0);
+          }}
           style={{ ...controlStyle, cursor: 'pointer' }}
         >
           <option value="active">Active</option>
@@ -234,7 +244,10 @@ export default function RemediationTickets() {
         <select
           aria-label="Team filter"
           value={team}
-          onChange={(e) => setTeam(e.target.value)}
+          onChange={(e) => {
+            setTeam(e.target.value);
+            setPage(0);
+          }}
           style={{ ...controlStyle, cursor: 'pointer' }}
         >
           <option value="">All teams</option>
@@ -336,6 +349,7 @@ export default function RemediationTickets() {
           </table>
         </div>
       )}
+      {data && <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />}
     </div>
   );
 }

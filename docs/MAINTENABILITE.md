@@ -91,7 +91,7 @@ erreur.
 > et déclenchent des remédiations sur des vulnérabilités inexistantes. La suppression
 > complète du module reste une décision produit (point 5 de `TODO.md`).
 
-### M3 — Le frontend n'a aucun filet, et son style est inline
+### M3 — Le frontend n'a aucun filet, et son style est inline ✅ *largement traité*
 
 Zéro test frontend. Chaque modification d'un composant est validée à l'œil, ou pas
 validée du tout.
@@ -111,6 +111,17 @@ composants montés simultanément se marchent dessus.
 > 3. `useDebounce` en hook, ce qui élimine les variables globales.
 > 4. TanStack Query à la place de `useFetch`, qui a un bug latent : `fetchFn` n'est pas
 >    dans les dépendances de son `useCallback`.
+
+> **Largement traité (01/10/2026).** 1 : 108 tests Vitest, dont les trois parcours.
+> 3 et 4 : `useDebouncedValue` et TanStack Query (30/09/2026). 2 : `<Pagination>` et
+> `<SearchInput>` (`frontend/src/components/`) remplacent quatre copies du pager et
+> trois de la recherche temporisée ; le pager porte désormais des libellés
+> accessibles. En chemin, la liste des tickets en a reçu un : elle demandait 200
+> tickets d'un coup et taisait les suivants. `<DataTable>` n'a pas été extrait : les
+> tableaux partagent la classe `data-table`, pas leur contenu.
+>
+> **Reste :** environ 280 `style={{...}}` inline. Les migrer vers des classes au fil
+> des modifications d'écran, pas en une passe : un grand diff de style ne se relit pas.
 
 ### M4 — Les politiques métier sont éparpillées en constantes de module ✅ *traité*
 
@@ -188,16 +199,15 @@ Trié par (valeur × urgence) / coût, pas par gravité :
 | — | Seuil de couverture bloquant (`fail_under = 90`) | La régression de couverture échoue en CI |
 | M1 | `ParsedFinding` & `ParsedRemediation` : contrat exécutable | Types stricts, validation, rétro-compatibilité duck-typing |
 | M4b | `policy.py` + surcharge par variables d'environnement | Centralisation, cohérence CVSS/risque, surcharge SLA via .env |
+| 10 | Table d'audit du triage (`finding_audit_log`) | Plus aucun changement de statut perdu |
+| — | `mypy` bloquant (`app/` et `scripts/`) + Dependabot | Outillage de la CI complet |
+| M3 | Vitest (108 tests), `<Pagination>`, `<SearchInput>`, `useDebouncedValue` | Plus de pager ni de recherche dupliqués |
 
 ### Reste à faire
 
-| # | Action | Effort | Pourquoi maintenant |
+| # | Action | Effort | Pourquoi |
 |---|---|---|---|
-| 10 | Table d'audit du triage | 3 h | Chaque jour d'attente perd de l'information définitivement |
-| M3 | Vitest sur 3 parcours, puis extraction de composants | 6 h | Le frontend n'a toujours aucun filet |
-| — | `mypy` graduel + Dependabot | 2 h | Complète l'outillage de la CI |
-
-**Environ 11 h restantes.**
+| M3 | Styles inline → classes CSS, écran par écran | Au fil de l'eau | Changer la charte demande encore de relire chaque composant |
 
 ---
 

@@ -1,8 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, ExternalLink, Search, Ticket } from 'lucide-react';
+import React, { useState } from 'react';
+import { ChevronDown, ChevronUp, Download, ExternalLink, Ticket } from 'lucide-react';
 import { remediationService } from '../services';
 import { useApiQuery } from '../hooks/useApiQuery';
+import { useDebouncedValue } from '../hooks/useDebouncedValue';
+import Pagination from './Pagination';
 import RemediationTickets from './RemediationTickets';
+import SearchInput from './SearchInput';
 import {
   FixLabel,
   HostsTable,
@@ -66,19 +69,10 @@ function FixesView({ onTicketsCreated }) {
   const [kind, setKind] = useState('');
   const [kevOnly, setKevOnly] = useState(false);
   const [search, setSearch] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search);
   const [openId, setOpenId] = useState(null);
   const [ticketing, setTicketing] = useState(null);
   const [message, setMessage] = useState(null);
-
-  const searchTimer = useRef(null);
-  useEffect(() => {
-    searchTimer.current = setTimeout(() => {
-      setDebouncedSearch(search);
-      setPage(0);
-    }, 300);
-    return () => clearTimeout(searchTimer.current);
-  }, [search]);
 
   const { data, loading, error, refetch } = useApiQuery(
     ['remediation', 'actions', { page, kind, kevOnly, search: debouncedSearch }],
@@ -119,17 +113,16 @@ function FixesView({ onTicketsCreated }) {
   return (
     <div>
       <div style={{ marginBottom: '1rem', display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
-        <div style={{ position: 'relative' }}>
-          <Search size={16} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-          <input
-            type="search"
-            placeholder="KB, product, fix..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            aria-label="Search fixes"
-            style={{ ...controlStyle, paddingLeft: '2rem', width: 240 }}
-          />
-        </div>
+        <SearchInput
+          value={search}
+          onChange={(value) => {
+            setSearch(value);
+            setPage(0);
+          }}
+          placeholder="KB, product, fix..."
+          label="Search fixes"
+          style={{ width: 240 }}
+        />
         <select
           aria-label="Kind of fix"
           value={kind}
@@ -262,31 +255,7 @@ function FixesView({ onTicketsCreated }) {
             </div>
           )}
 
-          {totalPages > 1 && (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1rem', marginTop: '1.5rem' }}>
-              <button
-                type="button"
-                className="icon-button"
-                onClick={() => setPage((p) => Math.max(0, p - 1))}
-                disabled={page === 0}
-                aria-label="Previous page"
-              >
-                <ChevronLeft size={18} />
-              </button>
-              <span style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-                Page {page + 1} of {totalPages}
-              </span>
-              <button
-                type="button"
-                className="icon-button"
-                onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-                disabled={page >= totalPages - 1}
-                aria-label="Next page"
-              >
-                <ChevronRight size={18} />
-              </button>
-            </div>
-          )}
+          <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
         </>
       )}
     </div>
