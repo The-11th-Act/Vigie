@@ -33,6 +33,8 @@ def apply_kev_sla(
     deadline: datetime | None,
     detected_at: datetime | None,
     kev_date_added: date | None,
+    *,
+    is_ransomware: bool = False,
 ) -> datetime | None:
     """Tighten a deadline for a CVE that is exploited in the wild.
 
@@ -42,10 +44,18 @@ def apply_kev_sla(
     from the listing, not an instant breach. CISA's own ``dueDate`` is not used,
     since for older entries it is already in the past.
 
+    When ``is_ransomware`` is True, the window tightens further to
+    ``RANSOMWARE_SLA_DAYS`` (default 7 days) to reflect the urgency of an active
+    ransomware threat.
+
     The result is never later than ``deadline``: a CVE leaving the catalogue does
     not loosen a commitment already made.
     """
-    days = settings.KEV_SLA_DAYS
+    days = (
+        settings.RANSOMWARE_SLA_DAYS
+        if is_ransomware and settings.RANSOMWARE_SLA_DAYS > 0
+        else settings.KEV_SLA_DAYS
+    )
     if days <= 0:
         return deadline
 

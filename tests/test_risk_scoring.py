@@ -165,6 +165,25 @@ class TestThreatContext:
         assert capped.score == 9.0
         assert "context_cap" in {f.code for f in capped.factors}
 
+    def test_ransomware_stacks_on_top_of_kev(self):
+        score_kev = calculate_risk_score(6.0, "Medium", in_kev=True)
+        score_ransom = calculate_risk_score(
+            6.0, "Medium", in_kev=True, kev_ransomware=True
+        )
+        # 6.0 * 1.3 = 7.8 (above KEV_RISK_FLOOR of 7.0)
+        assert score_kev == 7.8
+        # 6.0 * 1.3 * 1.15 = 8.97 (above RANSOMWARE_RISK_FLOOR of 7.5)
+        assert score_ransom == 8.97
+        assert score_ransom > score_kev
+
+    def test_the_ransomware_floor_applies_on_a_low_criticality_host(self):
+        # 2.0 on Low (0.7): base = 1.4. Context = 1.3 * 1.15 = 1.495. raw = 2.09.
+        # Raised to RANSOMWARE_RISK_FLOOR (7.5) instead of KEV_RISK_FLOOR (7.0).
+        score_kev = calculate_risk_score(2.0, "Low", in_kev=True)
+        score_ransom = calculate_risk_score(2.0, "Low", in_kev=True, kev_ransomware=True)
+        assert score_kev == 7.0
+        assert score_ransom == 7.5
+
 
 class TestRiskExplanation:
     def test_a_neutral_finding_has_no_factor(self):
@@ -195,7 +214,22 @@ class TestRiskExplanation:
         }
         assert "2024-03-01" in by_code["kev"]["label"]
         assert by_code["overdue"]["points"] == 1.0
-        assert by_code["kev_ransomware"]["multiplier"] is None
+        assert by_code["kev_ransomware"]["multiplier"] == 1.15
+
+    def test_ransomware_factors_rebuild_the_score(self):
+        inputs = RiskInputs(
+            5.0,
+            "Medium",
+            in_kev=True,
+            kev_ransomware=True,
+        )
+        breakdown = compute_risk(inputs, NOW)
+        rebuilt = 5.0
+        for factor in breakdown.factors:
+            rebuilt *= factor.multiplier or 1.0
+        rebuilt += sum(f.points or 0.0 for f in breakdown.factors)
+
+        assert breakdown.score == round(rebuilt, 2)
 
     def test_the_factors_rebuild_the_score(self):
         """The explanation is derived from the computation, not written beside it."""
@@ -283,6 +317,19 @@ class TestKevSLA:
         medium = calculate_remediation_deadline("Medium", self.DETECTED)
         assert apply_kev_sla(medium, self.DETECTED, None) == medium
 
+    def test_ransomware_tightens_to_ransomware_sla(self):
+        medium = calculate_remediation_deadline("Medium", self.DETECTED)
+        tightened = apply_kev_sla(medium, self.DETECTED, None, is_ransomware=True)
+        assert tightened == self.DETECTED + timedelta(days=7)
+
+    def test_ransomware_disabled_falls_back_to_kev(self, monkeypatch):
+        from app.core.config import settings
+
+        monkeypatch.setattr(settings, "RANSOMWARE_SLA_DAYS", 0)
+        medium = calculate_remediation_deadline("Medium", self.DETECTED)
+        tightened = apply_kev_sla(medium, self.DETECTED, None, is_ransomware=True)
+        assert tightened == self.DETECTED + timedelta(days=14)
+
 
 class TestRiskRank:
     """The clamp at 10.0 tied findings that are not equally urgent."""
@@ -303,6 +350,14 @@ class TestRiskRank:
         )
         assert internal.score == exposed.score == 10.0
         assert exposed.rank > internal.rank
+
+    def test_ransomware_outranks_standard_kev(self):
+        standard = compute_risk(RiskInputs(8.0, "Critical", in_kev=True))
+        ransomware = compute_risk(
+            RiskInputs(8.0, "Critical", in_kev=True, kev_ransomware=True)
+        )
+        assert standard.score == ransomware.score == 10.0
+        assert ransomware.rank > standard.rank
 
     def test_below_the_ceiling_rank_and_score_agree(self):
         breakdown = compute_risk(RiskInputs(5.0, "Medium", epss_score=0.2))

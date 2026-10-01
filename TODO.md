@@ -440,7 +440,9 @@ Choix produit pris par défaut, tous réglables par une constante de
 - réduction ×0.9 sous 1 % d'EPSS : une fois les flux activés, une partie du
   backlog descend d'un niveau (voulu : c'est la réduction du bruit) ;
 - plancher 7.0 pour un KEV même sur un asset `Low` ;
-- l'usage par rançongiciel est affiché, sans effet sur le score.
+- l'usage par rançongiciel intègre désormais activement le calcul de risque (01/10/2026) :
+  multiplicateur de menace ×1.15 additionnel, plancher de risque à 7.5 et délai SLA
+  d'urgence resserré à 7 jours (`RANSOMWARE_SLA_DAYS`).
 
 ## ✅ Déploiement vérifié de bout en bout (25/09/2026)
 

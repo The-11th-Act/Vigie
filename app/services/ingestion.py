@@ -469,7 +469,9 @@ def _upsert_associations(
             finding["severity"], now
         )
         if vuln.in_kev:
-            deadline = apply_kev_sla(deadline, now, vuln.kev_date_added)
+            deadline = apply_kev_sla(
+                deadline, now, vuln.kev_date_added, is_ransomware=vuln.kev_ransomware
+            )
         assoc = assoc_cache.get(key)
 
         if assoc is None:
@@ -504,7 +506,10 @@ def _upsert_associations(
             # Listed in KEV since it was first detected: the shorter window now
             # applies to the finding already in the backlog.
             assoc.remediation_deadline = apply_kev_sla(
-                assoc.remediation_deadline, assoc.detected_at, vuln.kev_date_added
+                assoc.remediation_deadline,
+                assoc.detected_at,
+                vuln.kev_date_added,
+                is_ransomware=vuln.kev_ransomware,
             )
 
         _apply_score(assoc, asset, vuln, assoc.remediation_deadline or deadline, now)

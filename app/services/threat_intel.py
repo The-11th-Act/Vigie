@@ -170,6 +170,7 @@ def apply_kev(
 
     changed = 0
     newly_listed: list[int] = []
+    newly_ransomware: list[int] = []
     delisted: list[str] = []
     for vuln in candidates.values():
         entry = catalog.entries.get(vuln.cve_id)
@@ -180,11 +181,14 @@ def apply_kev(
             "kev_ransomware": entry.ransomware if entry else False,
         }
         was_listed = bool(vuln.in_kev)
+        was_ransomware = bool(vuln.kev_ransomware)
         if not _assign(vuln, wanted, now):
             continue
         changed += 1
         if entry is not None and not was_listed:
             newly_listed.append(vuln.id)
+        elif entry is not None and entry.ransomware and not was_ransomware:
+            newly_ransomware.append(vuln.id)
         elif entry is None and was_listed:
             delisted.append(vuln.cve_id)
 
@@ -201,9 +205,15 @@ def apply_kev(
     )
     if reopened:
         logger.warning("%d accepted finding(s) reopened: their CVE entered KEV", reopened)
-    _tighten_deadlines(db, newly_listed)
+    _tighten_deadlines(db, [*newly_listed, *newly_ransomware])
     rescored = _rescore(
-        db, [*newly_listed, *(v.id for v in flagged if not v.in_kev)], now
+        db,
+        [
+            *newly_listed,
+            *newly_ransomware,
+            *(v.id for v in flagged if not v.in_kev),
+        ],
+        now,
     )
 
     _replace_table(
@@ -419,6 +429,7 @@ def _tighten_deadlines(db: Session, vulnerability_ids: list[int]) -> None:
                 finding.remediation_deadline,
                 finding.detected_at,
                 finding.vulnerability.kev_date_added,
+                is_ransomware=finding.vulnerability.kev_ransomware,
             )
 
 

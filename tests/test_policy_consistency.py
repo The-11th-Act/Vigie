@@ -136,3 +136,19 @@ class TestThreatContextPolicy:
         from app.core.config import settings
 
         assert 0 < settings.KEV_SLA_DAYS <= SLA_DAYS["Critical"]
+
+    def test_the_ransomware_window_is_at_least_as_strict_as_the_kev_one(self):
+        """Un CVE associé à un rançongiciel doit être traité au moins aussi vite qu'un KEV classique."""
+        from app.core.config import settings
+
+        assert 0 < settings.RANSOMWARE_SLA_DAYS <= settings.KEV_SLA_DAYS
+
+    def test_the_ransomware_floor_is_at_least_the_kev_floor(self):
+        from app.services.risk_scoring import (
+            RANSOMWARE_MULTIPLIER,
+            RANSOMWARE_RISK_FLOOR,
+        )
+
+        assert RANSOMWARE_RISK_FLOOR >= KEV_RISK_FLOOR
+        assert risk_level(RANSOMWARE_RISK_FLOOR) in {"High", "Critical"}
+        assert RANSOMWARE_MULTIPLIER > 1.0

@@ -185,6 +185,10 @@ class Settings(BaseSettings):
     # listing, whichever is later. Only ever shortens a deadline. 0 disables it.
     KEV_SLA_DAYS: int = Field(default=14, ge=0)
 
+    # Days to fix a CVE with known ransomware campaign use, counted from detection
+    # or KEV listing. Ransoms demand immediate response. 0 disables it.
+    RANSOMWARE_SLA_DAYS: int = Field(default=7, ge=0)
+
     LOG_LEVEL: str = "INFO"
     # "text" for a terminal, "json" for a log collector (one document per line).
     LOG_FORMAT: Literal["text", "json"] = "text"

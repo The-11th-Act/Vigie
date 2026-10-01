@@ -451,12 +451,18 @@ class TestSettingsReachTheContainers:
         pas échouer à lire "" comme un entier, une liste ou un booléen."""
         from app.core.config import Settings
 
-        for name in ("KEV_SLA_DAYS", "CRITICALITY_RULES", "THREAT_INTEL_ENABLED"):
+        for name in (
+            "KEV_SLA_DAYS",
+            "RANSOMWARE_SLA_DAYS",
+            "CRITICALITY_RULES",
+            "THREAT_INTEL_ENABLED",
+        ):
             monkeypatch.setenv(name, "")
 
         settings = Settings(_env_file=None)
 
         assert settings.KEV_SLA_DAYS == 14
+        assert settings.RANSOMWARE_SLA_DAYS == 7
         assert settings.CRITICALITY_RULES == {}
         assert settings.THREAT_INTEL_ENABLED is False
 

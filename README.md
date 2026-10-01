@@ -329,11 +329,12 @@ computes:
 
 ```
 base    = CVSS × business criticality        (Critical ×1.5, High ×1.2, Medium ×1, Low ×0.7)
-threat  = ×1.3 if the CVE is in CISA KEV, otherwise its EPSS band:
+threat  = ×1.3 if the CVE is in CISA KEV (×1.15 additional factor if tied to ransomware),
+          otherwise its EPSS band:
           ≥ 50 % ×1.3 · ≥ 10 % ×1.15 · ≥ 1 % ×1 · < 1 % ×0.9 · unknown ×1
 expo    = ×1.2 if the asset is Internet-facing
 score   = base × min(1.5, threat × expo) + overdue penalty (up to +1.5)
-          raised to 7.0 ("High") for a KEV entry, clamped to [0, 10]
+          raised to 7.0 ("High") for a KEV entry, 7.5 for ransomware, clamped to [0, 10]
 ```
 
 Without any threat context the score is exactly CVSS × criticality plus the
@@ -344,7 +345,8 @@ computed by the same function that scored it.
 
 The remediation deadline comes from `app/services/remediation.py` (14 days for
 Critical, up to 180 for Low). A CVE listed in KEV gets `KEV_SLA_DAYS` (14)
-instead, counted from its detection or its listing, whichever is later; the
+instead, or `RANSOMWARE_SLA_DAYS` (7) if exploited in ransomware campaigns,
+counted from its detection or its listing, whichever is later; the
 window only ever shortens. Scores are stored so the backlog sorts in SQL;
 `app/services/rescoring.py` recomputes them whenever an input changes (CVSS,
 criticality, exposure, threat context) and once a day for the whole open backlog,

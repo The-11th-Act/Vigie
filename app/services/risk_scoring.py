@@ -41,6 +41,11 @@ KEV_MULTIPLIER = 1.3
 # this is the lower bound of the "High" level in ``risk_level``.
 KEV_RISK_FLOOR = 7.0
 
+# An active ransomware campaign represents an immediate operational threat.
+# Stacks on top of KEV to prioritize extortion vectors.
+RANSOMWARE_MULTIPLIER = 1.15
+RANSOMWARE_RISK_FLOOR = 7.5
+
 # EPSS probability -> multiplier, by band, highest threshold first. Bands rather
 # than a continuous factor keep the score explainable, and stable: EPSS drifts a
 # little every day for almost every CVE, and a score should move only when a CVE
@@ -163,7 +168,14 @@ def compute_risk(inputs: RiskInputs, now: datetime | None = None) -> RiskBreakdo
                 )
             )
     if inputs.kev_ransomware:
-        factors.append(RiskFactor("kev_ransomware", "Known use in ransomware campaigns"))
+        threat *= RANSOMWARE_MULTIPLIER
+        factors.append(
+            RiskFactor(
+                "kev_ransomware",
+                "Known use in ransomware campaigns",
+                multiplier=RANSOMWARE_MULTIPLIER,
+            )
+        )
 
     exposure = INTERNET_FACING_MULTIPLIER if inputs.internet_facing else 1.0
     if inputs.internet_facing:
@@ -192,15 +204,25 @@ def compute_risk(inputs: RiskInputs, now: datetime | None = None) -> RiskBreakdo
         )
     raw += penalty
 
-    if inputs.in_kev and raw < KEV_RISK_FLOOR:
+    floor = (
+        RANSOMWARE_RISK_FLOOR
+        if (inputs.in_kev and inputs.kev_ransomware)
+        else KEV_RISK_FLOOR
+    )
+    if inputs.in_kev and raw < floor:
+        floor_label = (
+            f"Raised to {floor}, the floor for a ransomware-associated CVE"
+            if inputs.kev_ransomware
+            else f"Raised to {floor}, the floor for a known exploited CVE"
+        )
         factors.append(
             RiskFactor(
                 "kev_floor",
-                f"Raised to {KEV_RISK_FLOOR}, the floor for a known exploited CVE",
-                points=round(KEV_RISK_FLOOR - raw, 2),
+                floor_label,
+                points=round(floor - raw, 2),
             )
         )
-        raw = KEV_RISK_FLOOR
+        raw = floor
 
     return RiskBreakdown(
         score=min(10.0, max(0.0, round(raw, 2))),
@@ -218,6 +240,7 @@ def calculate_risk_score(
     in_kev: bool = False,
     epss_score: float | None = None,
     internet_facing: bool = False,
+    kev_ransomware: bool = False,
 ) -> float:
     """Return a contextual risk score in the range [0.0, 10.0].
 
@@ -232,6 +255,7 @@ def calculate_risk_score(
         in_kev=in_kev,
         epss_score=epss_score,
         internet_facing=internet_facing,
+        kev_ransomware=kev_ransomware,
     )
     return compute_risk(inputs, now).score
 
