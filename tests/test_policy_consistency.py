@@ -152,3 +152,30 @@ class TestThreatContextPolicy:
         assert RANSOMWARE_RISK_FLOOR >= KEV_RISK_FLOOR
         assert risk_level(RANSOMWARE_RISK_FLOOR) in {"High", "Critical"}
         assert RANSOMWARE_MULTIPLIER > 1.0
+
+
+class TestConfigurableSlaPolicy:
+    """Vérifie que les fenêtres SLA sont surchargeables par variables d'environnement."""
+
+    def test_sla_days_reflects_settings_override(self, monkeypatch):
+        from datetime import UTC, datetime, timedelta
+
+        from app.core.config import settings
+        from app.services.policy import SLA_DAYS, get_sla_days
+        from app.services.remediation import calculate_remediation_deadline
+
+        monkeypatch.setattr(settings, "SLA_CRITICAL_DAYS", 5)
+        assert get_sla_days("Critical") == 5
+        assert SLA_DAYS["Critical"] == 5
+
+        now = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+        deadline = calculate_remediation_deadline("Critical", detection_time=now)
+        assert deadline == now + timedelta(days=5)
+
+    def test_custom_cvss_threshold_integrity(self):
+        from app.services.policy import CVSS_THRESHOLDS
+
+        assert CVSS_THRESHOLDS["Critical"] == 9.0
+        assert CVSS_THRESHOLDS["High"] == 7.0
+        assert CVSS_THRESHOLDS["Medium"] == 4.0
+        assert CVSS_THRESHOLDS["Low"] == 0.0

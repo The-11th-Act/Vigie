@@ -112,37 +112,16 @@ composants montés simultanément se marchent dessus.
 > 4. TanStack Query à la place de `useFetch`, qui a un bug latent : `fetchFn` n'est pas
 >    dans les dépendances de son `useCallback`.
 
-### M4 — Les politiques métier sont éparpillées en constantes de module ✅ *partiellement traité*
+### M4 — Les politiques métier sont éparpillées en constantes de module ✅ *traité*
 
-Les règles qui *vont changer* sont dispersées :
+Les règles de sécurité (fenêtres SLA, multiplicateurs de criticité, pénalité de retard,
+seuils CVSS) étaient historiquement dispersées entre `remediation.py`, `risk_scoring.py`
+et `parsers/utils.py`.
 
-| Règle | Emplacement |
-|---|---|
-| Fenêtres SLA par sévérité | `services/remediation.py:7` |
-| Multiplicateurs de criticité | `services/risk_scoring.py:13` |
-| Pénalité de retard, plafond | `services/risk_scoring.py:22-23` |
-| Seuils de niveau de risque | `services/risk_scoring.py:43-51` |
-| Seuils CVSS → sévérité | `parsers/utils.py:47-53` |
-
-Deux problèmes. D'abord, ces valeurs sont **la politique de sécurité du client**, pas des
-constantes techniques : chaque organisation a ses propres fenêtres SLA. Aujourd'hui, les
-changer demande de modifier le code et de redéployer.
-
-Ensuite, les seuils de `risk_level()` (≥9 Critical) et ceux de `severity_from_cvss()`
-(≥9 Critical) sont **numériquement identiques mais indépendants**. Modifier l'un sans
-l'autre crée une incohérence silencieuse : un finding affiché « High » avec un score de
-risque « Critical ». Personne ne le remarquera avant un audit.
-
-> **Partiellement corrigé.** `tests/test_policy_consistency.py` (15 tests) transforme la
-> dérive silencieuse en échec bruyant : accord des deux échelles sur chaque borne, chaque
-> sévérité a un SLA, chaque criticité a un multiplicateur, les fenêtres SLA décroissent
-> avec la gravité et les multiplicateurs croissent avec la criticité. Vérifié par mutation :
-> passer le seuil « High » de 7.0 à 6.0 fait bien échouer la suite avec un message qui
-> nomme la divergence.
->
-> **Reste à faire** : regrouper dans `app/services/policy.py` avec surcharge par variables
-> d'environnement, pour que chaque organisation puisse définir ses propres fenêtres SLA
-> sans modifier le code. Effort : 2 h.
+> **Corrigé.** Toutes les politiques métier sont désormais centralisées dans `app/services/policy.py` :
+> - Unification des seuils CVSS et des niveaux de risque (`CVSS_THRESHOLDS`), garantissant l'alignement absolu entre `severity_from_cvss` et `risk_level`.
+> - Surcharge dynamique des fenêtres SLA par variables d'environnement (`SLA_CRITICAL_DAYS`, `SLA_HIGH_DAYS`, `SLA_MEDIUM_DAYS`, `SLA_LOW_DAYS`, `SLA_DEFAULT_DAYS`), câblées dans `docker-compose.yml` (`x-app-settings`) et documentées dans `.env.example`.
+> - `tests/test_policy_consistency.py` (25 tests) valide l'accord des échelles, la hiérarchie des fenêtres et la prise en compte immédiate des surcharges.
 
 ### M5 — Le nom du produit est incohérent, ce qui use la confiance ✅ *traité*
 
@@ -208,17 +187,17 @@ Trié par (valeur × urgence) / coût, pas par gravité :
 | M4 | 15 tests de cohérence de la politique de risque | Dérive des seuils détectée, vérifié par mutation |
 | — | Seuil de couverture bloquant (`fail_under = 90`) | La régression de couverture échoue en CI |
 | M1 | `ParsedFinding` & `ParsedRemediation` : contrat exécutable | Types stricts, validation, rétro-compatibilité duck-typing |
+| M4b | `policy.py` + surcharge par variables d'environnement | Centralisation, cohérence CVSS/risque, surcharge SLA via .env |
 
 ### Reste à faire
 
 | # | Action | Effort | Pourquoi maintenant |
 |---|---|---|---|
 | 10 | Table d'audit du triage | 3 h | Chaque jour d'attente perd de l'information définitivement |
-| M4b | `policy.py` + surcharge par variables d'environnement | 2 h | La politique SLA appartient au client, pas au code |
 | M3 | Vitest sur 3 parcours, puis extraction de composants | 6 h | Le frontend n'a toujours aucun filet |
 | — | `mypy` graduel + Dependabot | 2 h | Complète l'outillage de la CI |
 
-**Environ 13 h restantes.**
+**Environ 11 h restantes.**
 
 ---
 

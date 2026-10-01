@@ -3,17 +3,15 @@
 from datetime import UTC, date, datetime, time, timedelta
 
 from app.core.config import settings
+from app.services.policy import DEFAULT_SLA_DAYS, SLA_DAYS, get_sla_days
 
-# Days allowed to remediate, by severity. Loosely aligned with common
-# regulatory guidance (e.g. PCI DSS / CISA BOD 22-01 style windows).
-SLA_DAYS = {
-    "Critical": 14,
-    "High": 30,
-    "Medium": 90,
-    "Low": 180,
-}
-
-DEFAULT_SLA_DAYS = 90
+__all__ = [
+    "DEFAULT_SLA_DAYS",
+    "SLA_DAYS",
+    "apply_kev_sla",
+    "calculate_remediation_deadline",
+    "get_sla_days",
+]
 
 
 def calculate_remediation_deadline(
@@ -25,7 +23,7 @@ def calculate_remediation_deadline(
     elif detection_time.tzinfo is None:
         detection_time = detection_time.replace(tzinfo=UTC)
 
-    days = SLA_DAYS.get(_as_str(severity), DEFAULT_SLA_DAYS)
+    days = get_sla_days(severity)
     return detection_time + timedelta(days=days)
 
 

@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any, TypeGuard
 
 from app.models.vulnerability import Severity
+from app.services.policy import severity_from_cvss
 
 # CVE-YYYY-NNNN+ — used to reject junk values such as "NOCVE" or "".
 CVE_PATTERN = re.compile(r"^CVE-\d{4}-\d{4,}$", re.IGNORECASE)
@@ -226,22 +227,6 @@ def safe_float(value: Any, default: float = 0.0) -> float:
     if score != score:  # NaN
         return default
     return min(10.0, max(0.0, score))
-
-
-def severity_from_cvss(cvss_score: float) -> str:
-    """Map a CVSS v3 base score onto a Severity enum value.
-
-    CVSS defines a "None" band for 0.0, but the platform only tracks findings
-    that carry actual risk, so 0.0 collapses to ``Low`` rather than producing a
-    value that does not exist in the ``Severity`` enum.
-    """
-    if cvss_score >= 9.0:
-        return Severity.critical.value
-    if cvss_score >= 7.0:
-        return Severity.high.value
-    if cvss_score >= 4.0:
-        return Severity.medium.value
-    return Severity.low.value
 
 
 def normalize_severity(raw: str | None, cvss_score: float) -> str:

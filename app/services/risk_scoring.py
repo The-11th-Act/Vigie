@@ -21,48 +21,41 @@ plus the overdue penalty, as it always was.
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
-# How much the business criticality of the host amplifies or dampens CVSS.
-CRITICALITY_MULTIPLIERS = {
-    "Critical": 1.5,
-    "High": 1.2,
-    "Medium": 1.0,
-    "Low": 0.7,
-}
-
-# Additive penalty (in points) once a finding blows past its remediation SLA.
-# Capped so an old low-severity issue never outranks a fresh critical one.
-MAX_OVERDUE_PENALTY = 1.5
-OVERDUE_PENALTY_PER_30_DAYS = 0.5
-
-# Exploitation observed in the wild outweighs any prediction, so a KEV entry
-# takes this multiplier instead of its EPSS band.
-KEV_MULTIPLIER = 1.3
-# A known-exploited vulnerability is at least "High" risk, whatever the host:
-# this is the lower bound of the "High" level in ``risk_level``.
-KEV_RISK_FLOOR = 7.0
-
-# An active ransomware campaign represents an immediate operational threat.
-# Stacks on top of KEV to prioritize extortion vectors.
-RANSOMWARE_MULTIPLIER = 1.15
-RANSOMWARE_RISK_FLOOR = 7.5
-
-# EPSS probability -> multiplier, by band, highest threshold first. Bands rather
-# than a continuous factor keep the score explainable, and stable: EPSS drifts a
-# little every day for almost every CVE, and a score should move only when a CVE
-# changes band. Below 1 %, the score is dampened — separating the few likely
-# exploits from the noise is the point of the model.
-EPSS_BANDS = (
-    (0.50, 1.30),
-    (0.10, 1.15),
-    (0.01, 1.00),
-    (0.00, 0.90),
+from app.services.policy import (
+    CRITICALITY_MULTIPLIERS,
+    EPSS_BANDS,
+    INTERNET_FACING_MULTIPLIER,
+    KEV_MULTIPLIER,
+    KEV_RISK_FLOOR,
+    MAX_CONTEXT_MULTIPLIER,
+    MAX_OVERDUE_PENALTY,
+    OVERDUE_PENALTY_PER_30_DAYS,
+    RANSOMWARE_MULTIPLIER,
+    RANSOMWARE_RISK_FLOOR,
+    risk_level,
 )
 
-INTERNET_FACING_MULTIPLIER = 1.2
-
-# Several multipliers stacked on a critical asset would push most of the top of
-# the backlog to 10.0, where nothing can be told apart any more.
-MAX_CONTEXT_MULTIPLIER = 1.5
+__all__ = [
+    "CRITICALITY_MULTIPLIERS",
+    "EPSS_BANDS",
+    "INTERNET_FACING_MULTIPLIER",
+    "KEV_MULTIPLIER",
+    "KEV_RISK_FLOOR",
+    "MAX_CONTEXT_MULTIPLIER",
+    "MAX_OVERDUE_PENALTY",
+    "OVERDUE_PENALTY_PER_30_DAYS",
+    "RANSOMWARE_MULTIPLIER",
+    "RANSOMWARE_RISK_FLOOR",
+    "RiskBreakdown",
+    "RiskFactor",
+    "RiskInputs",
+    "calculate_risk_score",
+    "compute_risk",
+    "epss_band",
+    "epss_multiplier",
+    "explain_risk",
+    "risk_level",
+]
 
 
 @dataclass(frozen=True)
@@ -282,17 +275,6 @@ def epss_band(epss_score: float | None) -> int | None:
 def epss_multiplier(epss_score: float | None) -> float:
     band = epss_band(epss_score)
     return 1.0 if band is None else EPSS_BANDS[band][1]
-
-
-def risk_level(risk_score: float) -> str:
-    """Bucket a risk score into a label for dashboards and filtering."""
-    if risk_score >= 9.0:
-        return "Critical"
-    if risk_score >= 7.0:
-        return "High"
-    if risk_score >= 4.0:
-        return "Medium"
-    return "Low"
 
 
 def _overdue_penalty(

@@ -189,6 +189,13 @@ class Settings(BaseSettings):
     # or KEV listing. Ransoms demand immediate response. 0 disables it.
     RANSOMWARE_SLA_DAYS: int = Field(default=7, ge=0)
 
+    # Remediation SLA windows in days, by severity.
+    SLA_CRITICAL_DAYS: int = Field(default=14, ge=1)
+    SLA_HIGH_DAYS: int = Field(default=30, ge=1)
+    SLA_MEDIUM_DAYS: int = Field(default=90, ge=1)
+    SLA_LOW_DAYS: int = Field(default=180, ge=1)
+    SLA_DEFAULT_DAYS: int = Field(default=90, ge=1)
+
     LOG_LEVEL: str = "INFO"
     # "text" for a terminal, "json" for a log collector (one document per line).
     LOG_FORMAT: Literal["text", "json"] = "text"
