@@ -32,7 +32,7 @@ def apply_kev_sla(
     detected_at: datetime | None,
     kev_date_added: date | None,
     *,
-    is_ransomware: bool = False,
+    ransomware_since: date | None = None,
 ) -> datetime | None:
     """Tighten a deadline for a CVE that is exploited in the wild.
 
@@ -42,29 +42,39 @@ def apply_kev_sla(
     from the listing, not an instant breach. CISA's own ``dueDate`` is not used,
     since for older entries it is already in the past.
 
-    When ``is_ransomware`` is True, the window tightens further to
-    ``RANSOMWARE_SLA_DAYS`` (default 7 days) to reflect the urgency of an active
-    ransomware threat.
+    Known ransomware use (``ransomware_since``, the day it became known) gives
+    ``RANSOMWARE_SLA_DAYS`` on the same principle, counted from the later of
+    detection and that day: CISA can flag an entry listed years ago, and the
+    flag must not put a finding past its deadline the day it appears. The
+    earlier of the two windows applies.
 
     The result is never later than ``deadline``: a CVE leaving the catalogue does
     not loosen a commitment already made.
     """
-    days = (
-        settings.RANSOMWARE_SLA_DAYS
-        if is_ransomware and settings.RANSOMWARE_SLA_DAYS > 0
-        else settings.KEV_SLA_DAYS
-    )
-    if days <= 0:
+    detected = _aware(detected_at) if detected_at else datetime.now(UTC)
+    windows = [
+        (settings.KEV_SLA_DAYS, kev_date_added),
+        (settings.RANSOMWARE_SLA_DAYS if ransomware_since else 0, ransomware_since),
+    ]
+    tightened = [
+        _later(detected, known) + timedelta(days=days)
+        for days, known in windows
+        if days > 0
+    ]
+    if not tightened:
         return deadline
 
-    anchor = _aware(detected_at) if detected_at else datetime.now(UTC)
-    if kev_date_added is not None:
-        anchor = max(anchor, datetime.combine(kev_date_added, time.min, tzinfo=UTC))
-    kev_deadline = anchor + timedelta(days=days)
-
+    kev_deadline = min(tightened)
     if deadline is None:
         return kev_deadline
     return min(_aware(deadline), kev_deadline)
+
+
+def _later(moment: datetime, day: date | None) -> datetime:
+    """``moment``, or the start of ``day`` when that comes after it."""
+    if day is None:
+        return moment
+    return max(moment, datetime.combine(day, time.min, tzinfo=UTC))
 
 
 def is_overdue(

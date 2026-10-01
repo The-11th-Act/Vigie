@@ -346,10 +346,11 @@ computed by the same function that scored it.
 
 The remediation deadline comes from `app/services/remediation.py` (14 days for
 Critical, up to 180 for Low). A CVE listed in KEV gets `KEV_SLA_DAYS` (14)
-instead, or `RANSOMWARE_SLA_DAYS` (7) if exploited in ransomware campaigns,
-counted from its detection or its listing, whichever is later; the
-window only ever shortens. Scores are stored so the backlog sorts in SQL;
-`app/services/rescoring.py` recomputes them whenever an input changes (CVSS,
+instead, counted from its detection or its listing, whichever is later. Known
+ransomware use gives `RANSOMWARE_SLA_DAYS` (7), counted from detection or from
+the day the flag became known here (CISA may flag an entry listed years ago);
+the earlier of the two windows applies, and a window only ever shortens.
+Scores are stored so the backlog sorts in SQL; `app/services/rescoring.py` recomputes them whenever an input changes (CVSS,
 criticality, exposure, threat context) and once a day for the whole open backlog,
 since the overdue penalty grows with time alone.
 

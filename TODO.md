@@ -442,7 +442,11 @@ Choix produit pris par défaut, tous réglables par une constante de
 - plancher 7.0 pour un KEV même sur un asset `Low` ;
 - l'usage par rançongiciel intègre désormais activement le calcul de risque (01/10/2026) :
   multiplicateur de menace ×1.15 additionnel, plancher de risque à 7.5 et délai SLA
-  d'urgence resserré à 7 jours (`RANSOMWARE_SLA_DAYS`).
+  d'urgence resserré à 7 jours (`RANSOMWARE_SLA_DAYS`). *Corrigé le 01/10/2026 : ces
+  7 jours partaient de la détection ou de l'inscription au KEV ; CISA signalant parfois
+  le rançongiciel des années après l'inscription, le finding passait en retard le jour
+  même. Ils partent désormais du jour où le signalement est connu
+  (`kev_ransomware_since`, migration 0020).*
 
 ## ✅ Déploiement vérifié de bout en bout (25/09/2026)
 

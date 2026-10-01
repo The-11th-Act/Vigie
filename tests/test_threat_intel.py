@@ -88,6 +88,11 @@ def catalog(*cves, version="2026.09.25", released=date(2026, 9, 25), ransomware=
     )
 
 
+def aware(moment):
+    """SQLite hands datetimes back naive."""
+    return moment if moment.tzinfo else moment.replace(tzinfo=UTC)
+
+
 def snapshot(scores, score_date=date(2026, 9, 25)):
     return EpssSnapshot(
         model_version="v2026.06.15",
@@ -129,6 +134,62 @@ class TestApplyKev:
         deadline = finding.remediation_deadline
         deadline = deadline if deadline.tzinfo else deadline.replace(tzinfo=UTC)
         assert deadline <= NOW - timedelta(days=1) + timedelta(days=14)
+
+    def test_a_cve_listed_with_ransomware_is_dated_from_its_listing(
+        self, db_session, track
+    ):
+        finding = track("CVE-2024-0001")
+
+        apply_kev(
+            db_session,
+            catalog("CVE-2024-0001", ransomware={"CVE-2024-0001"}),
+            source="network",
+            now=NOW,
+        )
+
+        assert finding.vulnerability.kev_ransomware_since == date(2024, 1, 10)
+
+    def test_a_late_ransomware_flag_does_not_breach_at_once(self, db_session, track):
+        """Listed for years, flagged today: the finding keeps the deadline ahead
+        of it, instead of falling 3 days overdue the day the flag appears."""
+        finding = track("CVE-2024-0001", in_kev=True, kev_date_added=date(2024, 1, 10))
+        finding.detected_at = NOW - timedelta(days=10)
+        finding.remediation_deadline = NOW + timedelta(days=4)  # its KEV window
+        db_session.commit()
+
+        apply_kev(
+            db_session,
+            catalog("CVE-2024-0001", ransomware={"CVE-2024-0001"}),
+            source="network",
+            now=NOW,
+        )
+
+        assert finding.vulnerability.kev_ransomware is True
+        assert finding.vulnerability.kev_ransomware_since == NOW.date()
+        assert aware(finding.remediation_deadline) == NOW + timedelta(days=4)
+
+    def test_a_late_ransomware_flag_tightens_from_the_flag(self, db_session, track):
+        finding = track("CVE-2024-0001", in_kev=True, kev_date_added=date(2024, 1, 10))
+        finding.remediation_deadline = NOW + timedelta(days=13)  # its KEV window
+        db_session.commit()
+
+        apply_kev(
+            db_session,
+            catalog("CVE-2024-0001", ransomware={"CVE-2024-0001"}),
+            source="network",
+            now=NOW,
+        )
+
+        assert aware(finding.remediation_deadline) == datetime(2026, 10, 2, tzinfo=UTC)
+
+    def test_the_ransomware_date_survives_later_refreshes(self, db_session, track):
+        finding = track("CVE-2024-0001", in_kev=True, kev_date_added=date(2024, 1, 10))
+        flagged = catalog("CVE-2024-0001", ransomware={"CVE-2024-0001"})
+        apply_kev(db_session, flagged, source="network", now=NOW)
+
+        apply_kev(db_session, flagged, source="network", now=NOW + timedelta(days=3))
+
+        assert finding.vulnerability.kev_ransomware_since == NOW.date()
 
     def test_leaves_unrelated_findings_alone(self, db_session, track):
         """A deliberately stale score on an unchanged CVE proves the rescoring

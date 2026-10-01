@@ -509,6 +509,21 @@ class TestEnrichmentOfNewCves:
         window = _aware(link.remediation_deadline) - _aware(link.last_seen_at)
         assert window <= timedelta(days=14)
 
+    def test_a_new_ransomware_cve_gets_its_window_from_detection(self, db_session):
+        db_session.add(
+            KevCatalogEntry(
+                cve_id="CVE-2024-0001", date_added=date(2024, 1, 10), ransomware=True
+            )
+        )
+        db_session.commit()
+
+        ingest_findings(db_session, [finding(cvss=5.0, severity="Medium")], "nessus")
+
+        link = link_for(db_session)
+        assert link.vulnerability.kev_ransomware_since == date(2024, 1, 10)
+        window = _aware(link.remediation_deadline) - _aware(link.last_seen_at)
+        assert window == timedelta(days=7)
+
     def test_without_snapshots_a_new_cve_is_plain(self, db_session):
         ingest_findings(db_session, [finding(cvss=6.0)], "nessus")
 

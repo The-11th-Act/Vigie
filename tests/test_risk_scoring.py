@@ -319,7 +319,9 @@ class TestKevSLA:
 
     def test_ransomware_tightens_to_ransomware_sla(self):
         medium = calculate_remediation_deadline("Medium", self.DETECTED)
-        tightened = apply_kev_sla(medium, self.DETECTED, None, is_ransomware=True)
+        tightened = apply_kev_sla(
+            medium, self.DETECTED, None, ransomware_since=date(2025, 6, 1)
+        )
         assert tightened == self.DETECTED + timedelta(days=7)
 
     def test_ransomware_disabled_falls_back_to_kev(self, monkeypatch):
@@ -327,8 +329,40 @@ class TestKevSLA:
 
         monkeypatch.setattr(settings, "RANSOMWARE_SLA_DAYS", 0)
         medium = calculate_remediation_deadline("Medium", self.DETECTED)
-        tightened = apply_kev_sla(medium, self.DETECTED, None, is_ransomware=True)
+        tightened = apply_kev_sla(
+            medium, self.DETECTED, None, ransomware_since=date(2025, 6, 1)
+        )
         assert tightened == self.DETECTED + timedelta(days=14)
+
+    def test_ransomware_counts_from_when_it_became_known(self):
+        """CISA flags an entry listed long ago: 7 days from the flag, not a
+        deadline already behind the finding."""
+        listed = date(2024, 1, 10)
+        flagged = date(2026, 1, 10)
+
+        deadline = apply_kev_sla(None, self.DETECTED, listed, ransomware_since=flagged)
+
+        # Counted from detection, the ransomware window would have closed on
+        # Jan 8, before the flag existed. From the flag it ends Jan 17; the KEV
+        # window (Jan 15) ends first and holds.
+        assert deadline == self.DETECTED + timedelta(days=14)
+        assert deadline > datetime(2026, 1, 10, tzinfo=UTC)
+
+    def test_ransomware_wins_when_its_window_ends_first(self):
+        flagged = date(2026, 1, 3)
+        deadline = apply_kev_sla(
+            None, self.DETECTED, date(2024, 1, 10), ransomware_since=flagged
+        )
+        assert deadline == datetime(2026, 1, 10, tzinfo=UTC)
+
+    def test_ransomware_alone_when_kev_window_is_disabled(self, monkeypatch):
+        from app.core.config import settings
+
+        monkeypatch.setattr(settings, "KEV_SLA_DAYS", 0)
+        deadline = apply_kev_sla(
+            None, self.DETECTED, None, ransomware_since=date(2025, 6, 1)
+        )
+        assert deadline == self.DETECTED + timedelta(days=7)
 
 
 class TestRiskRank:

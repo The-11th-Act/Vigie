@@ -480,7 +480,10 @@ def _upsert_associations(
         deadline: datetime | None = calculate_remediation_deadline(finding.severity, now)
         if vuln.in_kev:
             deadline = apply_kev_sla(
-                deadline, now, vuln.kev_date_added, is_ransomware=vuln.kev_ransomware
+                deadline,
+                now,
+                vuln.kev_date_added,
+                ransomware_since=vuln.kev_ransomware_since,
             )
         assoc = assoc_cache.get(key)
 
@@ -519,7 +522,7 @@ def _upsert_associations(
                 assoc.remediation_deadline,
                 assoc.detected_at,
                 vuln.kev_date_added,
-                is_ransomware=vuln.kev_ransomware,
+                ransomware_since=vuln.kev_ransomware_since,
             )
 
         _apply_score(assoc, asset, vuln, assoc.remediation_deadline or deadline, now)

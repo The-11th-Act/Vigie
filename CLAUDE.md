@@ -10,7 +10,7 @@ FastAPI + SQLAlchemy + Celery/Redis + PostgreSQL ; React 19 + Vite 8.
   exploitation, sauvegarde, audits. **`TODO.md` : l'état de référence** — la
   section « Modules et remédiation » en fin de fichier suit la feuille de route
   en cours.
-- Migrations : tête `0019`. Chaque colonne de modèle doit avoir sa migration
+- Migrations : tête `0020`. Chaque colonne de modèle doit avoir sa migration
   (`alembic check` en CI).
 
 ## Façon de travailler (convenue avec l'utilisateur)

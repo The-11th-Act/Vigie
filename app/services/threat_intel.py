@@ -16,7 +16,7 @@ entered or left KEV, and CVEs whose EPSS value crossed a band.
 import logging
 from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from sqlalchemy import delete, insert
 from sqlalchemy.orm import Session
@@ -34,6 +34,7 @@ from app.models.vulnerability import AssetVulnerability, Status, Vulnerability
 from app.parsers.threat_feeds import (
     EpssSnapshot,
     KevCatalog,
+    KevEntry,
     ThreatFeedClient,
     ThreatFeedError,
     parse_epss,
@@ -174,14 +175,15 @@ def apply_kev(
     delisted: list[str] = []
     for vuln in candidates.values():
         entry = catalog.entries.get(vuln.cve_id)
+        was_listed = bool(vuln.in_kev)
+        was_ransomware = bool(vuln.kev_ransomware)
         wanted = {
             "in_kev": entry is not None,
             "kev_date_added": entry.date_added if entry else None,
             "kev_due_date": entry.due_date if entry else None,
             "kev_ransomware": entry.ransomware if entry else False,
+            "kev_ransomware_since": _ransomware_since(vuln, entry, was_listed, now),
         }
-        was_listed = bool(vuln.in_kev)
-        was_ransomware = bool(vuln.kev_ransomware)
         if not _assign(vuln, wanted, now):
             continue
         changed += 1
@@ -354,6 +356,11 @@ def enrich_new_vulnerabilities(db: Session, vulnerabilities, now: datetime) -> N
                     "kev_date_added": entry.date_added,
                     "kev_due_date": entry.due_date,
                     "kev_ransomware": entry.ransomware,
+                    # Flagged before this CVE was seen here: the window counts
+                    # from its detection, which comes later anyway.
+                    "kev_ransomware_since": (
+                        entry.date_added if entry.ransomware else None
+                    ),
                 },
                 now,
             )
@@ -412,6 +419,24 @@ def _assign(vuln: Vulnerability, values: dict, now: datetime) -> bool:
     return changed
 
 
+def _ransomware_since(
+    vuln: Vulnerability, entry: KevEntry | None, was_listed: bool, now: datetime
+) -> date | None:
+    """The day ransomware use became known, kept from one refresh to the next.
+
+    A CVE listed here for the first time with the flag gets the listing date,
+    like its KEV window. A CVE already listed gets the flag today: dating it from
+    the listing would put its findings past the ransomware deadline at once.
+    """
+    if entry is None or not entry.ransomware:
+        return None
+    if vuln.kev_ransomware and vuln.kev_ransomware_since is not None:
+        return vuln.kev_ransomware_since
+    if was_listed:
+        return now.date()
+    return entry.date_added
+
+
 def _tighten_deadlines(db: Session, vulnerability_ids: list[int]) -> None:
     """Give the open findings of newly listed CVEs the KEV window."""
     for i in range(0, len(vulnerability_ids), CHUNK_SIZE):
@@ -429,7 +454,7 @@ def _tighten_deadlines(db: Session, vulnerability_ids: list[int]) -> None:
                 finding.remediation_deadline,
                 finding.detected_at,
                 finding.vulnerability.kev_date_added,
-                is_ransomware=finding.vulnerability.kev_ransomware,
+                ransomware_since=finding.vulnerability.kev_ransomware_since,
             )
 
 
