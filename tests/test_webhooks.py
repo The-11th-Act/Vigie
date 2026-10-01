@@ -1,16 +1,23 @@
 """Outgoing webhooks: what is queued, how it is sent, and where it may go.
 
-No network: requests.post and DNS resolution are replaced in every test.
+No network beyond the loopback: DNS resolution and the connection are
+replaced in every test, except TestPinnedConnection, which talks to real
+local servers (HTTP, and HTTPS with a certificate authority made for it).
 """
 
 import hashlib
 import hmac
 import json
+import shutil
 import socket
+import ssl
+import subprocess
+import threading
 from datetime import UTC, date, datetime, timedelta
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
-import requests
+import urllib3
 
 from app.core.config import settings
 from app.models.asset import Asset
@@ -38,14 +45,6 @@ PUBLIC_IP = "93.184.216.34"
 OTHER_KEY = "another-instance-signing-key-0123456789abcdef"
 
 
-class FakeResponse:
-    def __init__(self, status_code):
-        self.status_code = status_code
-
-    def close(self):
-        pass
-
-
 @pytest.fixture
 def resolve(monkeypatch):
     """Every host resolves to PUBLIC_IP, unless a test says otherwise."""
@@ -61,25 +60,28 @@ def resolve(monkeypatch):
 
 @pytest.fixture
 def receiver(monkeypatch, resolve):
-    """Record each POST and answer with the next queued status (200 by default)."""
+    """Record each POST and answer with the next queued status (200 by default).
+
+    Replaces the connection itself (``_post``), which TestPinnedConnection
+    exercises against real local servers."""
     calls = []
     answers = []
 
-    def post(url, data, headers, timeout, allow_redirects):
+    def post(url, addresses, body, headers):
         calls.append(
             {
                 "url": url,
-                "body": data.decode(),
+                "addresses": addresses,
+                "body": body.decode(),
                 "headers": headers,
-                "redirects": allow_redirects,
             }
         )
         answer = answers.pop(0) if answers else 200
         if isinstance(answer, Exception):
             raise answer
-        return FakeResponse(answer)
+        return answer
 
-    monkeypatch.setattr(webhooks.requests, "post", post)
+    monkeypatch.setattr(webhooks, "_post", post)
     return calls, answers
 
 
@@ -206,6 +208,29 @@ class TestTargets:
         assert run.failed == 1
         assert "private" in deliveries(db_session)[0].last_error
 
+    def test_a_rebinding_dns_cannot_redirect_the_request(
+        self, db_session, hook, receiver, monkeypatch
+    ):
+        """A DNS that answers a public address to the check, then a private
+        one to the connection. There is a single lookup per attempt, and the
+        connection is given the addresses it returned."""
+        calls, _ = receiver
+        answers = iter([PUBLIC_IP, "10.0.0.5"])
+        lookups = []
+
+        def getaddrinfo(host, port, *args, **kwargs):
+            lookups.append(address := next(answers))
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (address, port))]
+
+        monkeypatch.setattr(webhooks.socket, "getaddrinfo", getaddrinfo)
+        hook()
+        emit(db_session, "scan.completed", {})
+        db_session.commit()
+
+        assert deliver_due(db_session).delivered == 1
+        assert lookups == [PUBLIC_IP]
+        assert calls[0]["addresses"] == [PUBLIC_IP]
+
 
 class TestDelivery:
     def test_signs_what_it_sends(self, db_session, hook, receiver):
@@ -224,7 +249,8 @@ class TestDelivery:
         expected = hmac.new(b"whsec_test", signed, hashlib.sha256).hexdigest()
         assert headers["X-Vigie-Signature"] == f"sha256={expected}"
         assert headers["X-Vigie-Delivery"] == json.loads(call["body"])["id"]
-        assert call["redirects"] is False
+        # Sent to the address checked, not to a second lookup.
+        assert call["addresses"] == [PUBLIC_IP]
         delivery = deliveries(db_session)[0]
         assert delivery.status == DeliveryStatus.delivered.value
         assert webhook.last_success_at is not None
@@ -246,8 +272,14 @@ class TestDelivery:
         # Not due yet: the next run leaves it alone.
         assert deliver_due(db_session).retrying == 0
 
-        for _ in RETRY_DELAYS:
-            answers.append(requests.ConnectionError("refused"))
+        # Whatever breaks (connection, TLS, the OS), the run goes on.
+        errors = [
+            urllib3.exceptions.ProtocolError("Connection aborted."),
+            urllib3.exceptions.SSLError("certificate verify failed"),
+            ConnectionRefusedError("refused"),
+        ]
+        for attempt, _ in enumerate(RETRY_DELAYS):
+            answers.append(errors[attempt % len(errors)])
             delivery.next_attempt_at = datetime.now(UTC) - timedelta(seconds=1)
             db_session.commit()
             deliver_due(db_session)
@@ -380,6 +412,200 @@ class TestSchedule:
     def test_the_task_does_nothing_when_disabled(self, monkeypatch):
         monkeypatch.setattr(settings, "WEBHOOKS_ENABLED", False)
         assert tasks.deliver_webhooks_task()["status"] == "skipped"
+
+
+class _Recorder(BaseHTTPRequestHandler):
+    def do_POST(self):
+        self.server.requests.append(
+            {
+                "path": self.path,
+                "host": self.headers["Host"],
+                "body": self.rfile.read(int(self.headers["Content-Length"])),
+            }
+        )
+        self.send_response(self.server.status)
+        if self.server.status == 302:
+            self.send_header("Location", "http://127.0.0.1:9/elsewhere")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def log_message(self, *args):
+        pass
+
+
+class _Server(HTTPServer):
+    def __init__(self, context=None):
+        super().__init__(("127.0.0.1", 0), _Recorder)
+        self.requests, self.status, self.server_names = [], 204, []
+        if context is not None:
+            context.sni_callback = lambda sock, name, ctx: self.server_names.append(name)
+            self.socket = context.wrap_socket(self.socket, server_side=True)
+        threading.Thread(target=self.serve_forever, daemon=True).start()
+
+    @property
+    def port(self):
+        return self.server_address[1]
+
+    def handle_error(self, request, client_address):
+        pass  # a client refusing the certificate resets the connection
+
+    def stop(self):
+        self.shutdown()
+        self.server_close()
+
+
+@pytest.fixture
+def http_server():
+    server = _Server()
+    yield server
+    server.stop()
+
+
+@pytest.fixture(scope="module")
+def tls_files(tmp_path_factory):
+    """A certificate authority and a certificate for hooks.example.test."""
+    if shutil.which("openssl") is None:
+        pytest.skip("openssl is needed to make a test certificate authority")
+    directory = tmp_path_factory.mktemp("tls")
+    (directory / "ca.cnf").write_text(
+        "[req]\ndistinguished_name = dn\n[dn]\n[ca]\n"
+        "basicConstraints = critical, CA:TRUE\n"
+        "keyUsage = critical, keyCertSign, cRLSign\n"
+        "subjectKeyIdentifier = hash\n"
+    )
+    (directory / "leaf.ext").write_text(
+        "basicConstraints = critical, CA:FALSE\n"
+        "keyUsage = critical, digitalSignature, keyEncipherment\n"
+        "extendedKeyUsage = serverAuth\n"
+        "subjectAltName = DNS:hooks.example.test\n"
+        "subjectKeyIdentifier = hash\n"
+        "authorityKeyIdentifier = keyid\n"
+    )
+
+    def openssl(*args):
+        subprocess.run(  # noqa: S603 — fixed arguments, test only
+            ["openssl", *args], cwd=directory, check=True, capture_output=True
+        )
+
+    openssl(
+        "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
+        "-keyout", "ca.key", "-out", "ca.pem", "-subj", "/CN=Vigie test CA",
+        "-config", "ca.cnf", "-extensions", "ca",
+    )  # fmt: skip
+    openssl(
+        "req", "-newkey", "rsa:2048", "-nodes", "-keyout", "leaf.key",
+        "-out", "leaf.csr", "-subj", "/CN=hooks.example.test",
+    )  # fmt: skip
+    openssl(
+        "x509", "-req", "-in", "leaf.csr", "-CA", "ca.pem", "-CAkey", "ca.key",
+        "-CAcreateserial", "-days", "1", "-out", "leaf.pem", "-extfile", "leaf.ext",
+    )  # fmt: skip
+    return directory
+
+
+@pytest.fixture
+def tls_server(tls_files):
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(tls_files / "leaf.pem", tls_files / "leaf.key")
+    server = _Server(context)
+    yield server
+    server.stop()
+
+
+class TestPinnedConnection:
+    """The real connection, against local servers. The URLs name hosts under
+    .test, which never resolve: a request that arrives went to the address
+    given, not to a DNS lookup."""
+
+    @pytest.fixture(autouse=True)
+    def no_proxy_from_the_host(self, monkeypatch):
+        for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY"):
+            monkeypatch.delenv(name, raising=False)
+            monkeypatch.delenv(name.lower(), raising=False)
+        for name in ("REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE"):
+            monkeypatch.delenv(name, raising=False)
+
+    def test_goes_to_the_address_given_with_the_host_named(self, http_server):
+        url = f"http://hooks.example.test:{http_server.port}/in?source=vigie"
+
+        status = webhooks._post(url, ["127.0.0.1"], b'{"a":1}', {"X-Vigie-Event": "ping"})
+
+        assert status == 204
+        assert http_server.requests == [
+            {
+                "path": "/in?source=vigie",
+                "host": f"hooks.example.test:{http_server.port}",
+                "body": b'{"a":1}',
+            }
+        ]
+
+    def test_a_redirect_is_not_followed(self, http_server):
+        http_server.status = 302
+        url = f"http://hooks.example.test:{http_server.port}/in"
+
+        assert webhooks._post(url, ["127.0.0.1"], b"{}", {}) == 302
+        assert len(http_server.requests) == 1
+
+    def test_the_next_address_is_tried_when_one_refuses(self, http_server):
+        # The server listens on IPv4 only: ::1 refuses (or is unreachable).
+        url = f"http://hooks.example.test:{http_server.port}/in"
+
+        assert webhooks._post(url, ["::1", "127.0.0.1"], b"{}", {}) == 204
+        with pytest.raises(urllib3.exceptions.NewConnectionError):
+            webhooks._post(url, ["::1"], b"{}", {})
+
+    def test_https_names_the_host_and_checks_its_certificate(self, tls_server, tls_files):
+        url = f"https://hooks.example.test:{tls_server.port}/in"
+
+        status = webhooks._post(
+            url, ["127.0.0.1"], b"{}", {}, ca_certs=str(tls_files / "ca.pem")
+        )
+
+        assert status == 204
+        assert tls_server.server_names == ["hooks.example.test"]
+        assert tls_server.requests[0]["host"] == f"hooks.example.test:{tls_server.port}"
+
+    def test_https_refuses_a_certificate_for_another_name(self, tls_server, tls_files):
+        url = f"https://other.example.test:{tls_server.port}/in"
+
+        with pytest.raises(urllib3.exceptions.SSLError):
+            webhooks._post(
+                url, ["127.0.0.1"], b"{}", {}, ca_certs=str(tls_files / "ca.pem")
+            )
+        assert tls_server.requests == []
+
+    def test_https_refuses_an_unknown_authority(self, tls_server):
+        url = f"https://hooks.example.test:{tls_server.port}/in"
+
+        with pytest.raises(urllib3.exceptions.SSLError):
+            webhooks._post(url, ["127.0.0.1"], b"{}", {})
+        assert tls_server.requests == []
+
+    def test_an_internal_authority_comes_from_requests_ca_bundle(
+        self, tls_server, tls_files, monkeypatch
+    ):
+        """As for the threat feeds: REQUESTS_CA_BUNDLE names the internal CA."""
+        monkeypatch.setenv("REQUESTS_CA_BUNDLE", str(tls_files / "ca.pem"))
+        url = f"https://hooks.example.test:{tls_server.port}/in"
+
+        assert webhooks._post(url, ["127.0.0.1"], b"{}", {}) == 204
+
+    def test_an_outbound_proxy_is_used_when_configured(self, http_server, monkeypatch):
+        # The local server plays the proxy: it receives the absolute URL.
+        monkeypatch.setenv("HTTP_PROXY", f"http://127.0.0.1:{http_server.port}")
+        url = "http://hooks.example.test:8080/in"
+
+        assert webhooks._post(url, ["192.0.2.1"], b"{}", {}) == 204
+        assert http_server.requests[0]["path"] == url
+        assert http_server.requests[0]["host"] == "hooks.example.test:8080"
+
+    def test_no_proxy_keeps_the_connection_pinned(self, http_server, monkeypatch):
+        monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:9")  # would refuse
+        monkeypatch.setenv("NO_PROXY", "hooks.example.test")
+        url = f"http://hooks.example.test:{http_server.port}/in"
+
+        assert webhooks._post(url, ["127.0.0.1"], b"{}", {}) == 204
+        assert http_server.requests[0]["path"] == "/in"
 
 
 def _aware(moment):

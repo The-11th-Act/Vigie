@@ -130,7 +130,11 @@ gh run list --workflow CI --branch main --limit 1          # pas seulement --lim
   `deliver_webhooks_task` (beat). Un nouvel événement s'ajoute à `EVENTS`, sans
   jamais en renommer un. Tout changement de statut de ticket passe par
   `log_ticket_change` (`app/services/tickets.py`), qui écrit l'historique et
-  émet l'événement : ne pas écrire `TicketAuditLog` directement.
+  émet l'événement : ne pas écrire `TicketAuditLog` directement. Envoi par
+  `_post` : connexion épinglée sur l'adresse vérifiée par `_resolve` (urllib3,
+  Host/SNI/certificat sur le nom), sauf derrière un proxy (`requests`, comme
+  avant). Tests contre de vrais serveurs locaux, HTTPS compris (CA générée
+  par `openssl`) : `TestPinnedConnection`.
 
 ## Suite prévue
 

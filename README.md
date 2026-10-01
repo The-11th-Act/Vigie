@@ -341,7 +341,13 @@ check the signature, refuse old timestamps, and deduplicate on
 - **Targets.** HTTPS only (`WEBHOOK_ALLOW_HTTP`), no credentials in the URL,
   no private address (`WEBHOOK_ALLOW_PRIVATE_TARGETS`, for an internal
   receiver). Loopback, link-local and cloud metadata addresses are always
-  refused. The address is checked at registration and at every delivery.
+  refused. The address is checked at registration and at every delivery, and
+  the connection is made to the address checked (the host still names the
+  request, the TLS server and the certificate): a DNS answer that changes in
+  between (rebinding) cannot redirect it. Behind an outbound proxy
+  (`HTTPS_PROXY`, unless `NO_PROXY` exempts the host), the proxy resolves and
+  connects, so pinning is then up to the proxy. An internal CA goes through
+  `REQUESTS_CA_BUNDLE`.
 - **One instance.** A webhook is sealed with the instance's signing key. A
   staging restored from production holds production's webhooks but cannot
   send them; "Use here" gives one a new secret, sealed to the staging.

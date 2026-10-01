@@ -575,6 +575,14 @@ Les parseurs jetaient tout ce que les scanners disent du correctif. Les fichiers
       aurait abandonné tous les envois comme « autre instance ». La pile de
       production vérifie désormais la réception du webhook et la lecture des clés
       retirées par l'API et le worker.*
-- [ ] Webhooks : le contrôle d'adresse précède la connexion sans la fixer ; un DNS
+- [x] Webhooks : le contrôle d'adresse précède la connexion sans la fixer ; un DNS
       qui change entre les deux (rebinding) le contournerait. Épingler l'adresse
       vérifiée si des destinataires non maîtrisés sont un jour enregistrés
+      *(01/10/2026 : une seule résolution par tentative, toutes les adresses
+      vérifiées, connexion à l'une d'elles ; le nom reste dans `Host`, le SNI et
+      la vérification du certificat. Adresse suivante seulement si la connexion
+      échoue. Vérifié contre de vrais serveurs locaux, HTTP et HTTPS (autorité
+      de certification générée pour le test : bon nom accepté, autre nom et
+      autorité inconnue refusés). Derrière un proxy sortant, c'est le proxy qui
+      résout : envoi par lui comme avant, sans épinglage ; `NO_PROXY` le
+      rétablit. `REQUESTS_CA_BUNDLE` reste honoré)*

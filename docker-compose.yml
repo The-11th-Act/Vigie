@@ -53,7 +53,7 @@ x-app-settings: &app-settings
   CROWDSTRIKE_SYNC_ENABLED: ${CROWDSTRIKE_SYNC_ENABLED:-}
   CROWDSTRIKE_SYNC_INTERVAL_MINUTES: ${CROWDSTRIKE_SYNC_INTERVAL_MINUTES:-}
   # Outbound access for the KEV / EPSS / CrowdStrike clients and the webhooks
-  # (read by requests).
+  # (requests' conventions; a proxied webhook is not pinned to its address).
   HTTPS_PROXY: ${HTTPS_PROXY:-}
   HTTP_PROXY: ${HTTP_PROXY:-}
   NO_PROXY: ${NO_PROXY:-}

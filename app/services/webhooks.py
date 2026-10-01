@@ -16,6 +16,10 @@ Each request carries:
 
 A webhook is sealed to the instance that registered it (``seal_state``): a
 staging restored from production does not call production's receivers.
+
+The receiver's host is resolved once per attempt, every address checked, and
+the connection made to a checked address (``_post``): a DNS answer that
+changes after the check (rebinding) cannot send the request elsewhere.
 """
 
 import hashlib
@@ -23,6 +27,7 @@ import hmac
 import ipaddress
 import json
 import logging
+import os
 import secrets
 import socket
 from dataclasses import asdict, dataclass
@@ -32,8 +37,12 @@ from urllib.parse import urlsplit
 from uuid import uuid4
 
 import requests
+import urllib3
+from requests import certs
+from requests.utils import get_environ_proxies, select_proxy
 from sqlalchemy import func
 from sqlalchemy.orm import Session
+from urllib3.exceptions import ConnectTimeoutError
 
 from app.core.config import settings
 from app.models.webhook import DeliveryStatus, Webhook, WebhookDelivery
@@ -128,8 +137,9 @@ def _check_address(address: ipaddress.IPv4Address | ipaddress.IPv6Address) -> No
         )
 
 
-def _check_resolved(url: str) -> None:
-    """Every address the host resolves to must be an allowed target."""
+def _resolve(url: str) -> list[str]:
+    """The addresses to connect to, in resolver order; every address the host
+    resolves to must be an allowed target, or none is used."""
     parts = urlsplit(check_url(url))
     host = parts.hostname or ""
     port = parts.port or (443 if parts.scheme == "https" else 80)
@@ -137,9 +147,108 @@ def _check_resolved(url: str) -> None:
         infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
     except socket.gaierror as exc:
         raise ConnectionError(f"Cannot resolve {host}: {exc.strerror}") from None
+    addresses: list[str] = []
     for info in infos:
         # IPv6 socket addresses may carry a zone ("fe80::1%eth0").
-        _check_address(ipaddress.ip_address(str(info[4][0]).split("%")[0]))
+        address = ipaddress.ip_address(str(info[4][0]).split("%")[0])
+        _check_address(address)
+        if str(address) not in addresses:
+            addresses.append(str(address))
+    if not addresses:
+        raise ConnectionError(f"Cannot resolve {host}: no address")
+    return addresses
+
+
+def _post(
+    url: str,
+    addresses: list[str],
+    body: bytes,
+    headers: dict[str, str],
+    ca_certs: str | None = None,
+) -> int:
+    """POST to one of ``addresses``, already checked, never to a new DNS answer.
+
+    Only the address is fixed: the URL's host still names the request (Host
+    header) and, over HTTPS, the TLS server name and the certificate checked.
+    The next address is tried only if the connection itself fails. Redirects
+    are not followed: they would reach an unchecked address. Returns the HTTP
+    status.
+
+    Behind an outbound proxy (HTTPS_PROXY / HTTP_PROXY, unless NO_PROXY
+    exempts the host), the proxy resolves the host and connects: the request
+    goes through it, as before, and pinning is the proxy's to enforce.
+    """
+    parts = urlsplit(url)
+    # check_url refuses credentials: the netloc is host[:port] only.
+    headers = {**headers, "Host": parts.netloc}
+    if select_proxy(url, get_environ_proxies(url)):
+        proxied = requests.post(
+            url,
+            data=body,
+            headers=headers,
+            timeout=(CONNECT_TIMEOUT_SECONDS, settings.WEBHOOK_TIMEOUT_SECONDS),
+            allow_redirects=False,
+            stream=True,  # the answer's body is never read
+            verify=ca_certs or True,  # True: REQUESTS_CA_BUNDLE, else certifi
+        )
+        proxied.close()
+        return proxied.status_code
+
+    host = parts.hostname or ""
+    https = parts.scheme == "https"
+    port = parts.port or (443 if https else 80)
+    target = (parts.path or "/") + (f"?{parts.query}" if parts.query else "")
+    timeout = urllib3.Timeout(
+        connect=CONNECT_TIMEOUT_SECONDS, read=settings.WEBHOOK_TIMEOUT_SECONDS
+    )
+    # The internal CA of a receiver, as requests would read it.
+    bundle = (
+        ca_certs
+        or os.environ.get("REQUESTS_CA_BUNDLE")
+        or os.environ.get("CURL_CA_BUNDLE")
+        or certs.where()
+    )
+    refused: ConnectTimeoutError | None = None
+    for address in addresses:
+        pool: urllib3.HTTPConnectionPool
+        if https:
+            pool = urllib3.HTTPSConnectionPool(
+                address,
+                port,
+                timeout=timeout,
+                retries=False,
+                cert_reqs="CERT_REQUIRED",
+                ca_certs=None if os.path.isdir(bundle) else bundle,
+                ca_cert_dir=bundle if os.path.isdir(bundle) else None,
+                server_hostname=host,
+                assert_hostname=host,
+            )
+        else:
+            pool = urllib3.HTTPConnectionPool(
+                address, port, timeout=timeout, retries=False
+            )
+        try:
+            response = pool.urlopen(
+                "POST",
+                target,
+                body=body,
+                headers=headers,
+                redirect=False,
+                retries=False,
+                # The answer's body is never read: a receiver cannot make the
+                # worker hold a large one in memory.
+                preload_content=False,
+            )
+            status = response.status
+            response.close()
+            return status
+        except ConnectTimeoutError as exc:  # also NewConnectionError: refused
+            refused = exc
+        finally:
+            pool.close()
+    if refused is None:
+        raise ConnectionError("No address to connect to")
+    raise refused
 
 
 # --- Seal -------------------------------------------------------------------
@@ -347,11 +456,11 @@ def _attempt(delivery: WebhookDelivery, now: datetime) -> str:
     delivery.attempts += 1
     timestamp = str(int(now.timestamp()))
     try:
-        _check_resolved(webhook.url)
-        response = requests.post(
+        status = _post(
             webhook.url,
-            data=delivery.body.encode(),
-            headers={
+            _resolve(webhook.url),
+            delivery.body.encode(),
+            {
                 "Content-Type": "application/json",
                 "User-Agent": USER_AGENT,
                 "X-Vigie-Event": delivery.event,
@@ -359,24 +468,22 @@ def _attempt(delivery: WebhookDelivery, now: datetime) -> str:
                 "X-Vigie-Timestamp": timestamp,
                 "X-Vigie-Signature": sign(webhook.secret, timestamp, delivery.body),
             },
-            timeout=(CONNECT_TIMEOUT_SECONDS, settings.WEBHOOK_TIMEOUT_SECONDS),
-            # A redirect could lead anywhere, past the address check.
-            allow_redirects=False,
         )
     except TargetRefused as exc:
         return _give_up(delivery, now, str(exc))
-    except (requests.RequestException, ConnectionError) as exc:
+    # urllib3's errors (TLS, timeout, reset...) and the OS's: retried, never
+    # raised, or one bad receiver would abort every run of the outbox.
+    except (urllib3.exceptions.HTTPError, OSError) as exc:
         return _retry(delivery, now, f"{type(exc).__name__}: {exc}")
 
-    delivery.response_status = response.status_code
-    response.close()
-    if 200 <= response.status_code < 300:
+    delivery.response_status = status
+    if 200 <= status < 300:
         delivery.status = DeliveryStatus.delivered.value
         delivery.delivered_at = now
         delivery.last_error = None
         webhook.last_success_at = now
         return "delivered"
-    return _retry(delivery, now, f"HTTP {response.status_code}")
+    return _retry(delivery, now, f"HTTP {status}")
 
 
 def _retry(delivery: WebhookDelivery, now: datetime, error: str) -> str:
