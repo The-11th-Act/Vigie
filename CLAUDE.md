@@ -108,6 +108,10 @@ gh run list --workflow CI --branch main --limit 1          # pas seulement --lim
   Les tests d'écran importent `render` de `src/test/render.jsx` (client neuf,
   sans nouvelle tentative) ; une option chargée par l'API s'attend avec
   `findByRole('option', …)` avant `selectOptions`.
+- ESLint 9, configuration `frontend/eslint.config.js`. Le `files:
+  ['**/*.{js,jsx}']` est indispensable : sans lui, les composants `.jsx` ne
+  sont pas lintés et le lint passe quand même (ESLint 8 les sautait déjà,
+  jusqu'au 03/10/2026). Pas d'`import React` : runtime JSX automatique.
 - Recharts est remplacé par des composants vides dans les tests d'écran ;
   `Charts.test.jsx` monte les vrais graphiques. `lucide-react` est en 0.577 :
   vérifier qu'une icône existe (`node_modules/lucide-react/dist/lucide-react.d.ts`).

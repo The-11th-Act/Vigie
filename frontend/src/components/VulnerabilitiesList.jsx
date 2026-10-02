@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { vulnerabilityService } from '../services';
 import { useApiQuery } from '../hooks/useApiQuery';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';

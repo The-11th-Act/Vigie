@@ -1,4 +1,3 @@
-import React from 'react';
 import { scanService } from '../services';
 import { useApiQuery } from '../hooks/useApiQuery';
 

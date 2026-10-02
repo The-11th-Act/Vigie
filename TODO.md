@@ -675,8 +675,16 @@ modules, dépendances, hygiène du dépôt, tests ignorés (tous légitimes).
 - Gardés volontairement : `parse_nessus_report` / `parse_openvas_report` (servent
   aux tests de parseurs), `ticket_findings.added_at` (date d'entrée d'un finding
   dans un ticket, jamais lue mais sans coût).
-- À prévoir : ESLint 8 n'est plus maintenu ; passer à ESLint 9 et à la
-  configuration « flat » (`eslint.config.js`) lors d'une montée de l'outillage.
+- [x] ESLint 8 n'est plus maintenu : passé à ESLint 9 et à la configuration
+      « flat » (`eslint.config.js`) *(03/10/2026). La migration a révélé qu'ESLint 8
+      ne lintait aucun composant : `eslint src` ne lisait que les `.js` et les
+      `*.test.jsx` cités dans la configuration, jamais les 31 composants `.jsx`.
+      Ils le sont désormais (`files: ['**/*.{js,jsx}']`, sans quoi ESLint 9 les
+      sauterait aussi) ; ce qu'ils cachaient est corrigé : 28 imports `React`
+      inutiles (runtime JSX automatique) et un commentaire visant un plugin
+      absent. Règles identiques à l'ancienne configuration, aux changements
+      d'ESLint 9 près (comparées règle par règle). ESLint 10 attendra
+      `eslint-plugin-react`, qui s'arrête à la 9)*
 
 ## Règles d'actifs dynamiques (tags et regex de hostname)
 - [x] Extension du moteur de classification d'assets (`app/services/asset_policy.py`) *(02/10/2026)* :

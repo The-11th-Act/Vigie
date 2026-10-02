@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { meService } from '../services';
 import { useAuth } from '../auth/AuthContext';
 import { errorText } from './AdminAccounts';

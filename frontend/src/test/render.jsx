@@ -3,8 +3,6 @@
  * data through TanStack Query, and no cache may leak from one test to the
  * next. Import from here instead of '@testing-library/react'.
  */
-/* eslint-disable react-refresh/only-export-components */
-import React from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render as baseRender } from '@testing-library/react'
 

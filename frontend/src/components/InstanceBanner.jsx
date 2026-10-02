@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { instanceService } from '../services'
 
 const BASE_TITLE = document.title

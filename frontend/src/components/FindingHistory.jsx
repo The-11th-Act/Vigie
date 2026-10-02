@@ -1,4 +1,3 @@
-import React from 'react';
 import { vulnerabilityService } from '../services';
 import { useApiQuery } from '../hooks/useApiQuery';
 import { muted } from './RemediationShared';

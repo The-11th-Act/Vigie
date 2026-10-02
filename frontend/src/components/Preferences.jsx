@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { ArrowDown, ArrowUp } from 'lucide-react';
 import { meService } from '../services';
 import { useModules } from '../auth/ModulesContext';

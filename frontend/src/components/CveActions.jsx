@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { vulnerabilityService } from '../services';
 import { errorText } from './AdminAccounts';

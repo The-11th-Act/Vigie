@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { ArrowDown, ArrowUp, RotateCcw } from 'lucide-react';
 import { adminService, remediationService, userService } from '../services';

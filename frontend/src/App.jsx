@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 import { QueryClientProvider, useQueryClient } from '@tanstack/react-query'
 import { BrowserRouter, Routes, Route, NavLink, Navigate, useNavigate } from 'react-router-dom'
 import { LogOut, SlidersHorizontal } from 'lucide-react'

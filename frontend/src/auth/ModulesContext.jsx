@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { meService } from '../services';
 
 // The signed-in user's modules, as the API grants them. The server refuses
@@ -33,6 +33,9 @@ export function ModulesProvider({ children }) {
   }, []);
 
   useEffect(() => {
+    // The state is set once the request has answered, after an await: not
+    // the synchronous setState-in-effect this rule guards against.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     refresh();
   }, [refresh]);
 

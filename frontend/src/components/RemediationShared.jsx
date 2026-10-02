@@ -1,4 +1,3 @@
-import React from 'react';
 
 // Pieces shared by the fixes and the tickets of the Remediation module.
 

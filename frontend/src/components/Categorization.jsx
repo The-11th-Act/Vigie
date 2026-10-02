@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { categorizationService } from '../services';
 import { useApiQuery } from '../hooks/useApiQuery';
 import { controlStyle, formatDate, muted } from './RemediationShared';

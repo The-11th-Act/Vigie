@@ -1,4 +1,3 @@
-import React from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 // Previous / next pager shared by the paginated lists. `page` is zero-based,

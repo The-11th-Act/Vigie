@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { ChevronDown, ChevronUp, Copy, Send, Trash2 } from 'lucide-react';
 import { webhookService } from '../services';

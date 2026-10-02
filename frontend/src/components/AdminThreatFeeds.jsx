@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { RefreshCw, Upload } from 'lucide-react';
 import { threatIntelService } from '../services';
