@@ -12,8 +12,9 @@ writes its values to that directory and /metrics sums them all.
 
 import glob
 import logging
+import math
 import os
-from datetime import UTC
+from datetime import UTC, datetime, timedelta
 
 from prometheus_client import (
     CollectorRegistry,
@@ -133,6 +134,61 @@ WEBHOOK_DELIVERIES = Gauge(
 
 WEBHOOK_DELIVERY_STATUSES = ("pending", "failed")
 
+# Remediation over the last 30 complete days, summed from the daily backlog
+# snapshots: the figures of the Trends dashboard, for Grafana. The ratio and
+# the mean are NaN while nothing was fixed in the window (no mean of nothing).
+PERFORMANCE_WINDOW_DAYS = 30
+
+REMEDIATED_30D = Gauge(
+    "vigie_remediated_findings_30d",
+    "Findings fixed over the last 30 complete days.",
+    registry=REGISTRY,
+    multiprocess_mode="mostrecent",
+)
+
+ON_TIME_RATIO_30D = Gauge(
+    "vigie_remediation_on_time_ratio_30d",
+    "Share of the findings fixed over the last 30 days that met their deadline.",
+    registry=REGISTRY,
+    multiprocess_mode="mostrecent",
+)
+
+MTTR_30D = Gauge(
+    "vigie_mean_time_to_remediate_seconds_30d",
+    "Mean time from detection to fix of the findings fixed over the last 30 days.",
+    registry=REGISTRY,
+    multiprocess_mode="mostrecent",
+)
+
+# The ticketing connector, run by the worker: read from what its last run
+# recorded. Only exposed once the connector is configured. A last run newer
+# than the last success means the last run failed; 0 means never.
+TICKETING_LAST_RUN = Gauge(
+    "vigie_ticketing_last_run_timestamp_seconds",
+    "Unix time of the ticketing connector's last run.",
+    ["connector"],
+    registry=REGISTRY,
+    multiprocess_mode="mostrecent",
+)
+
+TICKETING_LAST_SUCCESS = Gauge(
+    "vigie_ticketing_last_success_timestamp_seconds",
+    "Unix time of the ticketing connector's last successful run.",
+    ["connector"],
+    registry=REGISTRY,
+    multiprocess_mode="mostrecent",
+)
+
+TICKETING_TICKETS = Gauge(
+    "vigie_ticketing_tickets",
+    "Remediation tickets by where they stand with the ticketing connector.",
+    ["connector", "state"],
+    registry=REGISTRY,
+    multiprocess_mode="mostrecent",
+)
+
+TICKETING_STATES = ("linked", "pending_export", "errors", "gone", "foreign")
+
 
 # Saturation of the API (docs/EXPLOITATION.md, "Dimensionnement"), summed over
 # the live processes. Requests in progress beyond the thread capacity are
@@ -217,12 +273,13 @@ def refresh_backlog_gauges(db: Session) -> None:
     Cheaper and simpler than keeping counters in sync with every status change,
     and it cannot drift from the database.
     """
-    from datetime import datetime
-
     from app.models.scan import ScanJob, ScanStatus
+    from app.models.snapshot import BacklogSnapshot
     from app.models.threat_intel import FEEDS, ThreatFeedStatus
     from app.models.vulnerability import AssetVulnerability, Status, Vulnerability
     from app.models.webhook import WebhookDelivery
+    from app.services.glpi import glpi_identity
+    from app.services.ticketing import overview
 
     try:
         now = datetime.now(UTC)
@@ -272,6 +329,21 @@ def refresh_backlog_gauges(db: Session) -> None:
             .group_by(WebhookDelivery.status)
             .all()
         )
+        today = now.date()
+        fixed, on_time, days_total = (
+            db.query(
+                func.coalesce(func.sum(BacklogSnapshot.fixed), 0),
+                func.coalesce(func.sum(BacklogSnapshot.fixed_on_time), 0),
+                func.coalesce(func.sum(BacklogSnapshot.fixed_days_total), 0.0),
+            )
+            .filter(
+                BacklogSnapshot.day >= today - timedelta(days=PERFORMANCE_WINDOW_DAYS),
+                BacklogSnapshot.day < today,
+            )
+            .one()
+        )
+        identity = glpi_identity()
+        ticketing = overview(db, identity) if identity is not None else None
     except Exception as exc:
         # A scrape must never take the application down.
         logger.warning("Could not refresh backlog gauges: %s", exc)
@@ -287,9 +359,27 @@ def refresh_backlog_gauges(db: Session) -> None:
             deliveries.get(delivery_status, 0)
         )
     for feed in FEEDS:
-        moment = last_success.get(feed)
-        if moment is not None and moment.tzinfo is None:
-            moment = moment.replace(tzinfo=UTC)
-        THREAT_FEED_LAST_SUCCESS.labels(feed=feed).set(
-            moment.timestamp() if moment else 0
+        THREAT_FEED_LAST_SUCCESS.labels(feed=feed).set(_timestamp(last_success.get(feed)))
+    REMEDIATED_30D.set(fixed)
+    ON_TIME_RATIO_30D.set(on_time / fixed if fixed else math.nan)
+    MTTR_30D.set(days_total * 86400 / fixed if fixed else math.nan)
+    if ticketing is not None and identity is not None:
+        name = identity.name
+        TICKETING_LAST_RUN.labels(connector=name).set(
+            _timestamp(ticketing["last_run_at"])
         )
+        TICKETING_LAST_SUCCESS.labels(connector=name).set(
+            _timestamp(ticketing["last_success_at"])
+        )
+        for state in TICKETING_STATES:
+            TICKETING_TICKETS.labels(connector=name, state=state).set(ticketing[state])
+
+
+def _timestamp(moment: datetime | None) -> float:
+    """Unix time of ``moment``, read back from the database; 0 for never.
+    SQLite returns it without its timezone, which is UTC."""
+    if moment is None:
+        return 0
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=UTC)
+    return moment.timestamp()

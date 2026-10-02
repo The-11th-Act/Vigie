@@ -552,7 +552,7 @@ Les parseurs jetaient tout ce que les scanners disent du correctif. Les fichiers
 - [x] `backlog_snapshots` (migration 0018) par jour et par équipe, pris par le passage quotidien ; 90 jours reconstruits (estimés) au premier passage ou à la demande d'un admin
 - [x] Tendances, et performance sur une période : corrections, échéances tenues, MTTR global et par criticité, risque retiré, évolution du backlog, tableau par équipe avec ses tickets
 - [x] Deux vues : Posture et Tendances & remédiation (celle du remediator)
-- [ ] Métriques Prometheus correspondantes (MTTR, échéances tenues) si l'exploitation les veut dans Grafana
+- [x] Métriques Prometheus correspondantes (MTTR, échéances tenues) si l'exploitation les veut dans Grafana *(02/10/2026 : sur 30 jours complets, sommés depuis les instantanés quotidiens comme l'écran Tendances, donc sans relire les findings à chaque scrape ; NaN tant que rien n'est corrigé. Avec, les métriques du connecteur GLPI : tickets liés, à exporter, en erreur, supprimés, étrangers, et horodatages de la dernière exécution et du dernier succès, pour alerter sur une synchro en échec ; vérifiées dans la pile de production)*
 
 ## ✅ 7. Connecteur de ticketing et webhooks
 - [x] Interface `TicketConnector`, première implémentation, synchronisation du statut

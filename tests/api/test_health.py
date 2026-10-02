@@ -227,3 +227,74 @@ class TestMetrics:
         )
         # Never applied: 0, so a staleness alert fires for it too.
         assert 'vigie_threat_feed_last_success_timestamp_seconds{feed="epss"} 0.0' in body
+
+    def test_remediation_over_the_last_30_days(self, client, db_session):
+        """From the daily snapshots, as the Trends dashboard: complete days
+        only, every team summed."""
+        from datetime import UTC, datetime, timedelta
+
+        from app.models.snapshot import BacklogSnapshot
+
+        today = datetime.now(UTC).date()
+        for day, team, fixed, on_time, days_total in [
+            (today - timedelta(days=1), "Servers", 3, 2, 6.0),
+            (today - timedelta(days=30), "", 1, 1, 4.0),
+            (today - timedelta(days=31), "Servers", 100, 0, 900.0),  # too old
+            (today, "Servers", 50, 0, 500.0),  # not a complete day
+        ]:
+            db_session.add(
+                BacklogSnapshot(
+                    day=day,
+                    owner_team=team,
+                    fixed=fixed,
+                    fixed_on_time=on_time,
+                    fixed_days_total=days_total,
+                )
+            )
+        db_session.commit()
+
+        body = client.get("/metrics").text
+
+        assert "vigie_remediated_findings_30d 4.0" in body
+        assert "vigie_remediation_on_time_ratio_30d 0.75" in body
+        # (6 + 4) days over 4 fixes: 2.5 days.
+        assert "vigie_mean_time_to_remediate_seconds_30d 216000.0" in body
+
+    def test_no_mean_of_nothing(self, client):
+        body = client.get("/metrics").text
+
+        assert "vigie_remediated_findings_30d 0.0" in body
+        assert "vigie_remediation_on_time_ratio_30d NaN" in body
+        assert "vigie_mean_time_to_remediate_seconds_30d NaN" in body
+
+    def test_the_ticketing_connector(self, client, db_session, monkeypatch):
+        from datetime import UTC, datetime
+
+        from app.core.config import settings
+        from app.models.ticket import TicketConnectorStatus
+
+        monkeypatch.setattr(settings, "GLPI_URL", "https://glpi.example.com/apirest.php")
+        db_session.add(
+            TicketConnectorStatus(
+                name="glpi",
+                last_run_at=datetime(2026, 9, 25, 0, 5, tzinfo=UTC),
+                last_success_at=datetime(2026, 9, 25, tzinfo=UTC),
+            )
+        )
+        db_session.commit()
+
+        body = client.get("/metrics").text
+
+        # The last run is newer than the last success: it failed.
+        assert (
+            'vigie_ticketing_last_run_timestamp_seconds{connector="glpi"} 1.7902947e+09'
+            in body
+        )
+        assert (
+            'vigie_ticketing_last_success_timestamp_seconds{connector="glpi"} 1.7902944e+09'
+            in body
+        )
+        for state in ("linked", "pending_export", "errors", "gone", "foreign"):
+            assert (
+                f'vigie_ticketing_tickets{{connector="glpi",state="{state}"}} 0.0' in body
+            )

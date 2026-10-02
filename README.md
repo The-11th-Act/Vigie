@@ -550,7 +550,13 @@ the beat scheduler then pulls open findings every
   there like uploads), the size of the open/overdue backlog, open and
   overdue KEV findings, and `vigie_threat_feed_last_success_timestamp_seconds`
   per feed (0 until first applied — alert on `time() - value > 2 * 86400`),
-  and the webhook deliveries pending or abandoned.
+  and the webhook deliveries pending or abandoned. Remediation over the last
+  30 complete days, from the daily snapshots as on the Trends dashboard:
+  `vigie_remediated_findings_30d`, `vigie_remediation_on_time_ratio_30d` and
+  `vigie_mean_time_to_remediate_seconds_30d` (NaN while nothing was fixed).
+  The GLPI connector, once configured: `vigie_ticketing_tickets{state}`
+  (linked, pending_export, errors, gone, foreign) and the timestamps of its
+  last run and last success (a last run newer than the last success failed).
   Saturation: `vigie_http_requests_in_progress` against `vigie_api_threads`,
   `vigie_db_connections_in_use` against `vigie_db_connections_max`. In
   production the uvicorn processes write to `PROMETHEUS_MULTIPROC_DIR` and a

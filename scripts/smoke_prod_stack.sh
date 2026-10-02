@@ -455,6 +455,12 @@ LINKED=$(curl -fsS "${AUTH[@]}" "$API/admin/ticketing/" | jq -r .linked) \
   || fail "état du connecteur illisible"
 [ "$LINKED" = 1 ] || fail "l'API compte $LINKED ticket(s) lié(s) à GLPI, 1 attendu"
 echo "ok - ticket exporté vers GLPI (#$GLPI_REF) par le worker, jetons lus dans leurs fichiers"
+# Ce que le worker a fait se lit au scrape de l'API, sur les 4 process.
+METRIC=$("${COMPOSE[@]}" exec -T web curl -fsS http://localhost:8000/metrics \
+  | sed -n 's/^vigie_ticketing_tickets{connector="glpi",state="linked"} //p' || true)
+[ "$METRIC" = "1.0" ] \
+  || fail "vigie_ticketing_tickets{state=\"linked\"} vaut « $METRIC », 1.0 attendu"
+echo "ok - le ticket lié à GLPI apparaît dans les métriques de l'API"
 
 # Aucun secret dans ce que `docker inspect` montre : environnement et
 # commande de chaque conteneur. Redis n'y voit que "$(cat ...)".
