@@ -693,4 +693,6 @@ modules, dépendances, hygiène du dépôt, tests ignorés (tous légitimes).
       désormais un tag entier, sans casse, partout (`has_tag`). Une regex invalide
       ou une criticité inconnue dans ces règles refuse le démarrage au lieu de
       désactiver la règle en silence. Tags dédoublonnés sans casse, 50 au plus.*
+- [x] Filtre par tag dans l'écran Assets *(03/10/2026 : champ « Tag » à côté de la
+      recherche, et clic sur un badge de tag ; l'API l'avait seule)*
 

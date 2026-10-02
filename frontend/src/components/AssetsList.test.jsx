@@ -128,3 +128,37 @@ describe('AssetsList — owner team and roles', () => {
     expect(screen.queryByRole('button', { name: /new asset/i })).not.toBeInTheDocument()
   })
 })
+
+describe('AssetsList — tags', () => {
+  const lastCall = () => assetService.list.mock.calls.at(-1)[0]
+
+  it('filters on a tag typed in', async () => {
+    mockAssets(ASSET)
+    const user = userEvent.setup()
+    render(<AssetsList />)
+
+    await user.type(await screen.findByLabelText('Filter by tag'), ' pci-dss ')
+
+    // Once the typing settles, trimmed, back to the first page.
+    await waitFor(() => expect(lastCall()).toMatchObject({ tag: 'pci-dss', skip: 0 }))
+  })
+
+  it('filters on a tag clicked in the list', async () => {
+    mockAssets({ ...ASSET, tags: ['dmz', 'web'] })
+    const user = userEvent.setup()
+    render(<AssetsList />)
+
+    await user.click(await screen.findByRole('button', { name: 'dmz' }))
+
+    expect(screen.getByLabelText('Filter by tag')).toHaveValue('dmz')
+    await waitFor(() => expect(lastCall()).toMatchObject({ tag: 'dmz' }))
+  })
+
+  it('sends no tag while the field is empty', async () => {
+    mockAssets(ASSET)
+    render(<AssetsList />)
+
+    expect(await screen.findByText('edge-01')).toBeInTheDocument()
+    expect(lastCall().tag).toBeUndefined()
+  })
+})

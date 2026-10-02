@@ -47,6 +47,9 @@ export default function AssetsList() {
   const [page, setPage] = useState(0);
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search);
+  // A whole tag, whatever its case (as the rules read tags).
+  const [tag, setTag] = useState('');
+  const debouncedTag = useDebouncedValue(tag);
 
   const [editing, setEditing] = useState(null); // null | 'new' | asset
   const [form, setForm] = useState(EMPTY_FORM);
@@ -69,13 +72,19 @@ export default function AssetsList() {
     setPage(0);
   };
 
+  const handleTagChange = (value) => {
+    setTag(value);
+    setPage(0);
+  };
+
   const { data, loading, error, refetch } = useApiQuery(
-    ['assets', 'list', { page, search: debouncedSearch }],
+    ['assets', 'list', { page, search: debouncedSearch, tag: debouncedTag.trim() }],
     async () => {
       const res = await assetService.list({
         skip: page * PAGE_SIZE,
         limit: PAGE_SIZE,
         search: debouncedSearch || undefined,
+        tag: debouncedTag.trim() || undefined,
       });
       return res.data;
     }
@@ -173,6 +182,15 @@ export default function AssetsList() {
           onChange={handleSearchChange}
           placeholder="Search by IP or hostname..."
           style={{flex: 1, maxWidth: 400}}
+        />
+        <input
+          type="search"
+          value={tag}
+          onChange={(e) => handleTagChange(e.target.value)}
+          placeholder="Tag..."
+          aria-label="Filter by tag"
+          maxLength={64}
+          style={{...inputStyle, width: 160}}
         />
         {canCreate && (
           <button className="button" onClick={openCreate}>
@@ -345,9 +363,16 @@ export default function AssetsList() {
                         {asset.tags && asset.tags.length > 0 && (
                           <div style={{display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginTop: '0.25rem'}}>
                             {asset.tags.map((t) => (
-                              <span key={t} className="badge badge-low" style={{fontSize: '0.7rem', padding: '0.1rem 0.4rem'}}>
+                              <button
+                                key={t}
+                                type="button"
+                                className="badge badge-low"
+                                onClick={() => handleTagChange(t)}
+                                title={`Show the hosts tagged ${t}`}
+                                style={{fontSize: '0.7rem', padding: '0.1rem 0.4rem', cursor: 'pointer', border: 'none'}}
+                              >
                                 {t}
-                              </span>
+                              </button>
                             ))}
                           </div>
                         )}
