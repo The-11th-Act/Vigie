@@ -19,6 +19,12 @@ vi.mock('../services', () => ({
     list: vi.fn(() => Promise.resolve({ data: [] })),
     events: vi.fn(() => Promise.resolve({ data: [] })),
   },
+  // Likewise, in AdminThreatFeeds.test.jsx.
+  threatIntelService: {
+    status: vi.fn(() => Promise.resolve({ data: { enabled: false, stale_after_hours: 72, feeds: [] } })),
+    refresh: vi.fn(),
+    importFeed: vi.fn(),
+  },
   // Likewise, in AdminTicketing.test.jsx.
   ticketingService: {
     status: vi.fn(() => Promise.resolve({ data: { configured: false } })),

@@ -4,6 +4,9 @@ import { useApiQuery } from '../hooks/useApiQuery';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import Pagination from './Pagination';
 import SearchInput from './SearchInput';
+import CveActions from './CveActions';
+import { useAuth } from '../auth/AuthContext';
+import { useModules } from '../auth/ModulesContext';
 
 const PAGE_SIZE = 20;
 const SEVERITIES = ['Critical', 'High', 'Medium', 'Low'];
@@ -13,6 +16,12 @@ export default function VulnerabilitiesList() {
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search);
   const [severity, setSeverity] = useState('');
+  // As the API decides: a score is a risk decision, for the whole estate;
+  // deleting a CVE (and its findings) is for administrators.
+  const role = useAuth().user?.role;
+  const { teams } = useModules();
+  const canEdit = (role === 'admin' || role === 'analyst') && !teams;
+  const canDelete = role === 'admin';
 
   const { data, loading, error } = useApiQuery(
     ['vulnerabilities', 'catalog', { page, search: debouncedSearch, severity }],
@@ -78,11 +87,12 @@ export default function VulnerabilitiesList() {
                   <th>Title</th>
                   <th>CVSS</th>
                   <th>Severity</th>
+                  {canEdit && <th />}
                 </tr>
               </thead>
               <tbody>
                 {data.items.length === 0 ? (
-                  <tr><td colSpan={4} style={{textAlign: 'center', padding: '2rem', color: 'var(--text-muted)'}}>No vulnerabilities found</td></tr>
+                  <tr><td colSpan={canEdit ? 5 : 4} style={{textAlign: 'center', padding: '2rem', color: 'var(--text-muted)'}}>No vulnerabilities found</td></tr>
                 ) : (
                   data.items.map(vuln => (
                     <tr key={vuln.id}>
@@ -96,6 +106,11 @@ export default function VulnerabilitiesList() {
                           {vuln.severity}
                         </span>
                       </td>
+                      {canEdit && (
+                        <td>
+                          <CveActions vuln={vuln} canDelete={canDelete} />
+                        </td>
+                      )}
                     </tr>
                   ))
                 )}

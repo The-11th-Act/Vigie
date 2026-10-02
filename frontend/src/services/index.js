@@ -59,11 +59,23 @@ export const vulnerabilityService = {
   list: (params = {}) =>
     api.get('/vulnerabilities/', { params }),
 
+  // A new CVSS score rescores every open finding of the CVE.
+  update: (id, data) =>
+    api.put(`/vulnerabilities/${id}`, data),
+
+  // Admin: the CVE goes, and every finding of it.
+  remove: (id) =>
+    api.delete(`/vulnerabilities/${id}`),
+
   getFindings: (params = {}) =>
     api.get('/vulnerabilities/findings', { params }),
 
   updateFinding: (id, data) =>
     api.patch(`/vulnerabilities/findings/${id}`, data),
+
+  // Who changed the finding's status, when, and why.
+  getFindingHistory: (id) =>
+    api.get(`/vulnerabilities/findings/${id}/history`),
 
   // Through axios rather than a plain link, so an expired session is
   // refreshed like for any other call.
@@ -142,6 +154,26 @@ export const webhookService = {
 
   retryDelivery: (id, deliveryId) =>
     api.post(`/admin/webhooks/${id}/deliveries/${deliveryId}/retry`),
+}
+
+export const threatIntelService = {
+  status: () =>
+    api.get('/threat-intel/status'),
+
+  // Admin: pull both feeds now, when the daily refresh is on.
+  refresh: () =>
+    api.post('/threat-intel/refresh'),
+
+  // Admin: apply a file downloaded out of band (installations without Internet).
+  importFeed: (feed, file, force = false) => {
+    const form = new FormData()
+    form.append('feed', feed)
+    form.append('force', force ? 'true' : 'false')
+    form.append('file', file)
+    return api.post('/threat-intel/import', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
 }
 
 export const ticketingService = {

@@ -9,6 +9,7 @@ import { useAuth } from '../auth/AuthContext';
 import { AccountActions, NewAccountForm } from './AdminAccounts';
 import { controlStyle } from './RemediationShared';
 import { move } from '../order';
+import AdminThreatFeeds from './AdminThreatFeeds';
 import AdminTicketing from './AdminTicketing';
 import AdminWebhooks from './AdminWebhooks';
 
@@ -357,6 +358,7 @@ export default function AdminPanel() {
       <h1 style={{ marginBottom: '1.5rem' }}>Administration</h1>
       <ModulesSection />
       <UsersSection />
+      <AdminThreatFeeds />
       <AdminWebhooks />
       <AdminTicketing />
     </div>

@@ -7,7 +7,12 @@ import { vulnerabilityService } from '../services'
 import { AuthContext } from '../auth/AuthContext'
 
 vi.mock('../services', () => ({
-  vulnerabilityService: { getFindings: vi.fn(), updateFinding: vi.fn(), exportFindings: vi.fn() },
+  vulnerabilityService: {
+    getFindings: vi.fn(),
+    updateFinding: vi.fn(),
+    exportFindings: vi.fn(),
+    getFindingHistory: vi.fn(),
+  },
 }))
 
 const FINDING = {
@@ -34,6 +39,50 @@ async function selectStatus(user, label) {
 }
 
 describe('FindingsBacklog', () => {
+  it('shows who decided what, when, and why', async () => {
+    mockOneFinding()
+    vulnerabilityService.getFindingHistory.mockResolvedValue({
+      data: [
+        {
+          id: 2,
+          finding_id: 1,
+          username: 'alice',
+          old_status: 'Open',
+          new_status: 'Risk Accepted',
+          status_note: 'Compensating WAF rule',
+          accepted_until: '2026-12-31T23:59:59Z',
+          created_at: '2026-10-01T09:00:00Z',
+        },
+      ],
+    })
+    const user = userEvent.setup()
+    render(<FindingsBacklog />)
+
+    await user.click(await screen.findByRole('button', { name: /history of CVE-2024-1234 on web-prod-01/i }))
+
+    const history = await screen.findByRole('list', { name: 'Triage history' })
+    expect(history).toHaveTextContent('Open → Risk Accepted')
+    expect(history).toHaveTextContent('alice')
+    expect(history).toHaveTextContent('Compensating WAF rule')
+    expect(history).toHaveTextContent(/Accepted until/)
+    expect(vulnerabilityService.getFindingHistory).toHaveBeenCalledWith(1)
+  })
+
+  it('refreshes an open history after a triage', async () => {
+    mockOneFinding()
+    vulnerabilityService.getFindingHistory.mockResolvedValue({ data: [] })
+    vulnerabilityService.updateFinding.mockResolvedValue({ data: FINDING })
+    const user = userEvent.setup()
+    render(<FindingsBacklog />)
+
+    await user.click(await screen.findByRole('button', { name: /history of CVE-2024-1234/i }))
+    expect(await screen.findByText('No change recorded yet.')).toBeInTheDocument()
+    await selectStatus(user, 'Remediated')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(vulnerabilityService.getFindingHistory).toHaveBeenCalledTimes(2))
+  })
+
   it('does not offer a remediator the risk decisions', async () => {
     mockOneFinding()
     render(

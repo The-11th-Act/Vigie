@@ -650,11 +650,19 @@ modules, dépendances, hygiène du dépôt, tests ignorés (tous légitimes).
 ## Interface
 - [x] L'upload de scan était proposé à un compte cloisonné, que l'API refuse
       *(02/10/2026 : remplacé par une explication, l'historique reste)*
-- [ ] Historique du triage d'un finding : exposé par l'API (point 10), affiché
-      nulle part
-- [ ] Flux KEV / EPSS : rafraîchissement et import manuel par API ou CLI
+- [x] Historique du triage d'un finding : exposé par l'API (point 10), affiché
+      nulle part *(02/10/2026 : bouton « History » dans la colonne Triage du
+      backlog : transition, auteur, date, note, fin d'acceptation ; rafraîchi
+      après un triage)*
+- [x] Flux KEV / EPSS : rafraîchissement et import manuel par API ou CLI
       seulement, alors que l'import est le chemin des installations sans Internet
-- [ ] Catalogue CVE : modification du score et suppression par API seulement
+      *(02/10/2026 : section « Threat feeds » de l'écran Administration : état et
+      fraîcheur de chaque flux, dernière erreur, rafraîchissement immédiat, import
+      d'un fichier avec l'option de forcer, résultat ou motif du refus)*
+- [x] Catalogue CVE : modification du score et suppression par API seulement
+      *(02/10/2026 : édition du titre, du CVSS et de la sévérité dans l'écran
+      Vulnerabilities pour les analystes et admins non cloisonnés, suppression
+      confirmée pour les admins, comme l'API ; seuls les champs changés partent)*
 
 ## Code mort et documentation
 - [x] `generate_secret_key()`, `ModuleAccess.visible` : supprimés ;

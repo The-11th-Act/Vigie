@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import FindingHistory from './FindingHistory';
 import { vulnerabilityService } from '../services';
 import { useApiQuery } from '../hooks/useApiQuery';
 import { useAuth } from '../auth/AuthContext';
@@ -109,6 +111,8 @@ export default function FindingsBacklog() {
   const [kevOnly, setKevOnly] = useState(false);
   const [minEpss, setMinEpss] = useState('');
   const [rowState, setRowState] = useState({});
+  const [historyOf, setHistoryOf] = useState(null);
+  const queryClient = useQueryClient();
 
   // The same filters feed the screen and the export, so the file holds
   // exactly what the analyst is looking at (every page of it).
@@ -177,6 +181,8 @@ export default function FindingsBacklog() {
       });
       setRow(finding.id, { submitting: false, status: '', note: '', until: '' });
       refetch();
+      // The change is the newest line of its history.
+      queryClient.invalidateQueries({ queryKey: ['findings', 'history', finding.id] });
     } catch (err) {
       setRow(finding.id, {
         submitting: false,
@@ -441,6 +447,18 @@ export default function FindingsBacklog() {
                             )}
 
                             {row.error && <div className="error-message" style={{ padding: '0.4rem 0.6rem', fontSize: '0.75rem' }}>{row.error}</div>}
+
+                            <button
+                              type="button"
+                              className="icon-button"
+                              onClick={() => setHistoryOf(historyOf === finding.id ? null : finding.id)}
+                              aria-expanded={historyOf === finding.id}
+                              aria-label={`History of ${finding.vulnerability?.cve_id || 'this finding'} on ${finding.asset?.hostname || finding.asset?.ip_address || 'this host'}`}
+                              style={{ fontSize: '0.75rem', alignSelf: 'flex-start' }}
+                            >
+                              History
+                            </button>
+                            {historyOf === finding.id && <FindingHistory findingId={finding.id} />}
                           </div>
                         </td>
                       </tr>
