@@ -10,7 +10,7 @@ FastAPI + SQLAlchemy + Celery/Redis + PostgreSQL ; React 19 + Vite 8.
   exploitation, sauvegarde, audits. **`TODO.md` : l'état de référence** — la
   section « Modules et remédiation » en fin de fichier suit la feuille de route
   en cours.
-- Migrations : tête `0022`. Chaque colonne de modèle doit avoir sa migration
+- Migrations : tête `0023`. Chaque colonne de modèle doit avoir sa migration
   (`alembic check` en CI).
 
 ## Façon de travailler (convenue avec l'utilisateur)
@@ -54,6 +54,11 @@ gh run list --workflow CI --branch main --limit 1          # pas seulement --lim
 - **Autoflush** : `SessionLocal` (API, worker) a `autoflush=False`, la fixture
   `db_session` non. Un service qui modifie puis relit par requête doit faire
   `db.flush()` (ex. `sync_tickets`). Pour le tester : `db_session.autoflush = False`.
+- `decode_token` vérifie le compte à chaque requête (`require_live_account`) :
+  actif, et token émis (`iat`) après `sessions_valid_after`. Tester
+  désactivation, changement de mot de passe ou suppression avec
+  `unauthenticated_client` et un vrai login (`tests/api/test_accounts.py`).
+  Pas d'inscription publique : les comptes passent par `POST /users/` (admin).
 - La fixture `client` remplace `decode_token` et `require_admin` pour **toute**
   l'application : un test qui mélange `client` et `unauthenticated_client` ne
   vérifie pas vraiment l'authentification (voir `real_auth()` dans

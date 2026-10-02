@@ -14,6 +14,8 @@ vi.mock('../services', () => ({
   },
 }))
 
+// Typing a whole form key by key is slow on a loaded machine (CI included).
+const SLOW_TYPING = 15_000
 const ROLES = { admin: 'Administrator', analyst: 'Analyst', remediator: 'Remediator' }
 const ALICE = { id: 7, username: 'alice', email: 'alice@test.com', role: 'analyst', teams: [], is_active: true }
 
@@ -45,7 +47,7 @@ describe('NewAccountForm', () => {
     )
     expect(onCreated).toHaveBeenCalled()
     expect(screen.queryByRole('form', { name: 'New account' })).not.toBeInTheDocument()
-  })
+  }, SLOW_TYPING)
 
   it('shows what the API refused, as sentences', async () => {
     userService.create.mockRejectedValue({
@@ -61,7 +63,7 @@ describe('NewAccountForm', () => {
     await user.click(screen.getByRole('button', { name: 'Create account' }))
 
     expect(await screen.findByText('password must contain at least one digit')).toBeInTheDocument()
-  })
+  }, SLOW_TYPING)
 })
 
 describe('AccountActions', () => {
