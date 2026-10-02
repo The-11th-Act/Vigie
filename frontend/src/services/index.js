@@ -152,6 +152,14 @@ export const webhookService = {
     api.post(`/admin/webhooks/${id}/deliveries/${deliveryId}/retry`),
 }
 
+export const ticketingService = {
+  status: () =>
+    api.get('/admin/ticketing/'),
+
+  syncNow: () =>
+    api.post('/admin/ticketing/sync'),
+}
+
 export const userService = {
   list: () =>
     api.get('/users/'),

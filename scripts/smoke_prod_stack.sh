@@ -32,6 +32,9 @@ services:
       - "$WORK/offsite:/offsite"
 EOF
 COMPOSE+=(-f docker-compose.offsite.yml -f "$WORK/offsite-target.yml")
+# Connecteur GLPI : la surcouche réelle, jetons en Docker secrets. Le GLPI
+# est un faux serveur du réseau du projet, démarré plus bas.
+COMPOSE+=(-f docker-compose.glpi.yml)
 
 fail() {
   echo "::error::$*"
@@ -70,6 +73,10 @@ echo "smoke-$(openssl rand -hex 12)" > "$SECRETS/redis_password"
 # Une clé retirée, comme en pleine rotation : l'API et le worker doivent la lire.
 RETIRED_KEY=$(openssl rand -hex 32)
 printf '{"k0": "%s"}' "$RETIRED_KEY" > "$SECRETS/previous_secret_keys"
+GLPI_USER_TOKEN="glpi-user-$(openssl rand -hex 16)"
+GLPI_APP_TOKEN="glpi-app-$(openssl rand -hex 16)"
+printf '%s' "$GLPI_USER_TOKEN" > "$SECRETS/glpi_user_token"
+printf '%s' "$GLPI_APP_TOKEN" > "$SECRETS/glpi_app_token"
 printf '[offsite]\ntype = local\n' > "$SECRETS/rclone.conf"
 chmod 444 "$SECRETS"/*
 
@@ -91,6 +98,10 @@ KEV_SLA_DAYS=7
 WEBHOOK_ALLOW_PRIVATE_TARGETS=true
 WEBHOOK_ALLOW_HTTP=true
 WEBHOOK_DELIVERY_INTERVAL_SECONDS=5
+# Le connecteur GLPI, vers le faux serveur du réseau du projet.
+GLPI_SYNC_ENABLED=true
+GLPI_URL=http://glpi:8080/apirest.php
+GLPI_TEAM_GROUPS={"Perimeter":7}
 LOG_FORMAT=json
 THREAT_INTEL_ENABLED=true
 INSTANCE_BANNER=Smoke
@@ -220,6 +231,76 @@ class Receiver(BaseHTTPRequestHandler):
 HTTPServer(("0.0.0.0", 8080), Receiver).serve_forever()
 PY
 chmod 644 "$WORK/receiver.py"
+# Le faux GLPI suit l'API REST (apirest.php) : session ouverte avec le jeton
+# utilisateur, App-Token exigé, tickets. Chaque appel est écrit sur une ligne
+# JSON ; un jeton faux est refusé comme le ferait GLPI.
+cat > "$WORK/glpi.py" <<'PY'
+import itertools
+import json
+import os
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+USER_TOKEN = os.environ["EXPECTED_USER_TOKEN"]
+APP_TOKEN = os.environ["EXPECTED_APP_TOKEN"]
+ids = itertools.count(1)
+sessions = set()
+tickets = {}
+
+
+class Glpi(BaseHTTPRequestHandler):
+    def answer(self, code, body=None):
+        data = b"" if body is None else json.dumps(body).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def handle_call(self, method):
+        length = int(self.headers.get("Content-Length") or 0)
+        body = json.loads(self.rfile.read(length)) if length else None
+        path = self.path.split("/apirest.php/", 1)[-1]
+        print(json.dumps({"method": method, "path": path, "body": body}), flush=True)
+        if self.headers.get("App-Token") != APP_TOKEN:
+            return self.answer(400, ["ERROR_WRONG_APP_TOKEN_PARAMETER", ""])
+        if path == "initSession":
+            if self.headers.get("Authorization") != f"user_token {USER_TOKEN}":
+                return self.answer(401, ["ERROR_GLPI_LOGIN_USER_TOKEN", ""])
+            token = f"session-{next(ids)}"
+            sessions.add(token)
+            return self.answer(200, {"session_token": token})
+        if self.headers.get("Session-Token") not in sessions:
+            return self.answer(401, ["ERROR_SESSION_TOKEN_INVALID", ""])
+        if path == "killSession":
+            sessions.discard(self.headers.get("Session-Token"))
+            return self.answer(200)
+        if method == "POST" and path == "Ticket":
+            ticket_id = next(ids)
+            tickets[ticket_id] = {**body["input"], "id": ticket_id, "status": 1}
+            return self.answer(201, {"id": ticket_id, "message": ""})
+        if method == "GET" and path.startswith("Ticket/"):
+            ticket = tickets.get(int(path.split("/")[1]))
+            if ticket is None:
+                return self.answer(404, ["ERROR_ITEM_NOT_FOUND", ""])
+            return self.answer(200, ticket)
+        return self.answer(400, ["ERROR_RESOURCE_NOT_FOUND_NOR_COMMONDBTM", path])
+
+    def do_GET(self):
+        self.handle_call("GET")
+
+    def do_POST(self):
+        self.handle_call("POST")
+
+    def do_PUT(self):
+        self.handle_call("PUT")
+
+    def log_message(self, *args):
+        pass
+
+
+HTTPServer(("0.0.0.0", 8080), Glpi).serve_forever()
+PY
+chmod 644 "$WORK/glpi.py"
 cat > "$WORK/receiver.yml" <<EOF
 services:
   receiver:
@@ -229,9 +310,20 @@ services:
       - "$WORK/receiver.py:/receiver.py:ro"
     healthcheck:
       disable: true
+  glpi:
+    image: vigie-api:smoke
+    command: ["python", "-u", "/glpi.py"]
+    environment:
+      EXPECTED_USER_TOKEN: $GLPI_USER_TOKEN
+      EXPECTED_APP_TOKEN: $GLPI_APP_TOKEN
+    volumes:
+      - "$WORK/glpi.py:/glpi.py:ro"
+    healthcheck:
+      disable: true
 EOF
 RECEIVER=("${COMPOSE[@]}" -f "$WORK/receiver.yml")
-"${RECEIVER[@]}" up -d --no-deps receiver || fail "destinataire de webhooks non démarré"
+"${RECEIVER[@]}" up -d --no-deps receiver glpi \
+  || fail "destinataire de webhooks ou faux GLPI non démarré"
 
 WEBHOOK=$(curl -fsS "${AUTH[@]}" -H 'Content-Type: application/json' \
   -d '{"name":"smoke","url":"http://receiver:8080/hook","events":["scan.completed"]}' \
@@ -246,7 +338,7 @@ cat > "$WORK/report.nessus" <<'XML'
 <NessusClientData_v2><Report name="smoke">
   <ReportHost name="203.0.113.10">
     <HostProperties><tag name="host-fqdn">edge-01</tag></HostProperties>
-    <ReportItem severity="3" pluginName="Smoke finding">
+    <ReportItem severity="3" pluginID="99999" pluginName="Smoke finding">
       <cve>CVE-2024-3400</cve><cvss3_base_score>6.0</cvss3_base_score>
     </ReportItem>
   </ReportHost>
@@ -327,6 +419,43 @@ for service in web worker; do
 done
 echo "ok - l'API et le worker lisent les clés retirées (rotation sans perte des webhooks)"
 
+# --- Connecteur GLPI --------------------------------------------------------
+# Un ticket de remédiation, puis une synchronisation demandée par l'API : le
+# worker doit créer le ticket dans GLPI avec les jetons lus dans leurs
+# fichiers (le faux GLPI refuse tout autre jeton), assigné au groupe de
+# l'équipe (GLPI_TEAM_GROUPS), et Vigie garder le lien.
+ACTION_ID=$(curl -fsS "${AUTH[@]}" "$API/remediation/actions" | jq -r '.items[0].action.id') \
+  || fail "plan de remédiation illisible"
+TICKET_ID=$(curl -fsS "${AUTH[@]}" -X POST "$API/remediation/actions/$ACTION_ID/tickets" \
+  | jq -r '.created[0].id') || fail "ticket de remédiation refusé"
+curl -fsS "${AUTH[@]}" -X POST "$API/admin/ticketing/sync" >/dev/null \
+  || fail "synchronisation GLPI refusée par l'API"
+GLPI_REF=""
+for _ in $(seq 1 30); do
+  GLPI_REF=$(curl -fsS "${AUTH[@]}" "$API/remediation/tickets/$TICKET_ID" \
+    | jq -r '.ticket.external_ref // empty') || true
+  [ -n "$GLPI_REF" ] && break
+  sleep 2
+done
+if [ -z "$GLPI_REF" ]; then
+  echo "----- journaux : glpi -----"
+  "${RECEIVER[@]}" logs --no-color --tail=40 glpi || true
+  echo "----- état du connecteur vu par l'API -----"
+  curl -fsS "${AUTH[@]}" "$API/admin/ticketing/" || true
+  echo
+  fail "le ticket n'a jamais été exporté vers GLPI"
+fi
+GLPI_TICKET=$("${RECEIVER[@]}" logs --no-color --no-log-prefix glpi | grep '^{' \
+  | jq -c 'select(.method == "POST" and .path == "Ticket") | .body.input' | head -n 1 || true)
+[ "$(jq -r ._groups_id_assign <<<"$GLPI_TICKET")" = 7 ] \
+  || fail "ticket GLPI sans le groupe de l'équipe : $GLPI_TICKET"
+[[ "$(jq -r .name <<<"$GLPI_TICKET")" == *Perimeter* ]] \
+  || fail "ticket GLPI sans le titre du ticket Vigie : $GLPI_TICKET"
+LINKED=$(curl -fsS "${AUTH[@]}" "$API/admin/ticketing/" | jq -r .linked) \
+  || fail "état du connecteur illisible"
+[ "$LINKED" = 1 ] || fail "l'API compte $LINKED ticket(s) lié(s) à GLPI, 1 attendu"
+echo "ok - ticket exporté vers GLPI (#$GLPI_REF) par le worker, jetons lus dans leurs fichiers"
+
 # Aucun secret dans ce que `docker inspect` montre : environnement et
 # commande de chaque conteneur. Redis n'y voit que "$(cat ...)".
 for service in db redis migrate web worker beat backup; do
@@ -341,9 +470,11 @@ for service in db redis migrate web worker beat backup; do
     fi
   done
   # La clé retirée seule : son fichier JSON y apparaîtrait échappé.
-  if grep -qF -- "$RETIRED_KEY" <<<"$config"; then
-    fail "la clé retirée est visible dans docker inspect ($service)"
-  fi
+  for value in "$RETIRED_KEY" "$GLPI_USER_TOKEN" "$GLPI_APP_TOKEN"; do
+    if grep -qF -- "$value" <<<"$config"; then
+      fail "un secret (clé retirée ou jeton GLPI) est visible dans docker inspect ($service)"
+    fi
+  done
 done
 echo "ok - aucun secret dans l'environnement ni la commande des conteneurs"
 
@@ -386,6 +517,7 @@ echo "Calendrier du beat : $SCHEDULE"
 [[ "$SCHEDULE" == *threat-intel-refresh* ]] || fail "THREAT_INTEL_ENABLED n'atteint pas le beat"
 [[ "$SCHEDULE" == *rescore-open-findings* ]] || fail "le recalcul quotidien n'est pas planifié"
 [[ "$SCHEDULE" == *webhook-delivery* ]] || fail "l'envoi des webhooks n'est pas planifié"
+[[ "$SCHEDULE" == *glpi-sync* ]] || fail "GLPI_SYNC_ENABLED n'atteint pas le beat"
 echo "ok - le beat planifie le recalcul et le rafraîchissement des flux"
 
 # --- Sauvegarde, perte de la base, restauration ----------------------------

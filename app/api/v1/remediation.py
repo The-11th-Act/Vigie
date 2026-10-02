@@ -30,6 +30,7 @@ from app.schemas.remediation import (
     TicketResponse,
     TicketUpdate,
 )
+from app.services.glpi import GLPI
 from app.services.remediation_plan import (
     ActionFilters,
     action_hosts,
@@ -50,6 +51,8 @@ router = APIRouter()
 MAX_LIMIT = 200
 # Ticket filter for hosts nobody owns yet.
 UNASSIGNED_FILTER = "__unassigned__"
+# external_system values only a ticketing connector writes.
+CONNECTOR_SYSTEMS = frozenset({GLPI})
 
 
 def _csv_response(content: str, reference: str, what: str) -> Response:
@@ -260,6 +263,7 @@ def update_ticket(
     changes = update_in.model_dump(exclude_unset=True)
     new_status = changes.pop("status", None)
     note = changes.pop("note", None)
+    _check_external_link(ticket, changes)
 
     if new_status and new_status != ticket.status:
         if ticket.status not in ACTIVE_TICKET_STATUSES:
@@ -310,6 +314,25 @@ def list_teams(db: Session = Depends(get_db), scope: Scope = Depends(current_sco
     return {"teams": scope.visible_teams(row.owner_team for row in rows)}
 
 
+def _check_external_link(ticket: RemediationTicket, changes: dict) -> None:
+    """A link the connector wrote is its own: edited by hand, the sync would
+    lose track of the GLPI ticket. Nor may a hand-written link pass for one."""
+    if changes.get("external_system") in CONNECTOR_SYSTEMS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"external_system {changes['external_system']!r} is reserved "
+            "to the ticketing connector",
+        )
+    if ticket.external_system in CONNECTOR_SYSTEMS and any(
+        getattr(ticket, key) != value for key, value in changes.items()
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This ticket is linked by the ticketing connector: its "
+            "external reference cannot be edited by hand",
+        )
+
+
 def _ticket_out(ticket: RemediationTicket, metrics: dict[int, dict]) -> dict:
     return {
         "id": ticket.id,
@@ -321,6 +344,9 @@ def _ticket_out(ticket: RemediationTicket, metrics: dict[int, dict]) -> dict:
         "external_system": ticket.external_system,
         "external_ref": ticket.external_ref,
         "external_url": ticket.external_url,
+        "external_state": ticket.external_state,
+        "external_synced_at": ticket.external_synced_at,
+        "external_error": ticket.external_error,
         "created_by_username": ticket.creator.username if ticket.creator else None,
         "created_at": ticket.created_at,
         "updated_at": ticket.updated_at,

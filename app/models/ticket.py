@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import Enum
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import JSON, DateTime, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -58,10 +58,20 @@ class RemediationTicket(Base):
         index=True,
     )
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # Filled by a ticketing connector (Jira, ServiceNow, GLPI), or by hand.
+    # Filled by a ticketing connector (app/services/ticketing.py), or by hand.
     external_system: Mapped[str | None] = mapped_column(String(32), nullable=True)
     external_ref: Mapped[str | None] = mapped_column(String(128), nullable=True)
     external_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    # Connector links only. The seal binds the link to this instance and to
+    # the connector's server: a staging restored from production does not
+    # touch production's tickets. The state is the external ticket's as last
+    # seen or set (ExternalState), to tell its own changes from Vigie's.
+    external_seal: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    external_state: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    external_synced_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    external_error: Mapped[str | None] = mapped_column(String(512), nullable=True)
     created_by: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
@@ -129,3 +139,24 @@ class TicketAuditLog(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True
     )
+
+
+class TicketConnectorStatus(Base):
+    """Last run of a ticketing connector, for the administration screen.
+
+    One row per connector, written by the worker: the API, which holds none
+    of the connector's credentials, can only report what the last run saw.
+    """
+
+    __tablename__ = "ticket_connector_status"
+
+    name: Mapped[str] = mapped_column(String(32), primary_key=True)
+    last_run_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_success_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_error: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # Counters of the last run (exported, pulled, pushed...).
+    last_result: Mapped[dict | None] = mapped_column(JSON, nullable=True)

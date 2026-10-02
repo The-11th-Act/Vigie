@@ -19,6 +19,11 @@ vi.mock('../services', () => ({
     list: vi.fn(() => Promise.resolve({ data: [] })),
     events: vi.fn(() => Promise.resolve({ data: [] })),
   },
+  // Likewise, in AdminTicketing.test.jsx.
+  ticketingService: {
+    status: vi.fn(() => Promise.resolve({ data: { configured: false } })),
+    syncNow: vi.fn(),
+  },
 }))
 
 const OVERVIEW = {

@@ -64,6 +64,13 @@ lui donne un secret propre et le réactive **vers la même URL** : seul un
 destinataire qui vérifie la signature refusera ces appels. En préproduction,
 supprimer plutôt ces webhooks et enregistrer des destinataires de test.
 
+Le connecteur GLPI de même : chaque lien est scellé par la clé de
+l'instance et l'adresse du GLPI. Une préproduction restaurée affiche les
+liens de la production mais ne touche jamais à ces tickets. Elle peut en
+revanche **créer** des tickets pour ses propres tickets non liés : laisser
+`GLPI_SYNC_ENABLED=false` en préproduction, ou la faire pointer vers un GLPI
+de test, jamais vers celui de la production.
+
 > **Production existante** : `COMPOSE_PROJECT_NAME` doit reprendre le nom sous
 > lequel la pile tourne déjà (par défaut, le nom du répertoire du checkout ;
 > `docker volume ls` montre `<projet>_pgdata`). Avec un autre nom, compose
@@ -187,6 +194,7 @@ une version sans migration.
   décision qu'on croit prendre en production (acceptation de risque) n'est
   prise qu'en préproduction. Le libellé vient de l'API et non du build, puisque
   les deux environnements exécutent la même image du frontend.
-- Le futur connecteur de ticketing et les webhooks devront pouvoir viser un
-  bac à sable en préproduction : une copie des tickets de production ne doit
-  jamais écrire dans le Jira de production.
+- Le connecteur GLPI et les webhooks ne touchent jamais à ce que la
+  production a lié ou enregistré (scellement par instance), mais rien
+  n'empêche un `.env` de préproduction de viser le GLPI de production avec
+  ses jetons : c'est au `.env` de viser un bac à sable.

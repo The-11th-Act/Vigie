@@ -31,7 +31,11 @@ FAKE_SECRETS = {
     "rclone.conf": (
         "[offsite]\ntype = s3\nsecret_access_key = fake-offsite-key-in-its-file\n"
     ),
+    "glpi_user_token": "fake-glpi-user-token-in-its-file",
+    "glpi_app_token": "fake-glpi-app-token-in-its-file",
 }
+# Secrets of the optional overlays: absent from the production overlay alone.
+OVERLAY_SECRETS = {"rclone.conf", "glpi_user_token", "glpi_app_token"}
 _SECRETS_DIR = Path(tempfile.mkdtemp(prefix="vigie-secrets-"))
 for _name, _value in FAKE_SECRETS.items():
     (_SECRETS_DIR / _name).write_text(_value, encoding="utf-8")
@@ -47,6 +51,7 @@ FAKE_ENV = {
     "SECRET_KEY": "leftover-secret-key-from-an-old-env-file-0123456789",
     "POSTGRES_PASSWORD": "leftover-postgres-password",
     "REDIS_PASSWORD": "leftover-redis-password",
+    "GLPI_USER_TOKEN": "leftover-glpi-user-token",
 }
 
 pytestmark = pytest.mark.skipif(
@@ -202,7 +207,12 @@ ONLY_ON = {
         "ADMIN_EMAIL",
         "ADMIN_PASSWORD",
     },
-    ("worker",): {"CROWDSTRIKE_CLIENT_ID", "CROWDSTRIKE_CLIENT_SECRET"},
+    ("worker",): {
+        "CROWDSTRIKE_CLIENT_ID",
+        "CROWDSTRIKE_CLIENT_SECRET",
+        "GLPI_USER_TOKEN",
+        "GLPI_APP_TOKEN",
+    },
     # Les clés retirées : l'API vérifie les tokens qu'elles ont signés, le
     # worker reconnaît et rescelle les webhooks qu'elles ont scellés.
     ("web", "worker"): {"PREVIOUS_SECRET_KEYS"},
@@ -221,7 +231,12 @@ class TestSecrets:
         for value in FAKE_SECRETS.values():
             assert value not in prod_config
         # Ni les anciennes valeurs restées dans l'environnement de l'hôte.
-        for name in ("SECRET_KEY", "POSTGRES_PASSWORD", "REDIS_PASSWORD"):
+        for name in (
+            "SECRET_KEY",
+            "POSTGRES_PASSWORD",
+            "REDIS_PASSWORD",
+            "GLPI_USER_TOKEN",
+        ):
             assert FAKE_ENV[name] not in prod_config, name
 
     @pytest.mark.parametrize("service", ["migrate", "web", "worker", "beat"])
@@ -267,7 +282,7 @@ class TestSecrets:
 
     def test_they_come_from_the_secrets_directory(self, prod_config):
         parsed = json.loads(_merged_prod_config("--format", "json"))["secrets"]
-        assert set(parsed) == set(FAKE_SECRETS) - {"rclone.conf"}
+        assert set(parsed) == set(FAKE_SECRETS) - OVERLAY_SECRETS
         for secret in parsed.values():
             assert Path(secret["file"]).parent == _SECRETS_DIR
 
@@ -316,6 +331,68 @@ class TestOffsiteCopy:
         env = prod_services["backup"]["environment"]
         assert "BACKUP_REMOTE" not in env
         assert "rclone_conf" not in _secret_names(prod_services["backup"])
+
+
+@pytest.fixture(scope="module")
+def glpi_services() -> dict:
+    env = dict(os.environ)
+    env.update(FAKE_ENV)
+    result = subprocess.run(
+        [
+            "docker",
+            "compose",
+            "-f",
+            "docker-compose.yml",
+            "-f",
+            "docker-compose.prod.yml",
+            "-f",
+            "docker-compose.glpi.yml",
+            "config",
+            "--format",
+            "json",
+        ],
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+        env=env,
+    )
+    if result.returncode != 0:
+        pytest.skip(f"docker compose config indisponible : {result.stderr[:200]}")
+    assert "fake-glpi" not in result.stdout
+    assert FAKE_ENV["GLPI_USER_TOKEN"] not in result.stdout
+    return json.loads(result.stdout)["services"]
+
+
+class TestGlpiConnector:
+    """Les jetons GLPI sont des fichiers, montés dans le seul worker par une
+    surcouche : l'API, qui ne fait que rendre compte, n'en détient aucun."""
+
+    def test_the_worker_reads_the_tokens_from_files(self, glpi_services):
+        worker = glpi_services["worker"]
+        env = worker["environment"]
+        assert env["GLPI_USER_TOKEN_FILE"] == "/run/secrets/glpi_user_token"
+        assert env["GLPI_APP_TOKEN_FILE"] == "/run/secrets/glpi_app_token"
+        assert env["GLPI_USER_TOKEN"] == env["GLPI_APP_TOKEN"] == ""
+        # La surcouche redonne la liste complète : aucun secret du worker perdu.
+        assert _secret_names(worker) == {
+            "secret_key",
+            "previous_secret_keys",
+            "postgres_password",
+            "redis_password",
+            "glpi_user_token",
+            "glpi_app_token",
+        }
+
+    def test_nowhere_else(self, glpi_services):
+        for name in ("web", "beat", "migrate"):
+            service = glpi_services[name]
+            assert not {"glpi_user_token", "glpi_app_token"} & _secret_names(service)
+            assert "GLPI_USER_TOKEN_FILE" not in service["environment"]
+
+    def test_no_token_from_the_environment_without_the_overlay(self, prod_services):
+        env = prod_services["worker"]["environment"]
+        assert env["GLPI_USER_TOKEN"] == env["GLPI_APP_TOKEN"] == ""
+        assert "glpi_user_token" not in _secret_names(prod_services["worker"])
 
 
 def _environment(**overrides: str) -> dict:

@@ -10,7 +10,7 @@ FastAPI + SQLAlchemy + Celery/Redis + PostgreSQL ; React 19 + Vite 8.
   exploitation, sauvegarde, audits. **`TODO.md` : l'état de référence** — la
   section « Modules et remédiation » en fin de fichier suit la feuille de route
   en cours.
-- Migrations : tête `0021`. Chaque colonne de modèle doit avoir sa migration
+- Migrations : tête `0022`. Chaque colonne de modèle doit avoir sa migration
   (`alembic check` en CI).
 
 ## Façon de travailler (convenue avec l'utilisateur)
@@ -135,6 +135,14 @@ gh run list --workflow CI --branch main --limit 1          # pas seulement --lim
   Host/SNI/certificat sur le nom), sauf derrière un proxy (`requests`, comme
   avant). Tests contre de vrais serveurs locaux, HTTPS compris (CA générée
   par `openssl`) : `TestPinnedConnection`.
+- **Connecteur de ticketing** : `app/services/ticketing.py` (protocole
+  `TicketConnector`, synchro, scellement des liens) et `app/services/glpi.py`.
+  `external_state` distingue les changements de l'outil de ceux de Vigie ;
+  un lien du connecteur ne s'édite pas à la main (`CONNECTOR_SYSTEMS` dans
+  `app/api/v1/remediation.py`). Les jetons GLPI ne vont qu'au worker, par la
+  surcouche `docker-compose.glpi.yml` ; l'API rend compte de la dernière
+  exécution (`ticket_connector_status`). Un autre outil (Jira…) = un autre
+  connecteur, même synchro.
 
 ## Suite prévue
 
@@ -146,11 +154,9 @@ gh run list --workflow CI --branch main --limit 1          # pas seulement --lim
    Le worker n'expose aucune métrique : ce qu'il fait se mesure depuis la
    base, au scrape de l'API.
 3. ~~TanStack Query~~ et ~~périmètres (T7)~~ faits le 30/09/2026.
-4. ~~Webhooks sortants~~ faits le 01/10/2026. **Plus tard, à la demande de
-   l'utilisateur** : connecteur de ticketing (Jira, ServiceNow ou GLPI, à lui
-   faire choisir) sur les champs `external_*` des tickets. Il pourra
-   s'abonner aux mêmes événements et reprendre le scellement par instance des
-   webhooks pour ne jamais écrire en production depuis une préproduction.
+4. ~~Webhooks sortants~~ faits le 01/10/2026, épinglage DNS compris.
+   ~~Connecteur de ticketing~~ : GLPI, choisi par l'utilisateur, fait le
+   02/10/2026. Reste à le valider sur une vraie instance GLPI.
 5. À valider sur des données réelles quand l'utilisateur les fournira : un
    export Nessus (taxonomie, KB des cumulatives Windows) et un tenant
    CrowdStrike (remédiations Spotlight).

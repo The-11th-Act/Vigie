@@ -56,6 +56,14 @@ def build_beat_schedule() -> dict:
             # outbox, not the queue, holds what remains to send.
             "options": {"expires": interval},
         }
+    if settings.GLPI_SYNC_ENABLED:
+        interval = settings.GLPI_SYNC_INTERVAL_MINUTES * 60
+        schedule["glpi-sync"] = {
+            "task": "app.worker.tasks.sync_glpi_task",
+            "schedule": timedelta(seconds=interval),
+            # A run still queued when the next is due would do the same work.
+            "options": {"expires": interval},
+        }
     if settings.CROWDSTRIKE_SYNC_ENABLED:
         schedule["crowdstrike-sync"] = {
             "task": "app.worker.tasks.sync_crowdstrike_task",

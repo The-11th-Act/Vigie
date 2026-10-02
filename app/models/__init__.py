@@ -5,7 +5,12 @@ from app.models.remediation import FindingRemediation, RemediationAction
 from app.models.scan import ScanJob, ScanStatus
 from app.models.snapshot import BacklogSnapshot
 from app.models.threat_intel import EpssScoreEntry, KevCatalogEntry, ThreatFeedStatus
-from app.models.ticket import RemediationTicket, TicketAuditLog, TicketFinding
+from app.models.ticket import (
+    RemediationTicket,
+    TicketAuditLog,
+    TicketConnectorStatus,
+    TicketFinding,
+)
 from app.models.user import User, UserTeam
 from app.models.vulnerability import (
     AssetVulnerability,
@@ -30,6 +35,7 @@ __all__ = [
     "RemediationAction",
     "RemediationTicket",
     "TicketAuditLog",
+    "TicketConnectorStatus",
     "TicketFinding",
     "User",
     "UserTeam",

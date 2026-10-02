@@ -94,6 +94,11 @@ class TicketResponse(BaseModel):
     external_system: str | None = None
     external_ref: str | None = None
     external_url: str | None = None
+    # Set by a ticketing connector: the external ticket's state as last seen,
+    # when, and why the last sync of this ticket failed.
+    external_state: str | None = None
+    external_synced_at: datetime | None = None
+    external_error: str | None = None
     created_by_username: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None

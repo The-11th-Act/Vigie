@@ -352,6 +352,43 @@ check the signature, refuse old timestamps, and deduplicate on
   staging restored from production holds production's webhooks but cannot
   send them; "Use here" gives one a new secret, sealed to the staging.
 
+## Ticketing: GLPI
+
+Remediation tickets can be mirrored in GLPI, where the teams work
+(`app/services/glpi.py`, on the generic `app/services/ticketing.py`: another
+tool would be another connector). The worker syncs every
+`GLPI_SYNC_INTERVAL_MINUTES`, or on demand from the Administration screen.
+
+- **Export.** An active Vigie ticket with no external reference becomes a GLPI
+  ticket (`GLPI_TICKET_TYPE`, request by default; `GLPI_ENTITY_ID`,
+  `GLPI_CATEGORY_ID`), assigned to the owner team's group (`GLPI_TEAM_GROUPS`,
+  `{"Infrastructure": 12, "Unassigned": 3}`), its urgency from the highest
+  risk, its description listing the fix and the hosts. With
+  `GLPI_EXPORT_UNMAPPED_TEAMS=false`, only the mapped teams get GLPI tickets.
+  A ticket linked by hand (`SEC-1234`) is left alone.
+- **The team works in GLPI.** Processing or pending there makes the Vigie
+  ticket in progress; solved or closed makes it deployed. The scans still
+  decide when it is resolved.
+- **Vigie's decisions go to GLPI.** Resolved by the scans or cancelled: a
+  solution is added. A finding back on a done ticket: the GLPI ticket goes
+  back to processing with a followup, or is replaced by a new one when it is
+  closed. GLPI closing a solved ticket on its own is not mistaken for the
+  team's work.
+- **Links are the connector's.** They cannot be edited by hand (409), and are
+  sealed with the instance's signing key and the GLPI address: a staging
+  restored from production shows production's GLPI links but never touches
+  them, and a new GLPI server starts afresh. A ticket deleted in GLPI is no
+  longer synced.
+- **Credentials.** `GLPI_USER_TOKEN` (the API token of the account Vigie acts
+  as) and `GLPI_APP_TOKEN` (the API client's, when GLPI requires one) are
+  secrets: in production, files given to the worker alone by
+  `docker-compose.glpi.yml`. The API holds none and reports what the last run
+  saw. Setup: [`docs/EXPLOITATION.md`](docs/EXPLOITATION.md).
+
+The connector follows GLPI's REST API (`apirest.php`, GLPI 10 and 11) and is
+tested against a simulated GLPI; check it against your own instance first,
+the group assignment (`_groups_id_assign`) especially.
+
 ## Health probes
 
 | Endpoint | Checks | Use it for |

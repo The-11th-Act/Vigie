@@ -23,6 +23,7 @@ from app.api.v1 import (
     remediation,
     scans,
     threat_intel,
+    ticketing,
     users,
     vulnerabilities,
     webhooks,
@@ -158,6 +159,9 @@ app.include_router(me.router, prefix=f"{settings.API_V1_STR}/me", tags=["Me"])
 app.include_router(admin.router, prefix=f"{settings.API_V1_STR}/admin", tags=["Admin"])
 app.include_router(
     webhooks.router, prefix=f"{settings.API_V1_STR}/admin/webhooks", tags=["Admin"]
+)
+app.include_router(
+    ticketing.router, prefix=f"{settings.API_V1_STR}/admin/ticketing", tags=["Admin"]
 )
 # Each module's routes check that the user has it: a tab missing from the
 # sidebar would otherwise leave its API wide open.

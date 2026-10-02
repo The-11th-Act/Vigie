@@ -63,6 +63,8 @@ FILE_SETTINGS = (
     "REDIS_PASSWORD",
     "CROWDSTRIKE_CLIENT_SECRET",
     "ADMIN_PASSWORD",
+    "GLPI_USER_TOKEN",
+    "GLPI_APP_TOKEN",
 )
 
 
@@ -248,6 +250,29 @@ class Settings(BaseSettings):
     # Sent and abandoned deliveries are purged after this, by the daily pass.
     WEBHOOK_RETENTION_DAYS: int = Field(default=30, ge=1)
 
+    # GLPI ticketing connector (app/services/glpi.py): remediation tickets are
+    # mirrored in GLPI, which the teams work in. Off by default.
+    GLPI_SYNC_ENABLED: bool = False
+    # The REST API's address, ending in /apirest.php.
+    GLPI_URL: str | None = None
+    # Secrets, given as files in production (GLPI_USER_TOKEN_FILE...): the
+    # API token of the account Vigie acts as, and the API client's App-Token
+    # when GLPI requires one.
+    GLPI_USER_TOKEN: str | None = None
+    GLPI_APP_TOKEN: str | None = None
+    GLPI_SYNC_INTERVAL_MINUTES: int = Field(default=5, ge=1)
+    # 1 incident, 2 request: deploying a fix is planned work, a request.
+    GLPI_TICKET_TYPE: int = Field(default=2, ge=1, le=2)
+    # Entity and ITIL category of the tickets created; unset, GLPI's defaults.
+    GLPI_ENTITY_ID: int | None = Field(default=None, ge=0)
+    GLPI_CATEGORY_ID: int | None = Field(default=None, ge=1)
+    # Owner team -> GLPI group the ticket is assigned to ("Unassigned" for
+    # hosts no team owns). Example: {"Infrastructure": 12, "Workplace": 15}
+    GLPI_TEAM_GROUPS: dict[str, int] = {}
+    # False: only the teams of GLPI_TEAM_GROUPS get GLPI tickets, the others
+    # keep theirs in Vigie alone.
+    GLPI_EXPORT_UNMAPPED_TEAMS: bool = True
+
     @field_validator("THREAT_INTEL_KEV_URL", "THREAT_INTEL_EPSS_URL")
     @classmethod
     def validate_feed_url(cls, value: str) -> str:
@@ -255,9 +280,36 @@ class Settings(BaseSettings):
             raise ValueError("feed URLs must use http or https")
         return value
 
+    @field_validator("GLPI_URL")
+    @classmethod
+    def validate_glpi_url(cls, value: str | None) -> str | None:
+        if not value:
+            return None
+        value = value.strip().rstrip("/")
+        parts = urlsplit(value)
+        if parts.scheme not in ("https", "http") or not parts.hostname:
+            raise ValueError("GLPI_URL must be an http(s) URL")
+        if not parts.path.endswith("/apirest.php"):
+            raise ValueError(
+                "GLPI_URL must be the REST API's address, ending in /apirest.php "
+                "(e.g. https://glpi.example.com/apirest.php)"
+            )
+        return value
+
+    @model_validator(mode="after")
+    def validate_glpi(self) -> "Settings":
+        if self.GLPI_SYNC_ENABLED and not self.GLPI_URL:
+            raise ValueError("GLPI_SYNC_ENABLED needs GLPI_URL")
+        return self
+
     @property
     def crowdstrike_configured(self) -> bool:
         return bool(self.CROWDSTRIKE_CLIENT_ID and self.CROWDSTRIKE_CLIENT_SECRET)
+
+    @property
+    def glpi_configured(self) -> bool:
+        """The worker's view: the API holds no token."""
+        return bool(self.GLPI_URL and self.GLPI_USER_TOKEN)
 
     # env_ignore_empty: docker compose passes every wired setting, and an unset
     # one arrives as an empty string. Ignoring it keeps the default defined

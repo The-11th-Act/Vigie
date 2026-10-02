@@ -83,14 +83,17 @@ def _tracked_finding_ids(db: Session, action_ids) -> set[tuple[int, int]]:
     return {(row.action_id, row.finding_id) for row in rows}
 
 
-def log_ticket_change(db: Session, ticket, old, new, note, user: User | None) -> None:
+def log_ticket_change(
+    db: Session, ticket, old, new, note, user: User | None, actor: str | None = None
+) -> None:
     """Record a step of a ticket's history, and tell the webhooks of a move.
 
     Every change goes through here, the scans' and the people's alike: a
     status that moved without a trail, or without its event, is a bug.
-    ``old`` is None for a note alone.
+    ``old`` is None for a note alone. ``actor`` names a non-human author
+    other than the scans (a ticketing connector: "glpi").
     """
-    actor = user.username if user else SYSTEM_ACTOR
+    actor = user.username if user else (actor or SYSTEM_ACTOR)
     db.add(
         TicketAuditLog(
             ticket_id=ticket.id,

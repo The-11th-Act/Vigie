@@ -396,13 +396,17 @@ jobs:
       - name: Compose de production
         run: |
           mkdir -p /tmp/vigie-secrets
-          for name in secret_key previous_secret_keys postgres_password redis_password rclone.conf; do
+          for name in secret_key previous_secret_keys postgres_password redis_password \
+              rclone.conf glpi_user_token glpi_app_token; do
             echo "ci-fake-$name" > "/tmp/vigie-secrets/$name"
           done
           docker compose -f docker-compose.yml -f docker-compose.prod.yml config > /tmp/prod.yml
           # Surcouche optionnelle de copie hors site des sauvegardes.
           BACKUP_REMOTE=offsite:vigie docker compose -f docker-compose.yml \
             -f docker-compose.prod.yml -f docker-compose.offsite.yml config --quiet
+          # Surcouche optionnelle du connecteur GLPI.
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+            -f docker-compose.glpi.yml config --quiet
         env:
           VIGIE_SECRETS_DIR: /tmp/vigie-secrets
           POSTGRES_USER: vigie

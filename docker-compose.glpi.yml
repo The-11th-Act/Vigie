@@ -1,0 +1,32 @@
+# Connecteur GLPI (tickets de remediation mirroirs dans GLPI), en option.
+#
+# Usage :
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+#     -f docker-compose.glpi.yml up -d
+#
+# Les jetons d'API de GLPI sont des secrets : des fichiers du repertoire des
+# secrets, montes dans le seul worker, qui fait la synchronisation. L'API n'en
+# detient aucun. glpi_app_token peut rester vide si le client d'API de GLPI
+# n'exige pas d'App-Token. Les autres reglages (GLPI_URL, GLPI_SYNC_ENABLED,
+# GLPI_TEAM_GROUPS...) viennent du .env. Mise en place : docs/EXPLOITATION.md.
+
+secrets:
+  glpi_user_token:
+    file: ${VIGIE_SECRETS_DIR:-./secrets}/glpi_user_token
+  glpi_app_token:
+    file: ${VIGIE_SECRETS_DIR:-./secrets}/glpi_app_token
+
+services:
+  worker:
+    environment:
+      - GLPI_USER_TOKEN_FILE=/run/secrets/glpi_user_token
+      - GLPI_APP_TOKEN_FILE=/run/secrets/glpi_app_token
+    secrets:
+      [
+        secret_key,
+        previous_secret_keys,
+        postgres_password,
+        redis_password,
+        glpi_user_token,
+        glpi_app_token,
+      ]

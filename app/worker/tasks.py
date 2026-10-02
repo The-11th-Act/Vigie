@@ -9,11 +9,13 @@ from app.models.scan import ScanJob, ScanStatus
 from app.parsers.nessus import parse_nessus_scan
 from app.parsers.openvas import parse_openvas_scan
 from app.services.categorization import categorize_missing
+from app.services.glpi import glpi_connector, glpi_identity
 from app.services.ingestion import ingest_findings
 from app.services.rescoring import rescore_open_findings
 from app.services.risk_acceptance import expire_risk_acceptances
 from app.services.snapshots import record_snapshots
 from app.services.threat_intel import refresh_threat_intel
+from app.services.ticketing import reseal_links, sync_tickets_with
 from app.services.tickets import sync_tickets
 from app.services.webhooks import (
     deliver_due,
@@ -208,6 +210,9 @@ def rescore_open_findings_task():
         record_snapshots(db)
         purge_deliveries(db)
         reseal_webhooks(db)
+        identity = glpi_identity()
+        if identity is not None:
+            reseal_links(db, identity)
         db.commit()
         logger.info(
             "Daily run: %d risk acceptance(s) expired, %d open finding(s) rescored",
@@ -342,6 +347,39 @@ def deliver_webhooks_task():
     except Exception:
         db.rollback()
         logger.exception("Webhook delivery run failed")
+        raise
+    finally:
+        db.close()
+
+
+@celery_app.task(
+    name="app.worker.tasks.sync_glpi_task",
+    soft_time_limit=600,
+    time_limit=660,
+)
+def sync_glpi_task():
+    """Mirror the remediation tickets in GLPI. Every few minutes, by beat, or
+    on demand from the administration screen.
+
+    No Celery retry: a GLPI that stays down is tried again at the next run,
+    the error recorded meanwhile for the administration screen.
+    """
+    if not settings.GLPI_SYNC_ENABLED:
+        return {"status": "skipped", "message": "GLPI sync is disabled"}
+    connector = glpi_connector()
+    if connector is None:
+        logger.warning("GLPI sync enabled but GLPI_URL or GLPI_USER_TOKEN is missing")
+        return {"status": "skipped", "message": "GLPI_URL or GLPI_USER_TOKEN is missing"}
+
+    db = SessionLocal()
+    try:
+        run = sync_tickets_with(db, connector)
+        if run.error:
+            return {"status": "error", "message": run.error, **run.as_dict()}
+        return {"status": "success", **run.as_dict()}
+    except Exception:
+        db.rollback()
+        logger.exception("GLPI sync failed")
         raise
     finally:
         db.close()

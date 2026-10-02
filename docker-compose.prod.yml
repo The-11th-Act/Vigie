@@ -193,6 +193,10 @@ services:
       # cle, il doit reconnaitre ceux scelles par l'ancienne.
       - PREVIOUS_SECRET_KEYS=
       - PREVIOUS_SECRET_KEYS_FILE=/run/secrets/previous_secret_keys
+      # Jetons GLPI : jamais dans l'environnement. Fichiers montes par la
+      # surcouche docker-compose.glpi.yml, quand le connecteur sert.
+      - GLPI_USER_TOKEN=
+      - GLPI_APP_TOKEN=
     secrets: [secret_key, previous_secret_keys, postgres_password, redis_password]
     healthcheck:
       test: ["CMD-SHELL", "celery -A app.worker.celery_app inspect ping -d celery@$$HOSTNAME || exit 1"]

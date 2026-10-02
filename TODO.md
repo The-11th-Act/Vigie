@@ -493,7 +493,7 @@ Vigie priorise bien, mais elle parle CVE. Les équipes de remédiation, elles, t
 
 Cible : une barre latérale composée de modules (profil par rôle, ajusté par chaque utilisateur), et des tickets de remédiation gérés dans Vigie. Un connecteur Jira, ServiceNow ou GLPI viendra ensuite sur la même structure.
 
-Ordre retenu : 1 → 0 → 2 → 4 → 3 → 5 → 6 → 7. Faits : 1 à 6.
+Ordre retenu : 1 → 0 → 2 → 4 → 3 → 5 → 6 → 7. Faits : 1 à 7.
 
 ## ✅ 1. Capturer les données de remédiation
 
@@ -554,11 +554,37 @@ Les parseurs jetaient tout ce que les scanners disent du correctif. Les fichiers
 - [x] Deux vues : Posture et Tendances & remédiation (celle du remediator)
 - [ ] Métriques Prometheus correspondantes (MTTR, échéances tenues) si l'exploitation les veut dans Grafana
 
-## 7. Connecteur de ticketing et webhooks
-- [ ] Interface `TicketConnector`, première implémentation, synchronisation du statut
-- [ ] Une cible par environnement : une préproduction restaurée depuis la production
-      ne doit jamais écrire dans l'outil de ticketing de production *(fait pour les
-      webhooks par le scellement ci-dessous, à reprendre pour le connecteur)*
+## ✅ 7. Connecteur de ticketing et webhooks
+- [x] Interface `TicketConnector`, première implémentation, synchronisation du statut
+      *(02/10/2026, GLPI choisi par l'utilisateur. `app/services/ticketing.py`
+      (synchro générique, un autre outil serait un autre connecteur) et
+      `app/services/glpi.py` (API REST `apirest.php`), migration 0022, tâche du
+      worker toutes les `GLPI_SYNC_INTERVAL_MINUTES` et à la demande, section de
+      l'écran Administration. Export des tickets actifs non liés, assignés au
+      groupe de l'équipe ; l'avancement dans GLPI revient dans Vigie ; résolution
+      par les scans et annulation solutionnées dans GLPI, réouverture si un
+      finding revient (ticket remplacé s'il est clos). Jetons en Docker secrets
+      pour le seul worker (`docker-compose.glpi.yml`). Vérifié dans la pile de
+      production contre un faux GLPI qui refuse tout autre jeton)*
+- [x] Une cible par environnement : une préproduction restaurée depuis la production
+      ne doit jamais écrire dans l'outil de ticketing de production *(webhooks le
+      01/10/2026 ; connecteur le 02/10/2026 : lien scellé par la clé de l'instance
+      et l'adresse du GLPI, rescellé au passage quotidien après une rotation)*
+- [ ] GLPI : valider sur une vraie instance (testé contre un GLPI simulé et un
+      faux serveur), l'affectation au groupe (`_groups_id_assign`) et la
+      réouverture d'un ticket résolu en particulier
+
+Choix pris par défaut pour GLPI, à revoir à l'usage :
+- GLPI mène les statuts de l'équipe (en cours, pendant → « in progress » ;
+  résolu ou clos → « deployed ») ; une modification à la main dans Vigie n'est
+  pas renvoyée à GLPI, sauf réouverture ;
+- GLPI clôturant de lui-même un ticket résolu n'est pas pris pour un geste de
+  l'équipe (sinon un ticket que Vigie vient de rouvrir repasserait en
+  « deployed ») ;
+- type « demande » par défaut, urgence tirée du risque maximal (≥ 9 : très
+  haute, ≥ 7 : haute, ≥ 4 : moyenne, sinon basse) ;
+- 50 hôtes au plus dans la description, 50 tickets par exécution ;
+- un ticket supprimé dans GLPI n'est plus suivi ni recréé.
 - [x] Webhooks sortants *(01/10/2026 : migration 0021, écran Administration.
       Événements `scan.completed` / `scan.failed`, `ticket.created`,
       `ticket.status_changed` (y compris résolution et réouverture par les scans),

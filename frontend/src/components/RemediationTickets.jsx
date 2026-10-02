@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { ChevronDown, ChevronUp, Download, ExternalLink } from 'lucide-react';
+import { ChevronDown, ChevronUp, Download, ExternalLink, TriangleAlert } from 'lucide-react';
 import { remediationService } from '../services';
 import { useApiQuery } from '../hooks/useApiQuery';
 import { useAuth } from '../auth/AuthContext';
@@ -34,6 +34,37 @@ const SETTABLE = ['open', 'in_progress', 'deployed', 'cancelled'];
 const UNASSIGNED = '__unassigned__';
 const PAGE_SIZE = 50;
 
+// external_system values a ticketing connector writes: the link is its own.
+const CONNECTOR_LABELS = { glpi: 'GLPI' };
+
+function externalLabel(ticket) {
+  const connector = CONNECTOR_LABELS[ticket.external_system];
+  return connector ? `${connector} #${ticket.external_ref}` : ticket.external_ref;
+}
+
+function ConnectorLink({ ticket }) {
+  return (
+    <div style={{ ...muted, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+      <span>
+        {ticket.external_url ? (
+          <a href={ticket.external_url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>
+            <ExternalLink size={11} /> {externalLabel(ticket)}
+          </a>
+        ) : (
+          externalLabel(ticket)
+        )}
+        {ticket.external_state && ` (${ticket.external_state.replace('_', ' ')} there)`}
+      </span>
+      <span>The team moves it in {CONNECTOR_LABELS[ticket.external_system]}; Vigie solves or reopens it there.</span>
+      {ticket.external_error && (
+        <span className="error-message" style={{ fontSize: '0.8rem' }}>
+          <TriangleAlert size={12} /> Last sync failed: {ticket.external_error}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function errorText(err) {
   return err.response?.data?.detail || err.message || 'The change was refused';
 }
@@ -54,6 +85,7 @@ function TicketDetail({ ticketId }) {
 
   const { ticket, action, hosts, history } = data;
   const active = ['open', 'in_progress', 'deployed'].includes(ticket.status);
+  const linkedByConnector = Boolean(CONNECTOR_LABELS[ticket.external_system]);
   const form = draft || {
     status: ticket.status,
     note: '',
@@ -72,8 +104,10 @@ function TicketDetail({ ticketId }) {
       await remediationService.updateTicket(ticket.id, {
         status: form.status !== ticket.status ? form.status : undefined,
         note: form.note || undefined,
-        external_ref: form.external_ref,
-        external_url: form.external_url,
+        // A connector's link is its own: not sent, so never edited.
+        ...(linkedByConnector
+          ? {}
+          : { external_ref: form.external_ref, external_url: form.external_url }),
       });
       setDraft(null);
       // This ticket, the ticket list and the fixes it counts in.
@@ -132,22 +166,28 @@ function TicketDetail({ ticketId }) {
             aria-label="Ticket note"
             style={{ ...controlStyle, fontSize: '0.8rem', resize: 'vertical' }}
           />
-          <input
-            type="text"
-            placeholder="External reference (e.g. SEC-1234)"
-            value={form.external_ref}
-            onChange={(e) => set({ external_ref: e.target.value })}
-            aria-label="External reference"
-            style={{ ...controlStyle, fontSize: '0.8rem' }}
-          />
-          <input
-            type="url"
-            placeholder="External link (https://...)"
-            value={form.external_url}
-            onChange={(e) => set({ external_url: e.target.value })}
-            aria-label="External link"
-            style={{ ...controlStyle, fontSize: '0.8rem' }}
-          />
+          {linkedByConnector ? (
+            <ConnectorLink ticket={ticket} />
+          ) : (
+            <>
+              <input
+                type="text"
+                placeholder="External reference (e.g. SEC-1234)"
+                value={form.external_ref}
+                onChange={(e) => set({ external_ref: e.target.value })}
+                aria-label="External reference"
+                style={{ ...controlStyle, fontSize: '0.8rem' }}
+              />
+              <input
+                type="url"
+                placeholder="External link (https://...)"
+                value={form.external_url}
+                onChange={(e) => set({ external_url: e.target.value })}
+                aria-label="External link"
+                style={{ ...controlStyle, fontSize: '0.8rem' }}
+              />
+            </>
+          )}
           <div style={{ display: 'flex', gap: '0.5rem' }}>
             <button
               type="button"
@@ -293,10 +333,15 @@ export default function RemediationTickets() {
                             <div style={muted}>
                               {ticket.external_url ? (
                                 <a href={ticket.external_url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>
-                                  <ExternalLink size={11} /> {ticket.external_ref}
+                                  <ExternalLink size={11} /> {externalLabel(ticket)}
                                 </a>
                               ) : (
-                                ticket.external_ref
+                                externalLabel(ticket)
+                              )}
+                              {ticket.external_error && (
+                                <span title={`Last sync failed: ${ticket.external_error}`} style={{ color: 'var(--critical)', marginLeft: '0.35rem' }}>
+                                  <TriangleAlert size={11} aria-label="Sync error" />
+                                </span>
                               )}
                             </div>
                           )}

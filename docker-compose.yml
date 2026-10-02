@@ -52,6 +52,15 @@ x-app-settings: &app-settings
   CROWDSTRIKE_BASE_URL: ${CROWDSTRIKE_BASE_URL:-}
   CROWDSTRIKE_SYNC_ENABLED: ${CROWDSTRIKE_SYNC_ENABLED:-}
   CROWDSTRIKE_SYNC_INTERVAL_MINUTES: ${CROWDSTRIKE_SYNC_INTERVAL_MINUTES:-}
+  # GLPI connector. Its tokens are secrets: worker only, below.
+  GLPI_SYNC_ENABLED: ${GLPI_SYNC_ENABLED:-}
+  GLPI_URL: ${GLPI_URL:-}
+  GLPI_SYNC_INTERVAL_MINUTES: ${GLPI_SYNC_INTERVAL_MINUTES:-}
+  GLPI_TICKET_TYPE: ${GLPI_TICKET_TYPE:-}
+  GLPI_ENTITY_ID: ${GLPI_ENTITY_ID:-}
+  GLPI_CATEGORY_ID: ${GLPI_CATEGORY_ID:-}
+  GLPI_TEAM_GROUPS: ${GLPI_TEAM_GROUPS:-}
+  GLPI_EXPORT_UNMAPPED_TEAMS: ${GLPI_EXPORT_UNMAPPED_TEAMS:-}
   # Outbound access for the KEV / EPSS / CrowdStrike clients and the webhooks
   # (requests' conventions; a proxied webhook is not pinned to its address).
   HTTPS_PROXY: ${HTTPS_PROXY:-}
@@ -180,6 +189,10 @@ services:
       # Credentials only where the Spotlight client runs.
       CROWDSTRIKE_CLIENT_ID: ${CROWDSTRIKE_CLIENT_ID:-}
       CROWDSTRIKE_CLIENT_SECRET: ${CROWDSTRIKE_CLIENT_SECRET:-}
+      # And where the GLPI sync runs. Files in production
+      # (docker-compose.glpi.yml).
+      GLPI_USER_TOKEN: ${GLPI_USER_TOKEN:-}
+      GLPI_APP_TOKEN: ${GLPI_APP_TOKEN:-}
     depends_on:
       db:
         condition: service_healthy

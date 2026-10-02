@@ -56,12 +56,12 @@ function withRole(role, ui) {
   )
 }
 
-function ticketsListed(items = [TICKET]) {
+function ticketsListed(items = [TICKET], detail = TICKET) {
   remediationService.listTeams.mockResolvedValue({ data: { teams: ['Servers', 'Workplace'] } })
   remediationService.listTickets.mockResolvedValue({ data: { total: items.length, items } })
   remediationService.getTicket.mockResolvedValue({
     data: {
-      ticket: TICKET,
+      ticket: detail,
       action: { ...ACTION, solution: 'Apply it' },
       hosts: [],
       history: [{ username: 'admin', old_status: null, new_status: 'open', note: null, created_at: null }],
@@ -184,6 +184,37 @@ describe('RemediationTickets', () => {
     // One invalidation of ["remediation"]: the ticket and the list reload.
     await waitFor(() => expect(remediationService.listTickets.mock.calls.length).toBeGreaterThan(listed))
     await waitFor(() => expect(remediationService.getTicket.mock.calls.length).toBeGreaterThan(opened))
+  })
+
+  it('shows a GLPI link read-only and never sends it back', async () => {
+    const linked = {
+      ...TICKET,
+      external_system: 'glpi',
+      external_ref: '42',
+      external_url: 'https://glpi.example.com/front/ticket.form.php?id=42',
+      external_state: 'in_progress',
+      external_error: 'GLPI PUT Ticket/42: HTTP 403',
+    }
+    ticketsListed([linked], linked)
+    remediationService.updateTicket.mockResolvedValue({ data: linked })
+    const user = userEvent.setup()
+    render(withRole('remediator', <RemediationTickets />))
+
+    expect(await screen.findByRole('link', { name: /GLPI #42/ })).toHaveAttribute('href', linked.external_url)
+    expect(screen.getByLabelText('Sync error')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /open ticket/i }))
+
+    expect(await screen.findByText(/Last sync failed: GLPI PUT Ticket\/42: HTTP 403/)).toBeInTheDocument()
+    expect(screen.getByText(/in progress there/)).toBeInTheDocument()
+    expect(screen.queryByLabelText('External reference')).toBeNull()
+    await user.selectOptions(screen.getByLabelText('Ticket status'), 'deployed')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(remediationService.updateTicket).toHaveBeenCalled())
+    const sent = remediationService.updateTicket.mock.calls[0][1]
+    expect(sent).toEqual(expect.objectContaining({ status: 'deployed' }))
+    expect(sent).not.toHaveProperty('external_ref')
+    expect(sent).not.toHaveProperty('external_url')
   })
 
   it('does not offer a remediator to cancel', async () => {
