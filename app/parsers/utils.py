@@ -101,6 +101,7 @@ class ParsedFinding:
     operating_system: str | None = None
     description: str | None = None
     remediations: list[ParsedRemediation] | None = None
+    tags: list[str] | None = None
 
     def __post_init__(self) -> None:
         if not self.ip_address:
@@ -115,6 +116,8 @@ class ParsedFinding:
             self.severity = str(self.severity.value)
         else:
             self.severity = str(self.severity) if self.severity is not None else ""
+        if self.tags is not None:
+            self.tags = [str(t).strip() for t in self.tags if str(t).strip()]
         if self.remediations is not None:
             normalized: list[ParsedRemediation] = []
             for r in self.remediations:
@@ -140,6 +143,8 @@ class ParsedFinding:
     def __getitem__(self, key: str) -> Any:
         if key == "remediations" and self.remediations is None:
             raise KeyError(key)
+        if key == "tags" and self.tags is None:
+            raise KeyError(key)
         try:
             return getattr(self, key)
         except AttributeError:
@@ -150,10 +155,14 @@ class ParsedFinding:
             return False
         if key == "remediations":
             return self.remediations is not None
+        if key == "tags":
+            return self.tags is not None
         return hasattr(self, key)
 
     def get(self, key: str, default: Any = None) -> Any:
         if key == "remediations" and self.remediations is None:
+            return default
+        if key == "tags" and self.tags is None:
             return default
         return getattr(self, key, default)
 
@@ -170,6 +179,7 @@ class ParsedFinding:
             operating_system=data.get("operating_system"),
             description=data.get("description"),
             remediations=data.get("remediations"),
+            tags=data.get("tags"),
         )
 
     def as_dict(self) -> dict[str, Any]:
@@ -183,6 +193,8 @@ class ParsedFinding:
             "cvss_score": self.cvss_score,
             "severity": self.severity,
         }
+        if self.tags is not None:
+            data["tags"] = list(self.tags)
         if self.remediations is not None:
             data["remediations"] = [
                 r.as_dict() if isinstance(r, ParsedRemediation) else r

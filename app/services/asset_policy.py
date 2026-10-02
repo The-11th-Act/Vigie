@@ -1,13 +1,21 @@
-"""Policy applied to assets discovered by a scan.
+"""Policy applied to assets discovered by a scan or declared by an operator.
 
 Every asset used to be created as ``Medium``, which made the risk score of a
 freshly discovered production host indistinguishable from a lab box until
-somebody curated it by hand. Mapping subnets to a business criticality lets the
-first scan already place findings in roughly the right order.
+somebody curated it by hand.
+
+Dynamic rules assign business criticality, owner team, environment and
+Internet exposure based on a hierarchy:
+1. Tags: explicit labels on the asset (highest precedence).
+2. Hostname regex patterns: naming conventions (e.g. ^prd-.*, .*\\.corp).
+3. Subnet CIDR ranges: network segment location (most specific CIDR wins).
+4. Defaults (Medium criticality, unassigned team/env, internal exposure).
 """
 
 import ipaddress
 import logging
+import re
+from typing import Any
 
 from app.core.config import settings
 from app.models.asset import Criticality
@@ -17,36 +25,152 @@ logger = logging.getLogger(__name__)
 DEFAULT_CRITICALITY = Criticality.medium
 
 
-def criticality_for(ip_address: str | None) -> Criticality:
-    """Business criticality for a newly discovered address.
+def criticality_for(
+    ip_address: str | None,
+    hostname: str | None = None,
+    tags: list[str] | None = None,
+) -> Criticality:
+    """Business criticality for an asset.
 
-    The most specific matching rule wins, so a broad ``10.0.0.0/8`` default can
-    be overridden by a narrow ``10.0.5.0/24`` for the payment segment. Anything
-    unmatched — or unparseable — falls back to Medium rather than guessing.
+    Precedence:
+    1. Tag rules (CRITICALITY_TAG_RULES)
+    2. Hostname regex rules (CRITICALITY_HOSTNAME_RULES)
+    3. Subnet CIDR rules (CRITICALITY_RULES, most specific prefix wins)
+    4. Default: Medium
     """
+    level = _match_tag(settings.CRITICALITY_TAG_RULES, tags, "CRITICALITY_TAG_RULES")
+    if level is not None:
+        return _as_criticality(level, "CRITICALITY_TAG_RULES")
+
+    level = _match_hostname(
+        settings.CRITICALITY_HOSTNAME_RULES, hostname, "CRITICALITY_HOSTNAME_RULES"
+    )
+    if level is not None:
+        return _as_criticality(level, "CRITICALITY_HOSTNAME_RULES")
+
     level = _most_specific(settings.CRITICALITY_RULES, ip_address, "CRITICALITY_RULES")
-    return _as_criticality(level)
+    return _as_criticality(level, "CRITICALITY_RULES")
 
 
-def owner_team_for(ip_address: str | None) -> str | None:
-    """The team in charge of an address, from OWNER_TEAM_RULES; None if unmatched.
+def owner_team_for(
+    ip_address: str | None,
+    hostname: str | None = None,
+    tags: list[str] | None = None,
+) -> str | None:
+    """The team in charge of an asset; None if unmatched.
 
-    It decides which team a remediation ticket goes to, so an address no rule
-    covers stays unassigned rather than landing on a guessed team.
+    Precedence:
+    1. Tag rules (OWNER_TEAM_TAG_RULES)
+    2. Hostname regex rules (OWNER_TEAM_HOSTNAME_RULES)
+    3. Subnet CIDR rules (OWNER_TEAM_RULES, most specific prefix wins)
     """
+    team = _match_tag(settings.OWNER_TEAM_TAG_RULES, tags, "OWNER_TEAM_TAG_RULES")
+    if team is not None:
+        team_str = str(team).strip()
+        return team_str[:128] or None
+
+    team = _match_hostname(
+        settings.OWNER_TEAM_HOSTNAME_RULES, hostname, "OWNER_TEAM_HOSTNAME_RULES"
+    )
+    if team is not None:
+        team_str = str(team).strip()
+        return team_str[:128] or None
+
     team = _most_specific(settings.OWNER_TEAM_RULES, ip_address, "OWNER_TEAM_RULES")
-    team = str(team).strip() if team else ""
-    return team[:128] or None
+    team_str = str(team).strip() if team else ""
+    return team_str[:128] or None
 
 
-def environment_for(ip_address: str | None) -> str | None:
-    """The environment of an address, from ENVIRONMENT_RULES; None if unmatched."""
+def environment_for(
+    ip_address: str | None,
+    hostname: str | None = None,
+    tags: list[str] | None = None,
+) -> str | None:
+    """The environment of an asset (production, staging...); None if unmatched.
+
+    Precedence:
+    1. Tag rules (ENVIRONMENT_TAG_RULES)
+    2. Hostname regex rules (ENVIRONMENT_HOSTNAME_RULES)
+    3. Subnet CIDR rules (ENVIRONMENT_RULES, most specific prefix wins)
+    """
+    value = _match_tag(settings.ENVIRONMENT_TAG_RULES, tags, "ENVIRONMENT_TAG_RULES")
+    if value is not None:
+        val_str = str(value).strip()
+        return val_str[:32] or None
+
+    value = _match_hostname(
+        settings.ENVIRONMENT_HOSTNAME_RULES, hostname, "ENVIRONMENT_HOSTNAME_RULES"
+    )
+    if value is not None:
+        val_str = str(value).strip()
+        return val_str[:32] or None
+
     value = _most_specific(settings.ENVIRONMENT_RULES, ip_address, "ENVIRONMENT_RULES")
-    value = str(value).strip() if value else ""
-    return value[:32] or None
+    val_str = str(value).strip() if value else ""
+    return val_str[:32] or None
 
 
-def _most_specific(rules: dict | None, ip_address: str | None, name: str):
+def exposure_for(
+    ip_address: str | None,
+    hostname: str | None = None,
+    tags: list[str] | None = None,
+) -> bool:
+    """Whether an asset is exposed to the Internet.
+
+    Precedence:
+    1. Tag match (INTERNET_FACING_TAGS)
+    2. Hostname regex match (INTERNET_FACING_HOSTNAME_PATTERNS)
+    3. Subnet CIDR match (INTERNET_FACING_SUBNETS)
+    """
+    if tags and settings.INTERNET_FACING_TAGS:
+        normalized_tags = {str(t).strip().lower() for t in tags if t}
+        for exposed_tag in settings.INTERNET_FACING_TAGS:
+            if str(exposed_tag).strip().lower() in normalized_tags:
+                return True
+
+    if hostname and settings.INTERNET_FACING_HOSTNAME_PATTERNS:
+        hostname_clean = str(hostname).strip()
+        for pattern in settings.INTERNET_FACING_HOSTNAME_PATTERNS:
+            try:
+                if re.search(pattern, hostname_clean, re.IGNORECASE):
+                    return True
+            except re.error:
+                logger.warning(
+                    "Ignoring malformed regex in INTERNET_FACING_HOSTNAME_PATTERNS: %r",
+                    pattern,
+                )
+                continue
+
+    return _exposure_by_subnet(ip_address)
+
+
+def _match_tag(rules: dict | None, tags: list[str] | None, name: str) -> Any | None:
+    """The value of the first rule matching any of the asset's tags."""
+    if not rules or not tags:
+        return None
+    normalized_tags = {str(t).strip().lower() for t in tags if t}
+    for tag_key, value in rules.items():
+        if str(tag_key).strip().lower() in normalized_tags:
+            return value
+    return None
+
+
+def _match_hostname(rules: dict | None, hostname: str | None, name: str) -> Any | None:
+    """The value of the first rule whose regex pattern matches the hostname."""
+    if not rules or not hostname:
+        return None
+    hostname_clean = str(hostname).strip()
+    for pattern, value in rules.items():
+        try:
+            if re.search(pattern, hostname_clean, re.IGNORECASE):
+                return value
+        except re.error:
+            logger.warning("Ignoring malformed regex pattern in %s: %r", name, pattern)
+            continue
+    return None
+
+
+def _most_specific(rules: dict | None, ip_address: str | None, name: str) -> Any | None:
     """The value of the most specific rule whose subnet holds the address.
 
     A broad ``10.0.0.0/8`` default can so be overridden by a narrow
@@ -80,12 +204,7 @@ def _most_specific(rules: dict | None, ip_address: str | None, name: str):
     return best_value
 
 
-def exposure_for(ip_address: str | None) -> bool:
-    """Whether a newly discovered address sits in an Internet-facing subnet.
-
-    Unset or unparseable means internal: marking a host exposed raises the risk
-    of all its findings, so it is never guessed.
-    """
+def _exposure_by_subnet(ip_address: str | None) -> bool:
     subnets = settings.INTERNET_FACING_SUBNETS or []
     if not subnets or not ip_address:
         return False
@@ -106,11 +225,13 @@ def exposure_for(ip_address: str | None) -> bool:
     return False
 
 
-def _as_criticality(level: str | None) -> Criticality:
+def _as_criticality(
+    level: str | None, source_name: str = "CRITICALITY_RULES"
+) -> Criticality:
     if not level:
         return DEFAULT_CRITICALITY
     try:
         return Criticality(str(level).strip().capitalize())
     except ValueError:
-        logger.warning("Ignoring unknown criticality in CRITICALITY_RULES: %r", level)
+        logger.warning("Ignoring unknown criticality in %s: %r", source_name, level)
         return DEFAULT_CRITICALITY

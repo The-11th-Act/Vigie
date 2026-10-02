@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -13,6 +14,21 @@ def _asset_type(v: str | None) -> str | None:
     return v
 
 
+def _clean_tags(v: Any) -> list[str]:
+    if v is None:
+        return []
+    if isinstance(v, str):
+        v = [t.strip() for t in v.split(",") if t.strip()]
+    if not isinstance(v, list):
+        return []
+    cleaned: list[str] = []
+    for t in v:
+        tag_str = str(t).strip()
+        if tag_str and tag_str not in cleaned:
+            cleaned.append(tag_str[:64])
+    return cleaned
+
+
 class AssetBase(BaseModel):
     hostname: str | None = None
     ip_address: str
@@ -22,6 +38,7 @@ class AssetBase(BaseModel):
     owner_team: str | None = Field(None, max_length=128)
     asset_type: str | None = None
     environment: str | None = Field(None, max_length=32)
+    tags: list[str] = Field(default_factory=list)
 
     @field_validator("owner_team", "environment")
     @classmethod
@@ -32,6 +49,11 @@ class AssetBase(BaseModel):
     @classmethod
     def known_type(cls, v: str | None) -> str | None:
         return _asset_type(v)
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def normalize_tags(cls, v: Any) -> list[str]:
+        return _clean_tags(v)
 
 
 class AssetCreate(AssetBase):
@@ -47,6 +69,7 @@ class AssetUpdate(BaseModel):
     owner_team: str | None = Field(None, max_length=128)
     asset_type: str | None = None
     environment: str | None = Field(None, max_length=32)
+    tags: list[str] | None = None
 
     @field_validator("owner_team", "environment")
     @classmethod
@@ -57,6 +80,13 @@ class AssetUpdate(BaseModel):
     @classmethod
     def known_type(cls, v: str | None) -> str | None:
         return _asset_type(v)
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def normalize_update_tags(cls, v: Any) -> list[str] | None:
+        if v is None:
+            return None
+        return _clean_tags(v)
 
     # Both may be left out of a partial update, but not sent as null: the
     # columns are NOT NULL, and an explicit null used to surface as a 500.

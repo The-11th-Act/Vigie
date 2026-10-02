@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import func
+from sqlalchemy import String, cast, func
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.scope import Scope
@@ -203,6 +203,9 @@ def _asset_rows(db: Session, filters: dict, limit: int | None, scope: Scope):
         query = query.filter(Asset.asset_type == filters["asset_type"])
     if filters.get("environment"):
         query = query.filter(Asset.environment == filters["environment"])
+    if filters.get("tag"):
+        tag_json = json.dumps(str(filters["tag"]).strip())
+        query = query.filter(cast(Asset.tags, String).contains(tag_json))
     query = query.order_by(Asset.id)
     if limit is not None:
         query = query.limit(limit)
@@ -227,6 +230,7 @@ ASSETS = Dataset(
         Column("owner_team", "Owner team", lambda r: r[0].owner_team),
         Column("asset_type", "Asset type", lambda r: r[0].asset_type),
         Column("environment", "Environment", lambda r: r[0].environment),
+        Column("tags", "Tags", lambda r: ", ".join(r[0].tags or [])),
         Column("open_findings", "Open findings", lambda r: r[1]),
         Column("max_risk", "Highest open risk", lambda r: r[2]),
         Column("created_at", "Created", lambda r: r[0].created_at),
@@ -237,6 +241,7 @@ ASSETS = Dataset(
         Filter("internet_facing_only", "Internet-facing only", "bool"),
         Filter("asset_type", "Asset type", "enum", tuple(ASSET_TYPES)),
         Filter("environment", "Environment", "str"),
+        Filter("tag", "Tag", "str"),
     ),
     rows=_asset_rows,
 )

@@ -29,6 +29,7 @@ const EMPTY_FORM = {
   owner_team: '',
   asset_type: '',
   environment: '',
+  tags: '',
 };
 
 const inputStyle = {
@@ -99,6 +100,7 @@ export default function AssetsList() {
       owner_team: asset.owner_team || '',
       asset_type: asset.asset_type || '',
       environment: asset.environment || '',
+      tags: (asset.tags || []).join(', '),
     });
     setFormError(null);
   };
@@ -112,6 +114,9 @@ export default function AssetsList() {
     e.preventDefault();
     setSaving(true);
     setFormError(null);
+    const parsedTags = form.tags
+      ? form.tags.split(',').map((t) => t.trim()).filter(Boolean)
+      : [];
     try {
       if (editing === 'new') {
         await assetService.create({
@@ -121,6 +126,7 @@ export default function AssetsList() {
           // Left empty, the API infers the type from the OS.
           asset_type: form.asset_type || null,
           environment: form.environment || null,
+          tags: parsedTags,
         });
       } else {
         // The address is the asset's identity for ingestion, so editing only
@@ -134,6 +140,7 @@ export default function AssetsList() {
           owner_team: form.owner_team || null,
           asset_type: form.asset_type || null,
           environment: form.environment || null,
+          tags: parsedTags,
         });
       }
       closeForm();
@@ -255,6 +262,19 @@ export default function AssetsList() {
                 style={inputStyle}
               />
             </label>
+            <label
+              title="Comma-separated labels (pci-dss, dmz, web...) used by dynamic policy rules"
+              style={{display: 'flex', flexDirection: 'column', gap: '0.35rem', fontSize: '0.8rem', color: 'var(--text-muted)'}}
+            >
+              Tags
+              <input
+                type="text"
+                placeholder="pci-dss, dmz, web..."
+                value={form.tags}
+                onChange={(e) => setForm({...form, tags: e.target.value})}
+                style={inputStyle}
+              />
+            </label>
             <label style={{display: 'flex', flexDirection: 'column', gap: '0.35rem', fontSize: '0.8rem', color: 'var(--text-muted)'}}>
               Business criticality
               <select
@@ -320,7 +340,18 @@ export default function AssetsList() {
                     <tr key={asset.id}>
                       <td>{asset.id}</td>
                       <td style={{fontFamily: 'monospace'}}>{asset.ip_address}</td>
-                      <td>{asset.hostname || '-'}</td>
+                      <td>
+                        <div>{asset.hostname || '-'}</div>
+                        {asset.tags && asset.tags.length > 0 && (
+                          <div style={{display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginTop: '0.25rem'}}>
+                            {asset.tags.map((t) => (
+                              <span key={t} className="badge badge-low" style={{fontSize: '0.7rem', padding: '0.1rem 0.4rem'}}>
+                                {t}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </td>
                       <td>{asset.operating_system || '-'}</td>
                       <td style={asset.asset_type ? undefined : {color: 'var(--text-muted)'}}>
                         {ASSET_TYPES[asset.asset_type] || asset.asset_type || 'Unknown'}

@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import Enum
 
-from sqlalchemy import Boolean, DateTime, Index, String
+from sqlalchemy import JSON, Boolean, DateTime, Index, String
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import false, func
@@ -46,6 +46,10 @@ class Asset(Base):
     environment: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     # Team in charge of fixing this host: remediation tickets are split by it.
     owner_team: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    # Free-form labels (pci-dss, dmz, web...), assigned by hand or by scan.
+    tags: Mapped[list] = mapped_column(
+        JSON, default=list, server_default="[]", nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

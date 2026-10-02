@@ -175,3 +175,84 @@ class TestInternetExposure:
 
         db_session.refresh(link)
         assert link.risk_score == 6.0  # 5.0 x 1.2
+
+
+class TestAssetTags:
+    def test_create_asset_with_tags(self, client):
+        response = client.post(
+            "/api/v1/assets/",
+            json={
+                "ip_address": "10.40.0.1",
+                "hostname": "tagged-srv",
+                "tags": ["pci-dss", "web", "dmz"],
+            },
+        )
+        assert response.status_code == 201
+        data = response.json()
+        assert data["tags"] == ["pci-dss", "web", "dmz"]
+
+    def test_update_asset_tags(self, client, db_session):
+        asset = Asset(ip_address="10.40.0.2", tags=["old-tag"])
+        db_session.add(asset)
+        db_session.commit()
+
+        response = client.put(
+            f"/api/v1/assets/{asset.id}",
+            json={"tags": ["new-tag", "production"]},
+        )
+        assert response.status_code == 200
+        assert response.json()["tags"] == ["new-tag", "production"]
+
+    def test_filter_assets_by_tag(self, client, db_session):
+        db_session.add_all(
+            [
+                Asset(ip_address="10.40.0.10", tags=["prod", "web"]),
+                Asset(ip_address="10.40.0.11", tags=["prod", "db"]),
+                Asset(ip_address="10.40.0.12", tags=["staging"]),
+            ]
+        )
+        db_session.commit()
+
+        res_prod = client.get("/api/v1/assets/", params={"tag": "prod"}).json()
+        assert res_prod["total"] == 2
+        ips = {item["ip_address"] for item in res_prod["items"]}
+        assert ips == {"10.40.0.10", "10.40.0.11"}
+
+        res_db = client.get("/api/v1/assets/", params={"tag": "db"}).json()
+        assert res_db["total"] == 1
+        assert res_db["items"][0]["ip_address"] == "10.40.0.11"
+
+    def test_dynamic_rules_evaluated_with_tags_and_hostname_on_create(
+        self, client, monkeypatch
+    ):
+        from app.core.config import settings
+
+        monkeypatch.setattr(
+            settings,
+            "CRITICALITY_TAG_RULES",
+            {"pci-dss": "Critical"},
+        )
+        monkeypatch.setattr(
+            settings,
+            "OWNER_TEAM_HOSTNAME_RULES",
+            {"^infra-.*": "Infrastructure"},
+        )
+        monkeypatch.setattr(
+            settings,
+            "INTERNET_FACING_TAGS",
+            ["dmz"],
+        )
+
+        response = client.post(
+            "/api/v1/assets/",
+            json={
+                "ip_address": "10.40.0.20",
+                "hostname": "infra-switch-01",
+                "tags": ["pci-dss", "dmz"],
+            },
+        )
+        assert response.status_code == 201
+        data = response.json()
+        assert data["business_criticality"] == "Critical"
+        assert data["owner_team"] == "Infrastructure"
+        assert data["internet_facing"] is True

@@ -1,5 +1,7 @@
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import or_
+from sqlalchemy import String, cast, or_
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_in_scope_or_404, get_or_404
@@ -15,7 +17,12 @@ from app.schemas.asset import (
     AssetUpdate,
     PaginatedAssetResponse,
 )
-from app.services.asset_policy import environment_for, owner_team_for
+from app.services.asset_policy import (
+    criticality_for,
+    environment_for,
+    exposure_for,
+    owner_team_for,
+)
 from app.services.categorization import asset_type_for
 from app.services.rescoring import rescore_open_findings
 from app.services.tickets import sync_tickets
@@ -34,6 +41,7 @@ def get_assets(
     owner_team: str | None = Query(None, max_length=128),
     asset_type: str | None = Query(None, max_length=16),
     environment: str | None = Query(None, max_length=32),
+    tag: str | None = Query(None, max_length=64),
     db: Session = Depends(get_db),
     scope: Scope = Depends(current_scope),
 ):
@@ -52,6 +60,9 @@ def get_assets(
         query = query.filter(Asset.asset_type == asset_type)
     if environment:
         query = query.filter(Asset.environment == environment)
+    if tag:
+        tag_json = json.dumps(tag.strip())
+        query = query.filter(cast(Asset.tags, String).contains(tag_json))
 
     total = query.count()
     items = query.order_by(Asset.id.desc()).offset(skip).limit(limit).all()
@@ -86,12 +97,24 @@ def create_asset(
         )
 
     db_asset = Asset(**asset_in.model_dump())
+    if "business_criticality" not in asset_in.model_fields_set:
+        db_asset.business_criticality = criticality_for(
+            db_asset.ip_address, db_asset.hostname, db_asset.tags
+        )
+    if "internet_facing" not in asset_in.model_fields_set:
+        db_asset.internet_facing = exposure_for(
+            db_asset.ip_address, db_asset.hostname, db_asset.tags
+        )
     if db_asset.owner_team is None:
-        db_asset.owner_team = owner_team_for(db_asset.ip_address)
+        db_asset.owner_team = owner_team_for(
+            db_asset.ip_address, db_asset.hostname, db_asset.tags
+        )
     if db_asset.asset_type is None:
         db_asset.asset_type = asset_type_for(db_asset.operating_system)
     if db_asset.environment is None:
-        db_asset.environment = environment_for(db_asset.ip_address)
+        db_asset.environment = environment_for(
+            db_asset.ip_address, db_asset.hostname, db_asset.tags
+        )
     _require_team_in_scope(scope, db_asset.owner_team)
     db.add(db_asset)
     db.commit()

@@ -16,7 +16,7 @@
 >   valeurs reportées dans `.env`.
 
 État des lieux initial au 29/07/2026. Base : FastAPI + SQLAlchemy + Celery + React.
-Suite de tests à l'époque : 109 tests. Au 02/10/2026 : **1 041 tests backend + 122
+Suite de tests à l'époque : 109 tests. Au 02/10/2026 : **1 075 tests backend + 133
 tests frontend, tous verts**, plus le test de la pile de production en CI.
 
 Priorités : **P0** = bloque un usage réel · **P1** = important · **P2** = confort / dette.
@@ -669,3 +669,15 @@ modules, dépendances, hygiène du dépôt, tests ignorés (tous légitimes).
   dans un ticket, jamais lue mais sans coût).
 - À prévoir : ESLint 8 n'est plus maintenu ; passer à ESLint 9 et à la
   configuration « flat » (`eslint.config.js`) lors d'une montée de l'outillage.
+
+## Règles d'actifs dynamiques (tags et regex de hostname)
+- [x] Extension du moteur de classification d'assets (`app/services/asset_policy.py`) *(02/10/2026)* :
+      prise en compte des tags et des regex sur les noms d'hôtes pour la criticité
+      métier (`business_criticality`), l'équipe propriétaire (`owner_team`),
+      l'environnement (`environment`) et l'exposition Internet (`internet_facing`).
+      Ordre de préséance déterministe : Tags > Regex Hostname > CIDR Subnet > Défaut.
+      Ajout de la colonne `tags` sur `Asset` (migration 0024), support dans `ParsedFinding`,
+      ingestion (fusion des tags sans écrasement), filtrage par tag dans l'API (`GET /api/v1/assets/?tag=...`),
+      extractions API, et saisie/affichage des badges de tags dans l'interface frontend.
+      8 nouveaux paramètres documentés dans `.env.example` et câblés dans `docker-compose.yml`.
+

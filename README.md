@@ -442,10 +442,22 @@ where findings are triaged as remediated, risk-accepted or false-positive.
 The last two require a justification, and every transition is recorded in an
 append-only audit log (`GET /api/v1/vulnerabilities/findings/{id}/history`).
 
-New assets get their criticality from `CRITICALITY_RULES`, a subnet-to-level
-map where the most specific prefix wins, and their exposure from
-`INTERNET_FACING_SUBNETS`. Both only seed new assets: a value set by hand is
-never overwritten by a later scan.
+New assets get their criticality, owner team, environment, and Internet
+exposure from automated rules (`app/services/asset_policy.py`). Rules are evaluated
+with a strict precedence:
+1. **Tags**: first matching tag from `CRITICALITY_TAG_RULES`, `OWNER_TEAM_TAG_RULES`,
+   `ENVIRONMENT_TAG_RULES`, or `INTERNET_FACING_TAGS`.
+2. **Hostname regex**: first matching case-insensitive regex from
+   `CRITICALITY_HOSTNAME_RULES`, `OWNER_TEAM_HOSTNAME_RULES`,
+   `ENVIRONMENT_HOSTNAME_RULES`, or `INTERNET_FACING_HOSTNAME_PATTERNS`.
+3. **Subnet CIDR**: most specific matching network prefix from `CRITICALITY_RULES`,
+   `OWNER_TEAM_RULES`, `ENVIRONMENT_RULES`, or `INTERNET_FACING_SUBNETS`.
+4. **Default fallback**: default criticality (`Medium`), no team, or internal.
+
+These rules seed new assets or populate missing fields upon scan ingestion;
+a value set by hand or explicitly submitted via the API is never overwritten.
+Tags assigned to an asset are merged additively on subsequent scans.
+
 
 ### Threat intelligence (CISA KEV, FIRST EPSS)
 

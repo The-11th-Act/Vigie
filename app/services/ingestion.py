@@ -367,16 +367,18 @@ def _upsert_assets(
         if asset is None:
             asset = by_ip.get(ip)
 
+        finding_tags = list(finding.tags or [])
         if asset is None:
             asset = Asset(
                 ip_address=ip,
                 hostname=finding.hostname,
                 operating_system=finding.operating_system,
-                business_criticality=criticality_for(ip),
-                internet_facing=exposure_for(ip),
-                owner_team=owner_team_for(ip),
+                business_criticality=criticality_for(ip, finding.hostname, finding_tags),
+                internet_facing=exposure_for(ip, finding.hostname, finding_tags),
+                owner_team=owner_team_for(ip, finding.hostname, finding_tags),
                 asset_type=asset_type_for(finding.operating_system),
-                environment=environment_for(ip),
+                environment=environment_for(ip, finding.hostname, finding_tags),
+                tags=finding_tags,
             )
             db.add(asset)
             created += 1
@@ -387,13 +389,28 @@ def _upsert_assets(
                 asset.hostname = finding.hostname
             if not asset.operating_system and finding.operating_system:
                 asset.operating_system = finding.operating_system
+            if finding.tags:
+                current_tags = list(asset.tags or [])
+                existing_set = set(current_tags)
+                added = False
+                for t in finding.tags:
+                    if t not in existing_set:
+                        current_tags.append(t)
+                        existing_set.add(t)
+                        added = True
+                if added:
+                    asset.tags = current_tags
             # A team rule added later still reaches hosts nobody assigned.
             if not asset.owner_team:
-                asset.owner_team = owner_team_for(ip)
+                asset.owner_team = owner_team_for(
+                    ip, asset.hostname or finding.hostname, asset.tags
+                )
             if not asset.asset_type:
                 asset.asset_type = asset_type_for(asset.operating_system)
             if not asset.environment:
-                asset.environment = environment_for(ip)
+                asset.environment = environment_for(
+                    ip, asset.hostname or finding.hostname, asset.tags
+                )
             # Matched by name on a new address: the host moved, so follow it.
             if hostname and asset.ip_address != ip:
                 logger.info(

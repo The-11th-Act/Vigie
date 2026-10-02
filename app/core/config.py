@@ -152,22 +152,38 @@ class Settings(BaseSettings):
     # The most specific matching prefix wins. Example:
     #   {"10.0.0.0/8": "Low", "10.0.5.0/24": "Critical"}
     CRITICALITY_RULES: dict[str, str] = {}
+    # Hostname regex -> business criticality (evaluated before subnet rules).
+    CRITICALITY_HOSTNAME_RULES: dict[str, str] = {}
+    # Tag -> business criticality (evaluated before hostname rules).
+    CRITICALITY_TAG_RULES: dict[str, str] = {}
 
     # Subnets reachable from the Internet (a DMZ, public ranges). A newly
     # discovered asset in one of them starts as internet-facing; an operator's
     # later choice is never overwritten. Example: ["203.0.113.0/24", "10.99.0.0/16"]
     INTERNET_FACING_SUBNETS: list[str] = []
+    # Hostname regex patterns reachable from the Internet.
+    INTERNET_FACING_HOSTNAME_PATTERNS: list[str] = []
+    # Tags indicating the asset is reachable from the Internet.
+    INTERNET_FACING_TAGS: list[str] = []
 
     # Subnet -> team in charge of fixing what is found there, applied to
     # assets that have none. The most specific matching prefix wins; it
     # decides which team a remediation ticket goes to. Example:
     #   {"10.0.0.0/8": "Infrastructure", "10.20.0.0/16": "Workplace"}
     OWNER_TEAM_RULES: dict[str, str] = {}
+    # Hostname regex -> owner team (evaluated before subnet rules).
+    OWNER_TEAM_HOSTNAME_RULES: dict[str, str] = {}
+    # Tag -> owner team (evaluated before hostname rules).
+    OWNER_TEAM_TAG_RULES: dict[str, str] = {}
 
     # Subnet -> environment (production, staging...), applied to assets
     # that have none; the most specific prefix wins. Example:
     #   {"10.0.0.0/8": "production", "10.99.0.0/16": "staging"}
     ENVIRONMENT_RULES: dict[str, str] = {}
+    # Hostname regex -> environment (evaluated before subnet rules).
+    ENVIRONMENT_HOSTNAME_RULES: dict[str, str] = {}
+    # Tag -> environment (evaluated before hostname rules).
+    ENVIRONMENT_TAG_RULES: dict[str, str] = {}
 
     # Consecutive scans of a source in which a finding may go unseen before it
     # is closed as remediated. 0 disables automatic closure entirely.
