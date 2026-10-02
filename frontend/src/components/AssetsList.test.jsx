@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 
 import AssetsList from './AssetsList'
 import { AuthContext } from '../auth/AuthContext'
+import { ModulesContext } from '../auth/ModulesContext'
 import { assetService } from '../services'
 
 vi.mock('../services', () => ({
@@ -109,6 +110,21 @@ describe('AssetsList — owner team and roles', () => {
 
     expect(await screen.findByText('edge-01')).toBeInTheDocument()
     expect(screen.queryByTitle('Edit')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /new asset/i })).not.toBeInTheDocument()
+  })
+
+  it('offers a scoped analyst to edit its hosts, not to declare one', async () => {
+    mockAssets(ASSET)
+    render(
+      <AuthContext.Provider value={{ user: { username: 'ana', role: 'analyst' }, loading: false }}>
+        <ModulesContext.Provider value={{ modules: [], teams: ['Perimeter'], loading: false, error: null }}>
+          <AssetsList />
+        </ModulesContext.Provider>
+      </AuthContext.Provider>,
+    )
+
+    expect(await screen.findByText('edge-01')).toBeInTheDocument()
+    expect(screen.getAllByTitle('Edit').length).toBeGreaterThan(0)
     expect(screen.queryByRole('button', { name: /new asset/i })).not.toBeInTheDocument()
   })
 })

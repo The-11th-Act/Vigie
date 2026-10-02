@@ -370,9 +370,13 @@ un admin ne prend effet qu'à l'expiration. Aucun cloisonnement par périmètre.
       remédiation, les tickets, les tableaux de bord et les extractions ; objet d'une
       autre équipe en 404 ; upload de scan et édition du catalogue CVE refusés à un
       compte cloisonné. Test de balayage de toutes les routes GET du schéma OpenAPI)*
-- [ ] Limite connue : créer un asset avec l'IP d'un hôte d'une autre équipe répond
+- [x] Limite connue : créer un asset avec l'IP d'un hôte d'une autre équipe répond
       409, ce qui révèle que l'IP existe. L'éviter demanderait des doublons ; à
-      retirer du rôle analyste cloisonné si cela gêne
+      retirer du rôle analyste cloisonné si cela gêne *(02/10/2026, choix de
+      l'utilisateur : la création manuelle d'un asset est refusée à un compte
+      cloisonné (403, avant toute recherche de l'adresse), comme l'upload de
+      scan ; ses hôtes viennent des scans. Il garde la modification de ses
+      propres hôtes ; le bouton « New asset » ne lui est plus proposé)*
 
 ### D11. Un seul environnement
 - [x] Environnement de staging réutilisant la surcouche de production *(30/09/2026 :

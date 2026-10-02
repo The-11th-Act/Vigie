@@ -245,10 +245,20 @@ def test_a_host_cannot_be_moved_out_of_scope(client, db_session, estate, scoped)
     )
 
     assert response.status_code == 403
-    created = client.post(
-        "/api/v1/assets/", json={"ip_address": "10.1.1.2", "owner_team": BRAVO["team"]}
-    )
-    assert created.status_code == 403
+
+
+def test_a_scoped_user_cannot_declare_a_host(client, estate, scoped):
+    """Addresses are unique across teams: the 409 of a taken one told a scoped
+    account that another team had a host there. Declaring hosts is refused
+    to it, whatever the address, before the address is even looked up."""
+    for payload in (
+        {"ip_address": BRAVO["ip"]},  # Bravo's: was a 409
+        {"ip_address": "10.1.1.2", "owner_team": ALPHA["team"]},  # free, its team
+        {"ip_address": "10.1.1.3", "owner_team": BRAVO["team"]},
+    ):
+        response = client.post("/api/v1/assets/", json=payload)
+        assert response.status_code == 403, payload
+        assert "already exists" not in response.text
 
 
 @pytest.mark.parametrize(

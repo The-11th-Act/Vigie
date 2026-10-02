@@ -71,6 +71,13 @@ def create_asset(
     db: Session = Depends(get_db),
     scope: Scope = Depends(current_scope),
 ):
+    """Declare a host by hand; scans create the others.
+
+    Not for a scoped account: addresses are unique across the estate, so the
+    409 for one already taken would tell it that another team has a host
+    there. Its hosts come from the scans, which an unscoped account uploads.
+    """
+    scope.refuse_if_restricted("Creating an asset by hand")
     existing = db.query(Asset).filter(Asset.ip_address == asset_in.ip_address).first()
     if existing:
         raise HTTPException(

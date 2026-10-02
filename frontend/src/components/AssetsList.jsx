@@ -3,6 +3,7 @@ import { assetService } from '../services';
 import { useApiQuery } from '../hooks/useApiQuery';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { useAuth } from '../auth/AuthContext';
+import { useModules } from '../auth/ModulesContext';
 import { Plus, Pencil, Trash2 } from 'lucide-react';
 import Pagination from './Pagination';
 import SearchInput from './SearchInput';
@@ -57,6 +58,10 @@ export default function AssetsList() {
   const isAdmin = role === 'admin';
   // Criticality and exposure weigh on every score: a remediator reads them.
   const canEdit = role !== 'remediator';
+  // A scoped account gets its hosts from the scans: declaring one by hand
+  // would tell it whether an address belongs to another team.
+  const { teams } = useModules();
+  const canCreate = canEdit && !teams;
 
   const handleSearchChange = (value) => {
     setSearch(value);
@@ -162,7 +167,7 @@ export default function AssetsList() {
           placeholder="Search by IP or hostname..."
           style={{flex: 1, maxWidth: 400}}
         />
-        {canEdit && (
+        {canCreate && (
           <button className="button" onClick={openCreate}>
             <Plus size={16} />
             New asset

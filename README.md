@@ -241,7 +241,10 @@ it did not exist. The sidebar names the scope.
 - Actions that reach every team are refused to a scoped account: uploading a
   scan (its ingestion creates hosts and closes findings wherever it covered)
   and editing the CVE catalogue (a score moves every team's risk).
-- A scoped account cannot create a host for another team or hand one over.
+- A scoped account cannot hand a host over to another team, nor declare a
+  host by hand: addresses are unique across the estate, so the conflict on a
+  taken one would tell it that another team has a host there. Its hosts
+  come from the scans.
 - `tests/api/test_scopes.py` calls every GET route of the OpenAPI schema as a
   user scoped to one team, with another team's ids, and fails if any answer
   shows a trace of the other team: a new route cannot forget the scope.
