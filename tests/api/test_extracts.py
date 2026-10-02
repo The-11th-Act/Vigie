@@ -379,3 +379,24 @@ class TestTokens:
         stored = db_session.get(ApiToken, created["id"])
         assert created["token"] not in (stored.token_hash, stored.prefix)
         assert len(stored.token_hash) == 64
+
+
+class TestAssetTagFilter:
+    def test_the_extract_filters_tags_like_the_screen(self, client, db_session):
+        db_session.add_all(
+            [
+                Asset(ip_address="10.50.0.1", tags=["pci_dss"]),
+                Asset(ip_address="10.50.0.2", tags=["pciXdss"]),
+            ]
+        )
+        db_session.commit()
+
+        response = client.get(
+            "/api/v1/extracts/assets",
+            params={"format": "json", "columns": "ip_address", "tag": "PCI_DSS"},
+        )
+
+        assert response.status_code == 200, response.text
+        assert [row["ip_address"] for row in json.loads(response.content)] == [
+            "10.50.0.1"
+        ]

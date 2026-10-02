@@ -13,12 +13,15 @@ Internet exposure based on a hierarchy:
 """
 
 import ipaddress
+import json
 import logging
 import re
 from typing import Any
 
+from sqlalchemy import String, cast
+
 from app.core.config import settings
-from app.models.asset import Criticality
+from app.models.asset import Asset, Criticality
 
 logger = logging.getLogger(__name__)
 
@@ -142,6 +145,17 @@ def exposure_for(
                 continue
 
     return _exposure_by_subnet(ip_address)
+
+
+def has_tag(tag: str):
+    """SQL condition: the asset carries ``tag``, whatever its case.
+
+    The tags are a JSON list, read as text: the quotes around the tag make it
+    match a whole tag ("web", not "webapp"). Case is ignored as the rules
+    ignore it, and the same on SQLite and PostgreSQL, whose LIKE differ there;
+    % and _ in a tag are escaped, so "pci_dss" does not match "pciXdss".
+    """
+    return cast(Asset.tags, String).icontains(json.dumps(tag.strip()), autoescape=True)
 
 
 def _match_tag(rules: dict | None, tags: list[str] | None, name: str) -> Any | None:

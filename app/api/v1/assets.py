@@ -1,7 +1,5 @@
-import json
-
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import String, cast, or_
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_in_scope_or_404, get_or_404
@@ -21,6 +19,7 @@ from app.services.asset_policy import (
     criticality_for,
     environment_for,
     exposure_for,
+    has_tag,
     owner_team_for,
 )
 from app.services.categorization import asset_type_for
@@ -60,9 +59,8 @@ def get_assets(
         query = query.filter(Asset.asset_type == asset_type)
     if environment:
         query = query.filter(Asset.environment == environment)
-    if tag:
-        tag_json = json.dumps(tag.strip())
-        query = query.filter(cast(Asset.tags, String).contains(tag_json))
+    if tag and tag.strip():
+        query = query.filter(has_tag(tag))
 
     total = query.count()
     items = query.order_by(Asset.id.desc()).offset(skip).limit(limit).all()

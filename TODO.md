@@ -688,4 +688,9 @@ modules, dépendances, hygiène du dépôt, tests ignorés (tous légitimes).
       ingestion (fusion des tags sans écrasement), filtrage par tag dans l'API (`GET /api/v1/assets/?tag=...`),
       extractions API, et saisie/affichage des badges de tags dans l'interface frontend.
       8 nouveaux paramètres documentés dans `.env.example` et câblés dans `docker-compose.yml`.
+      *Corrigé le 02/10/2026 (revue) : le filtre par tag était un `LIKE` non échappé
+      (`pci_dss` trouvait `pciXdss`) et sensible à la casse sous PostgreSQL seulement ;
+      désormais un tag entier, sans casse, partout (`has_tag`). Une regex invalide
+      ou une criticité inconnue dans ces règles refuse le démarrage au lieu de
+      désactiver la règle en silence. Tags dédoublonnés sans casse, 50 au plus.*
 

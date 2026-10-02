@@ -222,6 +222,44 @@ class TestAssetTags:
         assert res_db["total"] == 1
         assert res_db["items"][0]["ip_address"] == "10.40.0.11"
 
+    def test_a_tag_filter_matches_whole_tags_whatever_their_case(
+        self, client, db_session
+    ):
+        db_session.add_all(
+            [
+                Asset(ip_address="10.40.1.1", tags=["pci_dss"]),
+                Asset(ip_address="10.40.1.2", tags=["pciXdss"]),
+                Asset(ip_address="10.40.1.3", tags=["PCI_DSS", "webapp"]),
+                Asset(ip_address="10.40.1.4", tags=["50%-done"]),
+            ]
+        )
+        db_session.commit()
+
+        def ips(tag):
+            items = client.get("/api/v1/assets/", params={"tag": tag}).json()["items"]
+            return {item["ip_address"] for item in items}
+
+        # _ and % are not wildcards; case is ignored, as the rules ignore it.
+        assert ips("pci_dss") == {"10.40.1.1", "10.40.1.3"}
+        assert ips("50%-done") == {"10.40.1.4"}
+        # A whole tag, not a piece of one.
+        assert ips("web") == set()
+        assert ips("WEBAPP") == {"10.40.1.3"}
+
+    def test_tags_are_kept_once_and_bounded(self, client):
+        created = client.post(
+            "/api/v1/assets/",
+            json={"ip_address": "10.40.2.1", "tags": ["PCI", "pci", " Web ", "web"]},
+        )
+        assert created.status_code == 201
+        assert created.json()["tags"] == ["PCI", "Web"]
+
+        too_many = client.post(
+            "/api/v1/assets/",
+            json={"ip_address": "10.40.2.2", "tags": [f"t{i}" for i in range(51)]},
+        )
+        assert too_many.status_code == 422
+
     def test_dynamic_rules_evaluated_with_tags_and_hostname_on_create(
         self, client, monkeypatch
     ):

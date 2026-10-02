@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import String, cast, func
+from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.scope import Scope
@@ -27,6 +27,7 @@ from app.models.vulnerability import (
     Status,
     Vulnerability,
 )
+from app.services.asset_policy import has_tag
 from app.services.categorization import ASSET_TYPES, VULN_CATEGORIES
 from app.services.export import (
     BATCH_SIZE,
@@ -203,9 +204,8 @@ def _asset_rows(db: Session, filters: dict, limit: int | None, scope: Scope):
         query = query.filter(Asset.asset_type == filters["asset_type"])
     if filters.get("environment"):
         query = query.filter(Asset.environment == filters["environment"])
-    if filters.get("tag"):
-        tag_json = json.dumps(str(filters["tag"]).strip())
-        query = query.filter(cast(Asset.tags, String).contains(tag_json))
+    if filters.get("tag") and str(filters["tag"]).strip():
+        query = query.filter(has_tag(str(filters["tag"])))
     query = query.order_by(Asset.id)
     if limit is not None:
         query = query.limit(limit)

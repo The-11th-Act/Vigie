@@ -456,7 +456,12 @@ with a strict precedence:
 
 These rules seed new assets or populate missing fields upon scan ingestion;
 a value set by hand or explicitly submitted via the API is never overwritten.
-Tags assigned to an asset are merged additively on subsequent scans.
+Tags assigned to an asset are merged additively on subsequent scans. Tags
+are case-insensitive everywhere: the rules, the `tag` filter of the asset
+list and of the extracts (a whole tag, `%` and `_` literal), and an asset
+keeps one spelling of each, at most 50. A malformed regex or an unknown
+criticality in these rules refuses to start, rather than silently
+disabling the rule.
 
 
 ### Threat intelligence (CISA KEV, FIRST EPSS)

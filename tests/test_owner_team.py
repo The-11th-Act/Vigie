@@ -274,3 +274,45 @@ class TestApi:
             "items"
         ]
         assert [item["ip_address"] for item in items] == ["10.6.0.1"]
+
+
+class TestRuleSettings:
+    """A typo in a rule refuses to start: it would otherwise disable the rule
+    silently, a warning per asset at most."""
+
+    def build(self, **values):
+        from app.core.config import Settings
+
+        return Settings(_env_file=None, SECRET_KEY="x" * 40, **values)
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "CRITICALITY_HOSTNAME_RULES",
+            "OWNER_TEAM_HOSTNAME_RULES",
+            "ENVIRONMENT_HOSTNAME_RULES",
+        ],
+    )
+    def test_a_malformed_regex_is_refused(self, name):
+        value = "High" if name.startswith("CRITICALITY") else "Ops"
+        with pytest.raises(ValueError, match="invalid regular expression"):
+            self.build(**{name: {"[unclosed": value}})
+
+    def test_a_malformed_exposure_pattern_is_refused(self):
+        with pytest.raises(ValueError, match="invalid regular expression"):
+            self.build(INTERNET_FACING_HOSTNAME_PATTERNS=["(dmz"])
+
+    @pytest.mark.parametrize(
+        "name", ["CRITICALITY_HOSTNAME_RULES", "CRITICALITY_TAG_RULES"]
+    )
+    def test_an_unknown_criticality_is_refused(self, name):
+        with pytest.raises(ValueError, match="is not one of"):
+            self.build(**{name: {"pci": "Urgent"}})
+
+    def test_valid_rules_load(self):
+        loaded = self.build(
+            CRITICALITY_HOSTNAME_RULES={"^prd-": "critical"},
+            CRITICALITY_TAG_RULES={"pci": "High"},
+            INTERNET_FACING_HOSTNAME_PATTERNS=[r"\.dmz\."],
+        )
+        assert loaded.CRITICALITY_TAG_RULES == {"pci": "High"}

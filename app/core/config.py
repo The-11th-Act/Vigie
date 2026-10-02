@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import warnings
 from pathlib import Path
 from typing import Literal
@@ -65,6 +66,13 @@ FILE_SETTINGS = (
     "GLPI_USER_TOKEN",
     "GLPI_APP_TOKEN",
 )
+
+
+def _compile_or_explain(pattern: str) -> None:
+    try:
+        re.compile(pattern)
+    except re.error as exc:
+        raise ValueError(f"invalid regular expression {pattern!r}: {exc}") from None
 
 
 # Any SECRET_KEY at or below this length is trivially brute-forceable.
@@ -287,6 +295,38 @@ class Settings(BaseSettings):
     # False: only the teams of GLPI_TEAM_GROUPS get GLPI tickets, the others
     # keep theirs in Vigie alone.
     GLPI_EXPORT_UNMAPPED_TEAMS: bool = True
+
+    @field_validator(
+        "CRITICALITY_HOSTNAME_RULES",
+        "OWNER_TEAM_HOSTNAME_RULES",
+        "ENVIRONMENT_HOSTNAME_RULES",
+    )
+    @classmethod
+    def validate_hostname_rules(cls, value: dict[str, str]) -> dict[str, str]:
+        for pattern in value:
+            _compile_or_explain(pattern)
+        return value
+
+    @field_validator("INTERNET_FACING_HOSTNAME_PATTERNS")
+    @classmethod
+    def validate_hostname_patterns(cls, value: list[str]) -> list[str]:
+        for pattern in value:
+            _compile_or_explain(pattern)
+        return value
+
+    @field_validator("CRITICALITY_HOSTNAME_RULES", "CRITICALITY_TAG_RULES")
+    @classmethod
+    def validate_rule_criticalities(cls, value: dict[str, str]) -> dict[str, str]:
+        # A wrong level would make the rule apply Medium instead of falling
+        # through to the next rule: refused here, where the typo is seen.
+        allowed = {"low", "medium", "high", "critical"}
+        for key, level in value.items():
+            if str(level).strip().lower() not in allowed:
+                raise ValueError(
+                    f"{key!r}: criticality {level!r} is not one of Low, Medium, "
+                    "High, Critical"
+                )
+        return value
 
     @field_validator("THREAT_INTEL_KEV_URL", "THREAT_INTEL_EPSS_URL")
     @classmethod

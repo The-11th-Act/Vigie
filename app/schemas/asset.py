@@ -14,18 +14,28 @@ def _asset_type(v: str | None) -> str | None:
     return v
 
 
+MAX_TAGS = 50
+MAX_TAG_LENGTH = 64
+
+
 def _clean_tags(v: Any) -> list[str]:
+    """Tags trimmed, cut to MAX_TAG_LENGTH, and kept once whatever their case:
+    the rules match "PCI" and "pci" alike, so both would be the same tag."""
     if v is None:
         return []
     if isinstance(v, str):
         v = [t.strip() for t in v.split(",") if t.strip()]
     if not isinstance(v, list):
-        return []
+        raise ValueError("tags must be a list of strings")
     cleaned: list[str] = []
+    seen: set[str] = set()
     for t in v:
-        tag_str = str(t).strip()
-        if tag_str and tag_str not in cleaned:
-            cleaned.append(tag_str[:64])
+        tag_str = str(t).strip()[:MAX_TAG_LENGTH]
+        if tag_str and tag_str.lower() not in seen:
+            seen.add(tag_str.lower())
+            cleaned.append(tag_str)
+    if len(cleaned) > MAX_TAGS:
+        raise ValueError(f"at most {MAX_TAGS} tags")
     return cleaned
 
 
