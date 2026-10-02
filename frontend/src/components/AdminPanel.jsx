@@ -5,6 +5,8 @@ import { adminService, remediationService, userService } from '../services';
 import { NO_TEAM, scopeLabel, teamLabel } from '../teams';
 import { useApiQuery } from '../hooks/useApiQuery';
 import { useModules } from '../auth/ModulesContext';
+import { useAuth } from '../auth/AuthContext';
+import { AccountActions, NewAccountForm } from './AdminAccounts';
 import { controlStyle } from './RemediationShared';
 import { move } from '../order';
 import AdminTicketing from './AdminTicketing';
@@ -271,6 +273,7 @@ function ScopeEditor({ user, knownTeams, onSaved }) {
 
 function UsersSection() {
   const { refresh: refreshMyModules } = useModules();
+  const me = useAuth().user?.username;
   const { data, loading, error, refetch } = useApiQuery(
     ['admin', 'users'],
     async () => (await userService.list()).data
@@ -299,6 +302,7 @@ function UsersSection() {
   return (
     <section>
       <h2 style={{ fontSize: '1.15rem', marginBottom: '0.5rem' }}>Users</h2>
+      <NewAccountForm roleLabels={ROLE_LABELS} onCreated={refetch} />
       <div className="glass-panel data-table-container">
         <table className="data-table">
           <thead>
@@ -307,6 +311,7 @@ function UsersSection() {
               <th>Email</th>
               <th>Role</th>
               <th>Scope</th>
+              <th>Account</th>
             </tr>
           </thead>
           <tbody>
@@ -333,6 +338,9 @@ function UsersSection() {
                 </td>
                 <td>
                   <ScopeEditor user={user} knownTeams={knownTeams || []} onSaved={refetch} />
+                </td>
+                <td>
+                  <AccountActions user={user} isSelf={user.username === me} onChanged={refetch} />
                 </td>
               </tr>
             ))}

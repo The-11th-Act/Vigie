@@ -636,12 +636,12 @@ avertissement toléré. Sans écart : appels du frontend vers l'API, registre de
 modules, dépendances, hygiène du dépôt, tests ignorés (tous légitimes).
 
 ## Sécurité
-- [ ] **Inscription publique** : `POST /auth/register`, sans authentification ni
+- [x] **Inscription publique** *(02/10/2026)* : `POST /auth/register`, sans authentification ni
       limitation, crée un « analyst » sans équipe, donc qui voit tout le parc et
       décide du risque. Seul moyen de créer un compte non admin ; aucun écran ne
       s'en sert. Choix de l'utilisateur : fermer l'inscription, comptes créés par
       un admin (écran Administration), désactivation et suppression, changement
-      de son mot de passe par chacun
+      de son mot de passe par chacun, documentation d'exploitation (`docs/EXPLOITATION.md`)
 - [x] Secret CrowdStrike en variable d'environnement en production, visible dans
       `docker inspect` *(02/10/2026 : vidé par la surcouche de production, fichier
       monté au seul worker par `docker-compose.crowdstrike.yml`, vérifié par

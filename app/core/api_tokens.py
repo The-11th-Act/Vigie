@@ -69,7 +69,8 @@ def authenticate(request: Request, secret: str, db: Session) -> dict:
     if token is None or token.revoked_at is not None or _aware(token.expires_at) <= now:
         raise denied
     user = db.get(User, token.user_id)
-    if user is None:
+    # A disabled account's tokens stop with it.
+    if user is None or not user.is_active:
         raise denied
 
     if request.method not in SAFE_METHODS:

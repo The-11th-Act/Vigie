@@ -92,10 +92,12 @@ def create_admin(username: str, email: str, password: str) -> int:
         )
 
         if existing:
-            if existing.role == "admin":
+            if existing.role == "admin" and existing.is_active:
                 logger.info("'%s' est déjà administrateur.", existing.username)
                 return 0
+            # Le chemin de secours : un administrateur désactivé revient aussi.
             existing.role = "admin"
+            existing.is_active = True
             db.commit()
             logger.info("'%s' a été promu administrateur.", existing.username)
             return 0

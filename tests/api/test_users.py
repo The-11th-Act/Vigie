@@ -103,4 +103,6 @@ class TestAdminRightsFollowTheDatabase:
             "/api/v1/threat-intel/refresh", headers=headers
         )
 
-        assert response.status_code == 403
+        # Refused before any right is looked at: the account behind the token
+        # is gone, so is the session (require_live_account).
+        assert response.status_code == 401

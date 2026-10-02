@@ -29,8 +29,8 @@ def bootstrap_admin_user(db: Session) -> None:
         return
 
     try:
-        # Reuses the same validation self-registration enforces (email
-        # format, password length/complexity) rather than duplicating it.
+        # Reuses the validation of every account creation (email format,
+        # password length and complexity) rather than duplicating it.
         credentials = UserCreate(
             email=settings.ADMIN_EMAIL,
             username=settings.ADMIN_USERNAME,
@@ -49,8 +49,10 @@ def bootstrap_admin_user(db: Session) -> None:
     )
 
     if existing:
-        if existing.role != "admin":
+        # The recovery path: a disabled administrator comes back too.
+        if existing.role != "admin" or not existing.is_active:
             existing.role = "admin"
+            existing.is_active = True
             db.commit()
             logger.info("Promoted existing user '%s' to admin.", existing.username)
         else:

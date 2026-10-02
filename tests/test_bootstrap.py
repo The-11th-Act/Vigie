@@ -47,6 +47,27 @@ class TestBootstrapAdmin:
         user = db_session.query(User).filter(User.username == "existinguser").one()
         assert user.role == "admin"
 
+    def test_brings_a_disabled_admin_back(self, db_session, monkeypatch):
+        """The recovery path, when every administrator was disabled."""
+        db_session.add(
+            User(
+                email="locked@test.com",
+                username="lockedadmin",
+                hashed_password=get_password_hash(ADMIN_PASSWORD),
+                role="admin",
+                is_active=False,
+            )
+        )
+        db_session.commit()
+        monkeypatch.setattr(settings, "ADMIN_USERNAME", "lockedadmin")
+        monkeypatch.setattr(settings, "ADMIN_EMAIL", "locked@test.com")
+        monkeypatch.setattr(settings, "ADMIN_PASSWORD", ADMIN_PASSWORD)
+
+        bootstrap_admin_user(db_session)
+
+        user = db_session.query(User).filter(User.username == "lockedadmin").one()
+        assert user.is_active is True and user.role == "admin"
+
     def test_idempotent_rerun_does_not_duplicate(self, db_session, monkeypatch):
         monkeypatch.setattr(settings, "ADMIN_USERNAME", "repeatadmin")
         monkeypatch.setattr(settings, "ADMIN_EMAIL", "repeat@test.com")

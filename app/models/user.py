@@ -1,8 +1,8 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.sql import func
+from sqlalchemy.sql import func, true
 
 from app.db.database import Base
 
@@ -20,6 +20,16 @@ class User(Base):
     )  # admin, analyst
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
+    )
+    # A disabled account keeps its history but signs in nowhere: its sessions
+    # and personal API tokens stop at the next request.
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=true(), default=True
+    )
+    # Tokens issued before this moment are refused: set when the password
+    # changes or the account is disabled, it ends every open session.
+    sessions_valid_after: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
     team_rows: Mapped[list["UserTeam"]] = relationship(
         cascade="all, delete-orphan",

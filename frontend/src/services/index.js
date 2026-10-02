@@ -95,6 +95,10 @@ export const meService = {
 
   updatePreferences: (order, hidden) =>
     api.put('/me/preferences', { order, hidden }),
+
+  // Ends every session, this one included: sign in again afterwards.
+  changePassword: (currentPassword, newPassword) =>
+    api.put('/me/password', { current_password: currentPassword, new_password: newPassword }),
 }
 
 export const adminService = {
@@ -158,6 +162,19 @@ export const userService = {
   // The teams whose hosts the user sees; [] gives back the whole estate.
   updateTeams: (id, teams) =>
     api.put(`/users/${id}/teams`, { teams }),
+
+  // Accounts are opened by an administrator: there is no self-registration.
+  create: (data) =>
+    api.post('/users/', data),
+
+  setActive: (id, active) =>
+    api.patch(`/users/${id}/active`, { active }),
+
+  resetPassword: (id, password) =>
+    api.put(`/users/${id}/password`, { password }),
+
+  remove: (id) =>
+    api.delete(`/users/${id}`),
 }
 
 export const remediationService = {

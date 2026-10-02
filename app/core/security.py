@@ -47,8 +47,12 @@ def _encode(
     token_type: str,
     extra_claims: dict | None = None,
 ) -> str:
+    now = datetime.now(UTC)
     to_encode = {
-        "exp": datetime.now(UTC) + expires_delta,
+        "exp": now + expires_delta,
+        # With its fraction of a second: a password changed right after a
+        # login must end that session, the same second or not.
+        "iat": now.timestamp(),
         "sub": str(subject),
         # A unique id per token is what makes revocation possible: without it,
         # a logged-out token stays usable until it expires.
@@ -188,7 +192,9 @@ def decode_token(
     if bearer:
         if is_api_token(bearer):
             return authenticate_api_token(request, bearer, db)
-        return decode_access_token(bearer)
+        claims = decode_access_token(bearer)
+        require_live_account(db, claims)
+        return claims
 
     cookie = request.cookies.get(ACCESS_COOKIE)
     if not cookie:
@@ -199,7 +205,41 @@ def decode_token(
         )
     if request.method not in SAFE_METHODS:
         require_csrf(request)
-    return decode_access_token(cookie)
+    claims = decode_access_token(cookie)
+    require_live_account(db, claims)
+    return claims
+
+
+def require_live_account(db: Session, claims: dict) -> User:
+    """The account a token was issued to, if that token still holds.
+
+    Refused once the account is disabled or removed, and for a token issued
+    before ``sessions_valid_after``: a changed password or a disabled account
+    ends the sessions already open, rather than letting them run until their
+    tokens expire.
+    """
+    denied = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    user_id = _user_id(claims)
+    user = db.get(User, user_id) if user_id is not None else None
+    if user is None or not user.is_active:
+        raise denied
+    if user.sessions_valid_after is not None:
+        valid_after = user.sessions_valid_after
+        if valid_after.tzinfo is None:  # SQLite drops it; stored as UTC
+            valid_after = valid_after.replace(tzinfo=UTC)
+        issued = claims.get("iat")
+        if not isinstance(issued, int | float) or issued < valid_after.timestamp():
+            raise denied
+    return user
+
+
+def end_sessions(user: User) -> None:
+    """Refuse every token issued to ``user`` until now. The caller commits."""
+    user.sessions_valid_after = datetime.now(UTC)
 
 
 def decode_access_token(token: str) -> dict:

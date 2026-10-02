@@ -43,7 +43,8 @@ ordered by what actually needs fixing first.
 3. (Optional but recommended) Set `ADMIN_USERNAME`, `ADMIN_EMAIL` and
    `ADMIN_PASSWORD`. When all three are set, that account is created — or
    promoted — to admin on startup. This is the only way to obtain a first
-   admin: self-registration always creates an `analyst`. Afterwards, roles are
+   admin: there is no self-registration, administrators create the accounts
+   (Administration screen, `POST /api/v1/users/`). Afterwards, roles are
    managed through `PATCH /api/v1/users/{id}/role` (admin only).
 
 ### Local Setup

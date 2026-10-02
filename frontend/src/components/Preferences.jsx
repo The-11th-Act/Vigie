@@ -4,6 +4,7 @@ import { meService } from '../services';
 import { useModules } from '../auth/ModulesContext';
 import { knownModules } from '../modules';
 import { move } from '../order';
+import ChangePassword from './ChangePassword';
 
 // Arranges the sidebar. Only the modules the role grants are listed: hiding
 // one removes it from the sidebar, it stays reachable by its address.
@@ -107,6 +108,8 @@ export default function Preferences() {
           {error && <div className="error-message" style={{ marginTop: '1rem' }}>{error}</div>}
         </div>
       )}
+
+      <ChangePassword />
     </div>
   );
 }

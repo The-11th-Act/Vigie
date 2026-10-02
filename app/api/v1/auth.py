@@ -1,7 +1,6 @@
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core import ratelimit
@@ -15,9 +14,9 @@ from app.core.security import (
     create_refresh_token,
     decode_refresh_token,
     decode_token,
-    get_password_hash,
     new_csrf_token,
     require_csrf,
+    require_live_account,
     verify_password_constant_time,
 )
 from app.core.tokens import revoke
@@ -26,7 +25,6 @@ from app.models.user import User
 from app.schemas.user import (
     RefreshRequest,
     Token,
-    UserCreate,
     UserLogin,
     UserResponse,
 )
@@ -42,33 +40,9 @@ INVALID_CREDENTIALS = HTTPException(
 )
 
 
-@router.post(
-    "/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED
-)
-def register(user_in: UserCreate, db: Session = Depends(get_db)):
-    existing = (
-        db.query(User)
-        .filter(or_(User.username == user_in.username, User.email == user_in.email))
-        .first()
-    )
-    if existing:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username or email already registered",
-        )
-
-    # The role is never taken from the request body: self-registration must not
-    # be a path to admin. Elevating a user is an explicit admin operation.
-    db_user = User(
-        email=user_in.email,
-        username=user_in.username,
-        hashed_password=get_password_hash(user_in.password),
-        role="analyst",
-    )
-    db.add(db_user)
-    db.commit()
-    db.refresh(db_user)
-    return db_user
+# No self-registration: an account is created by an administrator
+# (POST /api/v1/users/). An open /register gave anyone who could reach the
+# API an analyst account seeing the whole estate.
 
 
 @router.post("/login", response_model=Token, response_model_exclude_none=True)
@@ -103,6 +77,11 @@ def login(
         ratelimit.register_failure("user", credentials.username)
         logger.warning("Failed login for '%s' from %s", credentials.username, client_ip)
         raise INVALID_CREDENTIALS
+    # The same answer as a wrong password: whoever tries does not learn that
+    # the password was right for a disabled account.
+    if not user.is_active:
+        logger.warning("Login refused for disabled account '%s'", user.username)
+        raise INVALID_CREDENTIALS
 
     ratelimit.reset("ip", client_ip)
     ratelimit.reset("user", credentials.username)
@@ -133,15 +112,12 @@ def refresh(
     else:
         presented = body.refresh_token
     payload = decode_refresh_token(presented)
-
+    # A disabled account, or a password changed since this session began,
+    # ends the session here too: refreshing must not outlive it.
     try:
-        user_id = int(payload["sub"])
-    except (KeyError, TypeError, ValueError) as exc:
-        raise INVALID_CREDENTIALS from exc
-
-    user = db.get(User, user_id)
-    if user is None:
-        raise INVALID_CREDENTIALS
+        user = require_live_account(db, payload)
+    except HTTPException:
+        raise INVALID_CREDENTIALS from None
 
     revoke(payload.get("jti"), payload.get("exp"))
 

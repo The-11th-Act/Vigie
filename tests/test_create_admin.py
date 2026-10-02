@@ -80,6 +80,25 @@ class TestCreateAdmin:
         user = self.db.query(User).filter(User.username == "existing").one()
         assert user.role == "admin"
 
+    def test_brings_a_disabled_admin_back(self):
+        """Le chemin de secours, quand tous les administrateurs sont désactivés."""
+        from app.core.security import get_password_hash
+
+        self.db.add(
+            User(
+                username="locked",
+                email="locked@example.com",
+                hashed_password=get_password_hash(VALID),
+                role="admin",
+                is_active=False,
+            )
+        )
+        self.db.commit()
+
+        assert create_admin("locked", "locked@example.com", VALID) == 0
+        user = self.db.query(User).filter(User.username == "locked").one()
+        assert user.is_active is True
+
     def test_is_idempotent(self):
         assert create_admin("admin", "admin@example.com", VALID) == 0
         assert create_admin("admin", "admin@example.com", VALID) == 0
