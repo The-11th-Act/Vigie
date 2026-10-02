@@ -1,9 +1,11 @@
 # TODO — Plateforme Vigie (RBVM)
 
-> **Statut au 24/09/2026 : les sections fonctionnelles (1-18) sont traitées.**
-> Les P0 (1-4) ont été livrés par la PR #1, les P1 et P2 (5-18) par la suivante.
-> Les sections **-DEP** conservent des points ouverts (secrets, sauvegardes,
-> staging…). Le détail de chaque choix figure dans les messages de commit.
+> **Statut au 02/10/2026 : les sections 1-18, -DEP et la feuille de route
+> « Modules et remédiation » (1 à 7) sont traitées.** Restent ouverts les points
+> qui attendent des données réelles (export Nessus, tenant CrowdStrike, instance
+> GLPI) ou une contrainte d'hébergement (coffre managé), et la section
+> « Audit du 02/10/2026 » en fin de fichier. Le détail de chaque choix figure
+> dans les messages de commit.
 >
 > Deux points restent à connaître :
 > - Le client CrowdStrike (item 5) est testé contre un transport simulé, pas
@@ -14,8 +16,8 @@
 >   valeurs reportées dans `.env`.
 
 État des lieux initial au 29/07/2026. Base : FastAPI + SQLAlchemy + Celery + React.
-Suite de tests à l'époque : 109 tests. Aujourd'hui : **536 tests backend + 24 tests
-frontend, tous verts**.
+Suite de tests à l'époque : 109 tests. Au 02/10/2026 : **1 041 tests backend + 122
+tests frontend, tous verts**, plus le test de la pile de production en CI.
 
 Priorités : **P0** = bloque un usage réel · **P1** = important · **P2** = confort / dette.
 Les sections suffixées **-DEP** (technologie & déploiement, ajoutées le 06/08/2026)
@@ -621,3 +623,49 @@ Choix pris par défaut pour GLPI, à revoir à l'usage :
       autorité inconnue refusés). Derrière un proxy sortant, c'est le proxy qui
       résout : envoi par lui comme avant, sans épinglage ; `NO_PROXY` le
       rétablit. `REQUESTS_CA_BUNDLE` reste honoré)*
+
+---
+
+# Audit du 02/10/2026
+
+Revue globale demandée par l'utilisateur : incohérences, fonctions inutilisées,
+écarts entre l'API, l'interface et la documentation. Outils : vulture (code mort
+Python), croisement du schéma OpenAPI avec les appels du frontend, réglages
+contre le code et `.env.example`, colonnes contre leurs usages, ESLint sans
+avertissement toléré. Sans écart : appels du frontend vers l'API, registre des
+modules, dépendances, hygiène du dépôt, tests ignorés (tous légitimes).
+
+## Sécurité
+- [ ] **Inscription publique** : `POST /auth/register`, sans authentification ni
+      limitation, crée un « analyst » sans équipe, donc qui voit tout le parc et
+      décide du risque. Seul moyen de créer un compte non admin ; aucun écran ne
+      s'en sert. Choix de l'utilisateur : fermer l'inscription, comptes créés par
+      un admin (écran Administration), désactivation et suppression, changement
+      de son mot de passe par chacun
+- [x] Secret CrowdStrike en variable d'environnement en production, visible dans
+      `docker inspect` *(02/10/2026 : vidé par la surcouche de production, fichier
+      monté au seul worker par `docker-compose.crowdstrike.yml`, vérifié par
+      `test_deployment_config` et la CI compose)*
+
+## Interface
+- [x] L'upload de scan était proposé à un compte cloisonné, que l'API refuse
+      *(02/10/2026 : remplacé par une explication, l'historique reste)*
+- [ ] Historique du triage d'un finding : exposé par l'API (point 10), affiché
+      nulle part
+- [ ] Flux KEV / EPSS : rafraîchissement et import manuel par API ou CLI
+      seulement, alors que l'import est le chemin des installations sans Internet
+- [ ] Catalogue CVE : modification du score et suppression par API seulement
+
+## Code mort et documentation
+- [x] `generate_secret_key()`, `ModuleAccess.visible` : supprimés ;
+      `settings.glpi_configured` désormais utilisé au lieu d'être recodé ; services
+      frontend jamais appelés supprimés (`register`, `assetService.get`,
+      `vulnerabilityService.create` / `getByAsset`) *(02/10/2026)*
+- [x] `.env.example` : `CRITICALITY_RULES`, `AUTO_REMEDIATE_AFTER_MISSES` et les
+      réglages fins des flux de menace manquaient *(02/10/2026)*
+- [x] En-tête de ce fichier périmé (statut au 24/09, 536 + 24 tests) *(02/10/2026)*
+- Gardés volontairement : `parse_nessus_report` / `parse_openvas_report` (servent
+  aux tests de parseurs), `ticket_findings.added_at` (date d'entrée d'un finding
+  dans un ticket, jamais lue mais sans coût).
+- À prévoir : ESLint 8 n'est plus maintenu ; passer à ESLint 9 et à la
+  configuration « flat » (`eslint.config.js`) lors d'une montée de l'outillage.

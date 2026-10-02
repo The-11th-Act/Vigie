@@ -70,10 +70,6 @@ class ModuleAccess:
     allowed: list[str]
     hidden: frozenset[str]
 
-    @property
-    def visible(self) -> list[str]:
-        return [key for key in self.allowed if key not in self.hidden]
-
 
 def disabled_modules(db: Session) -> set[str]:
     rows = db.query(ModuleSetting.module).filter(ModuleSetting.enabled.is_(False))

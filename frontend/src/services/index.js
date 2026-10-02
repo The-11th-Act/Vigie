@@ -6,9 +6,6 @@ export const authService = {
   login: (username, password) =>
     api.post('/auth/login', { username, password }, { headers: COOKIE_SESSION }),
 
-  register: (email, username, password) =>
-    api.post('/auth/register', { email, username, password }),
-
   // Probed on start-up: a 401 just means nobody is signed in.
   getMe: () =>
     api.get('/auth/me', { skipLoginRedirect: true }),
@@ -48,9 +45,6 @@ export const assetService = {
   list: (params = {}) =>
     api.get('/assets/', { params }),
 
-  get: (id) =>
-    api.get(`/assets/${id}`),
-
   create: (data) =>
     api.post('/assets/', data),
 
@@ -64,12 +58,6 @@ export const assetService = {
 export const vulnerabilityService = {
   list: (params = {}) =>
     api.get('/vulnerabilities/', { params }),
-
-  create: (data) =>
-    api.post('/vulnerabilities/', data),
-
-  getByAsset: (assetId, params = {}) =>
-    api.get(`/vulnerabilities/assets/${assetId}`, { params }),
 
   getFindings: (params = {}) =>
     api.get('/vulnerabilities/findings', { params }),

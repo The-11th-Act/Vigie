@@ -1,6 +1,5 @@
 import json
 import os
-import secrets
 import warnings
 from pathlib import Path
 from typing import Literal
@@ -420,11 +419,6 @@ class Settings(BaseSettings):
             stacklevel=2,
         )
         return self
-
-
-def generate_secret_key() -> str:
-    """Convenience helper for bootstrapping a local .env file."""
-    return secrets.token_urlsafe(48)
 
 
 settings = Settings()

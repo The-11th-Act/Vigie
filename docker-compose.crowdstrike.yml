@@ -1,0 +1,22 @@
+# Synchronisation CrowdStrike Falcon Spotlight, en option.
+#
+# Usage :
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+#     -f docker-compose.crowdstrike.yml up -d
+#
+# Le secret du client d'API Falcon est un fichier du repertoire des secrets,
+# monte dans le seul worker, qui fait la synchronisation : jamais une variable,
+# que `docker inspect` montrerait. L'identifiant du client (pas un secret) et
+# les autres reglages (CROWDSTRIKE_SYNC_ENABLED, CROWDSTRIKE_BASE_URL...)
+# viennent du .env. Compose fusionne les listes de secrets : seul celui-ci est
+# ajoute a ceux du worker.
+
+secrets:
+  crowdstrike_client_secret:
+    file: ${VIGIE_SECRETS_DIR:-./secrets}/crowdstrike_client_secret
+
+services:
+  worker:
+    environment:
+      - CROWDSTRIKE_CLIENT_SECRET_FILE=/run/secrets/crowdstrike_client_secret
+    secrets: [crowdstrike_client_secret]

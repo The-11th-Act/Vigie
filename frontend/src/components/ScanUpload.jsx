@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { scanService } from '../services';
+import { useModules } from '../auth/ModulesContext';
 import ScanHistory from './ScanHistory';
 import { UploadCloud, FileText, CheckCircle, Loader, AlertCircle } from 'lucide-react';
 
@@ -17,6 +18,9 @@ export default function ScanUpload() {
   const [error, setError] = useState(null);
   const [polling, setPolling] = useState(false);
   const queryClient = useQueryClient();
+  // The API refuses an upload to a scoped account: its ingestion creates hosts
+  // and closes findings wherever the file covered, other teams' included.
+  const { teams } = useModules();
 
   const handleFileChange = (e) => {
     setFile(e.target.files[0]);
@@ -86,6 +90,12 @@ export default function ScanUpload() {
     <div>
       <h1>Upload Scan Results</h1>
 
+      {teams ? (
+        <div className="glass-panel" role="note" style={{maxWidth: 600, padding: '1.5rem', fontSize: '0.9rem'}}>
+          Uploading a scan is reserved to accounts that see the whole estate: its ingestion creates hosts and closes
+          findings wherever the file covered, other teams&apos; included. The scans of your teams are listed below.
+        </div>
+      ) : (
       <div className="glass-panel" style={{maxWidth: 600, padding: '2rem'}}>
         <form onSubmit={handleSubmit}>
           <div style={{marginBottom: '1.5rem'}}>
@@ -197,6 +207,7 @@ export default function ScanUpload() {
           </div>
         )}
       </div>
+      )}
 
       <ScanHistory />
     </div>

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, act } from '../test/render'
 
 import ScanUpload from './ScanUpload'
+import { ModulesContext } from '../auth/ModulesContext'
 import { scanService } from '../services'
 
 vi.mock('../services', () => ({
@@ -45,6 +46,17 @@ describe('ScanUpload', () => {
   afterEach(() => {
     vi.useRealTimers()
     vi.clearAllMocks()
+  })
+
+  it('does not offer an upload to a scoped account, which the API refuses', () => {
+    render(
+      <ModulesContext.Provider value={{ modules: [], teams: ['Perimeter'], loading: false, error: null }}>
+        <ScanUpload />
+      </ModulesContext.Provider>
+    )
+
+    expect(screen.getByRole('note')).toHaveTextContent(/reserved to accounts that see the whole estate/)
+    expect(screen.queryByRole('button', { name: /upload/i })).not.toBeInTheDocument()
   })
 
   it('reads the stored scan job, not a raw Celery state', async () => {

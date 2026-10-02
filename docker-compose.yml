@@ -186,7 +186,8 @@ services:
       # The worker sends and reseals the webhooks: after a key rotation it
       # must still recognise those sealed with the retired key.
       PREVIOUS_SECRET_KEYS: ${PREVIOUS_SECRET_KEYS:-}
-      # Credentials only where the Spotlight client runs.
+      # Credentials only where the Spotlight client runs. The secret is a
+      # file in production (docker-compose.crowdstrike.yml).
       CROWDSTRIKE_CLIENT_ID: ${CROWDSTRIKE_CLIENT_ID:-}
       CROWDSTRIKE_CLIENT_SECRET: ${CROWDSTRIKE_CLIENT_SECRET:-}
       # And where the GLPI sync runs. Files in production

@@ -33,9 +33,15 @@ FAKE_SECRETS = {
     ),
     "glpi_user_token": "fake-glpi-user-token-in-its-file",
     "glpi_app_token": "fake-glpi-app-token-in-its-file",
+    "crowdstrike_client_secret": "fake-crowdstrike-secret-in-its-file",
 }
 # Secrets of the optional overlays: absent from the production overlay alone.
-OVERLAY_SECRETS = {"rclone.conf", "glpi_user_token", "glpi_app_token"}
+OVERLAY_SECRETS = {
+    "rclone.conf",
+    "glpi_user_token",
+    "glpi_app_token",
+    "crowdstrike_client_secret",
+}
 _SECRETS_DIR = Path(tempfile.mkdtemp(prefix="vigie-secrets-"))
 for _name, _value in FAKE_SECRETS.items():
     (_SECRETS_DIR / _name).write_text(_value, encoding="utf-8")
@@ -52,6 +58,7 @@ FAKE_ENV = {
     "POSTGRES_PASSWORD": "leftover-postgres-password",
     "REDIS_PASSWORD": "leftover-redis-password",
     "GLPI_USER_TOKEN": "leftover-glpi-user-token",
+    "CROWDSTRIKE_CLIENT_SECRET": "leftover-crowdstrike-secret",
 }
 
 pytestmark = pytest.mark.skipif(
@@ -236,6 +243,7 @@ class TestSecrets:
             "POSTGRES_PASSWORD",
             "REDIS_PASSWORD",
             "GLPI_USER_TOKEN",
+            "CROWDSTRIKE_CLIENT_SECRET",
         ):
             assert FAKE_ENV[name] not in prod_config, name
 
@@ -393,6 +401,60 @@ class TestGlpiConnector:
         env = prod_services["worker"]["environment"]
         assert env["GLPI_USER_TOKEN"] == env["GLPI_APP_TOKEN"] == ""
         assert "glpi_user_token" not in _secret_names(prod_services["worker"])
+
+
+@pytest.fixture(scope="module")
+def crowdstrike_worker() -> dict:
+    env = dict(os.environ)
+    env.update(FAKE_ENV)
+    result = subprocess.run(
+        [
+            "docker",
+            "compose",
+            "-f",
+            "docker-compose.yml",
+            "-f",
+            "docker-compose.prod.yml",
+            "-f",
+            "docker-compose.crowdstrike.yml",
+            "config",
+            "--format",
+            "json",
+        ],
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+        env=env,
+    )
+    if result.returncode != 0:
+        pytest.skip(f"docker compose config indisponible : {result.stderr[:200]}")
+    assert "fake-crowdstrike" not in result.stdout
+    assert FAKE_ENV["CROWDSTRIKE_CLIENT_SECRET"] not in result.stdout
+    return json.loads(result.stdout)["services"]["worker"]
+
+
+class TestCrowdStrikeSecret:
+    """Le secret Falcon était une variable du worker, donc visible dans
+    `docker inspect`, contrairement aux autres secrets de production."""
+
+    def test_the_worker_reads_it_from_a_file(self, crowdstrike_worker):
+        env = crowdstrike_worker["environment"]
+        assert env["CROWDSTRIKE_CLIENT_SECRET"] == ""
+        assert (
+            env["CROWDSTRIKE_CLIENT_SECRET_FILE"]
+            == "/run/secrets/crowdstrike_client_secret"
+        )
+        # Compose fusionne les listes : les secrets du worker restent tous.
+        assert {
+            "secret_key",
+            "postgres_password",
+            "redis_password",
+            "crowdstrike_client_secret",
+        } <= _secret_names(crowdstrike_worker)
+
+    def test_never_from_the_environment(self, prod_services):
+        env = prod_services["worker"]["environment"]
+        assert env["CROWDSTRIKE_CLIENT_SECRET"] == ""
 
 
 def _environment(**overrides: str) -> dict:

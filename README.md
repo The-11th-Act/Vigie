@@ -540,7 +540,10 @@ findings imported before this existed gain their remediation on their next scan.
 Set `CROWDSTRIKE_CLIENT_ID` / `CROWDSTRIKE_CLIENT_SECRET`, adjust
 `CROWDSTRIKE_BASE_URL` to your region, and set `CROWDSTRIKE_SYNC_ENABLED=true`;
 the beat scheduler then pulls open findings every
-`CROWDSTRIKE_SYNC_INTERVAL_MINUTES`.
+`CROWDSTRIKE_SYNC_INTERVAL_MINUTES`. In production the client secret is a
+file, `secrets/crowdstrike_client_secret`, given to the worker alone by the
+`docker-compose.crowdstrike.yml` overlay: the production overlay empties the
+variable, which `docker inspect` would show.
 
 > The client is covered by tests against a simulated transport, not against a
 > live Falcon tenant. If a sync returns nothing, check the response field names

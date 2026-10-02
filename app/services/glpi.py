@@ -389,9 +389,9 @@ class GlpiConnector:
 def glpi_connector() -> GlpiConnector | None:
     """The connector the worker runs; None when GLPI is not fully configured."""
     identity = glpi_identity()
-    if identity is None or not settings.GLPI_USER_TOKEN:
+    if identity is None or not settings.glpi_configured:
         return None
     client = GlpiClient(
-        identity.target, settings.GLPI_USER_TOKEN, settings.GLPI_APP_TOKEN
+        identity.target, settings.GLPI_USER_TOKEN or "", settings.GLPI_APP_TOKEN
     )
     return GlpiConnector(client, identity)
