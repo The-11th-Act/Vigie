@@ -294,7 +294,7 @@ with the findings of each cell behind it (`/categorization/findings`).
 
 ## API extracts and personal tokens
 
-The **API Extracts** module exports datasets as CSV or JSON: findings (the
+The **API Extracts** module exports datasets as CSV, JSON or XLSX: findings (the
 risk backlog), fixes to deploy, remediation tickets, assets and the CVE
 catalogue, each only to users whose role has the module behind it.
 
@@ -315,6 +315,10 @@ curl -H "Authorization: Bearer $VIGIE_TOKEN" \
   read-only (any other method is refused), act with their owner's current
   role and modules, and stop working when revoked, expired, or when the
   owner's role loses the API Extracts module.
+- XLSX (`format=xlsx`) is one sheet, the column keys as a bold header kept in
+  view, numbers as numbers and moments in ISO 8601 as in JSON; text is never
+  read as a formula there, so it needs no neutralising. Written with the
+  standard library, no dependency.
 - Values starting with `= + - @` are neutralised in CSV, as in the backlog
   export; files are streamed from a temporary file.
 

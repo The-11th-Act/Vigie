@@ -6,6 +6,7 @@ import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from openpyxl import load_workbook
 
 from app.core import api_tokens
 from app.core.api_tokens import new_token
@@ -127,6 +128,25 @@ class TestExtracts:
         assert data[0]["in_kev"] is True
         assert data[0]["detected_at"].startswith("20")
 
+    def test_xlsx(self, client, backlog):
+        response = client.get(
+            "/api/v1/extracts/findings",
+            params={"format": "xlsx", "columns": "cve_id,risk_score,in_kev,asset"},
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.headers["content-type"] == (
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        assert ".xlsx" in response.headers["content-disposition"]
+        sheet = load_workbook(io.BytesIO(response.content)).active
+        values = [[cell.value for cell in row] for row in sheet.iter_rows()]
+        assert values[0] == ["cve_id", "risk_score", "in_kev", "asset"]
+        assert values[1][:3] == ["CVE-2024-0001", 9.0, "yes"]
+        # A number stays a number, and a text is never evaluated: no quote.
+        assert sheet["B2"].data_type == "n"
+        assert "=HYPERLINK(1)" in [row[3] for row in values]
+
     def test_spreadsheet_formulas_are_neutralized(self, client, backlog):
         data = rows(client.get("/api/v1/extracts/findings", params={"columns": "asset"}))
         assert "'=HYPERLINK(1)" in [row["asset"] for row in data]
@@ -139,7 +159,7 @@ class TestExtracts:
             {"min_risk": "11"},
             {"status": "Closed"},
             {"columns": "cve_id,nope"},
-            {"format": "xlsx"},
+            {"format": "pdf"},
         ],
     )
     def test_bad_parameters_are_refused(self, client, backlog, params):
@@ -202,6 +222,21 @@ class TestSavedExtracts:
         ]
         as_json = client.get(saved["run_path"], params={"format": "json"})
         assert json.loads(as_json.content)[0]["cve_id"] == "CVE-2024-0001"
+        as_xlsx = client.get(saved["run_path"], params={"format": "xlsx"})
+        sheet = load_workbook(io.BytesIO(as_xlsx.content)).active
+        assert sheet["A2"].value == "CVE-2024-0001"
+
+    def test_saved_as_xlsx(self, client, backlog):
+        response = client.post(
+            "/api/v1/extracts/saved",
+            json={"name": "For Excel", "dataset": "findings", "format": "xlsx"},
+        )
+        assert response.status_code == 201, response.text
+
+        run = client.get(response.json()["run_path"])
+
+        assert run.headers["content-type"].endswith("spreadsheetml.sheet")
+        assert load_workbook(io.BytesIO(run.content)).active.max_row == 3
 
     def test_invalid_extracts_are_not_saved(self, client):
         response = client.post(

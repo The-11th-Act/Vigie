@@ -21,6 +21,7 @@ from app.schemas.extracts import (
     SavedExtractResponse,
 )
 from app.services import extracts
+from app.services.xlsx import MEDIA_TYPE as XLSX_MEDIA_TYPE
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,12 @@ router = APIRouter()
 
 # Query parameters of an extract that are not dataset filters.
 RESERVED = {"format", "columns", "limit"}
-MEDIA_TYPES = {"csv": "text/csv; charset=utf-8", "json": "application/json"}
+MEDIA_TYPES = {
+    "csv": "text/csv; charset=utf-8",
+    "json": "application/json",
+    "xlsx": XLSX_MEDIA_TYPE,
+}
+FORMAT_ERROR = f"format must be one of {', '.join(extracts.FORMATS)}"
 
 
 def _dataset_for(db: Session, user: User, key: str) -> extracts.Dataset:
@@ -216,7 +222,7 @@ def run_saved(
     dataset = _dataset_for(db, user, saved.dataset)
     fmt = fmt or saved.format
     if fmt not in extracts.FORMATS:
-        raise _invalid(ValueError("format must be csv or json"))
+        raise _invalid(ValueError(FORMAT_ERROR))
     try:
         columns = extracts.parse_columns(dataset, saved.columns)
         filters = extracts.parse_filters(dataset, saved.filters)
@@ -238,11 +244,11 @@ def extract(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    """A dataset as CSV or JSON. Every other query parameter is a filter of the
+    """A dataset as CSV, JSON or XLSX. Every other query parameter is a filter of the
     dataset (see /extracts/datasets); ``limit`` makes a preview."""
     dataset = _dataset_for(db, user, dataset_key)
     if fmt not in extracts.FORMATS:
-        raise _invalid(ValueError("format must be csv or json"))
+        raise _invalid(ValueError(FORMAT_ERROR))
     raw_filters = {
         key: value for key, value in request.query_params.items() if key not in RESERVED
     }

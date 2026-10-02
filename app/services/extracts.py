@@ -42,8 +42,9 @@ from app.services.remediation import is_overdue
 from app.services.remediation_plan import ActionFilters, action_summaries
 from app.services.risk_scoring import risk_level
 from app.services.tickets import ticket_metrics
+from app.services.xlsx import write_xlsx
 
-FORMATS = ("csv", "json")
+FORMATS = ("csv", "json", "xlsx")
 # Enough for a whole backlog; a preview asks for far fewer.
 MAX_ROWS = 1_000_000
 
@@ -541,6 +542,14 @@ def run(
         writer.writerow(columns)
         for row in rows:
             writer.writerow([_cell(column.get(row)) for column in chosen])
+    elif fmt == "xlsx":
+        # Typed cells: numbers stay numbers, moments ISO 8601 as in JSON.
+        write_xlsx(
+            spool,
+            columns,
+            ([_plain(column.get(row)) for column in chosen] for row in rows),
+            name=dataset.label,
+        )
     else:
         text = _Utf8(spool, bom=False)
         text.write("[")

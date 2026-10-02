@@ -167,6 +167,7 @@ function Builder({ datasets, onSaved }) {
           <select className="select" value={format} onChange={(e) => setFormat(e.target.value)} aria-label="Format">
             <option value="csv">CSV</option>
             <option value="json">JSON</option>
+            <option value="xlsx">Excel (XLSX)</option>
           </select>
         </label>
       </div>

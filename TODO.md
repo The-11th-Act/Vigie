@@ -550,7 +550,12 @@ Les parseurs jetaient tout ce que les scanners disent du correctif. Les fichiers
 - [x] Jeux : findings, correctifs, tickets, assets, catalogue CVE ; colonnes et filtres typés ; CSV ou JSON en flux ; un filtre inconnu est refusé
 - [x] Constructeur (aperçu, `curl` équivalent), extractions enregistrées à URL stable
 - [x] La requête filtrée du backlog vit dans `app/services/findings.py` (écran, export, extractions) ; filtre `owner_team`
-- [ ] Format XLSX si les équipes le demandent
+- [x] Format XLSX si les équipes le demandent *(02/10/2026 : `format=xlsx` sur
+      toutes les extractions, enregistrées comprises, et dans le constructeur.
+      Écrit avec la bibliothèque standard (une archive zip de XML), sans
+      dépendance d'exécution ; une feuille, en-tête en gras figé, nombres typés,
+      texte jamais interprété comme formule. Relu par openpyxl dans les tests,
+      à ouvrir une fois dans Excel pour confirmer)*
 
 ## ✅ 6. Dashboards
 - [x] `backlog_snapshots` (migration 0018) par jour et par équipe, pris par le passage quotidien ; 90 jours reconstruits (estimés) au premier passage ou à la demande d'un admin

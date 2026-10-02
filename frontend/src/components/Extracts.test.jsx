@@ -115,6 +115,21 @@ describe('Extracts', () => {
     )
   })
 
+  it('offers Excel, for the download and a saved extract alike', async () => {
+    extractService.save.mockResolvedValue({ data: {} })
+    const user = userEvent.setup()
+    setup()
+
+    await user.selectOptions(await screen.findByLabelText('Format'), 'xlsx')
+    await user.type(screen.getByLabelText('Extract name'), 'For Excel')
+    await user.click(screen.getByRole('button', { name: /^save$/i }))
+
+    expect(screen.getByTestId('curl-command').textContent).toContain('format=xlsx')
+    await waitFor(() =>
+      expect(extractService.save).toHaveBeenCalledWith(expect.objectContaining({ format: 'xlsx' }))
+    )
+  })
+
   it('lists saved extracts with the URL to pull', async () => {
     setup({
       saved: [
