@@ -9,9 +9,11 @@ import json
 
 import pytest
 
+from app.models.threat_intel import KbSupersedence
 from app.models.vulnerability import Vulnerability
 from scripts.import_threat_intel import main, parse_args
 from tests.test_create_admin import _NonClosing
+from tests.test_kb_supersedence import cvrf
 
 
 @pytest.fixture(autouse=True)
@@ -63,6 +65,19 @@ class TestArguments:
 
 
 class TestImport:
+    def test_applies_several_msrc_documents(self, tmp_path, test_session):
+        paths = []
+        for doc_id, edge in (
+            ("2024-Jan", ("KB5034127", "KB5033371")),
+            ("2024-Feb", ("KB5034768", "KB5034127")),
+        ):
+            path = tmp_path / f"{doc_id}.json"
+            path.write_bytes(cvrf(doc_id, edge))
+            paths.append(str(path))
+
+        assert main(["--msrc", *paths]) == 0
+        assert test_session.query(KbSupersedence).count() == 2
+
     def test_applies_both_files(self, tmp_path, test_session):
         code = main(
             [

@@ -190,8 +190,10 @@ class FakeSession:
         self.responses = list(responses)
         self.calls = []
 
-    def get(self, url, timeout=None, stream=False):
-        self.calls.append({"url": url, "timeout": timeout, "stream": stream})
+    def get(self, url, headers=None, timeout=None, stream=False):
+        self.calls.append(
+            {"url": url, "headers": headers, "timeout": timeout, "stream": stream}
+        )
         response = self.responses.pop(0)
         if isinstance(response, Exception):
             raise response
@@ -205,7 +207,19 @@ class TestThreatFeedClient:
         session = FakeSession(FakeResponse(200, b"payload"))
 
         assert ThreatFeedClient(session, timeout=5).get(self.URL) == b"payload"
-        assert session.calls[0] == {"url": self.URL, "timeout": 5, "stream": True}
+        assert session.calls[0] == {
+            "url": self.URL,
+            "headers": None,
+            "timeout": 5,
+            "stream": True,
+        }
+
+    def test_passes_the_headers_asked_for(self):
+        session = FakeSession(FakeResponse(200, b"{}"))
+
+        ThreatFeedClient(session).get(self.URL, headers={"Accept": "application/json"})
+
+        assert session.calls[0]["headers"] == {"Accept": "application/json"}
 
     def test_retries_a_server_error(self):
         first = FakeResponse(503)

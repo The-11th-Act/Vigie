@@ -2,8 +2,11 @@ import csv
 import io
 
 from app.models.asset import Asset
+from app.models.threat_intel import FEED_MSRC
 from app.parsers.utils import remediation
 from app.services.ingestion import ingest_findings
+from app.services.threat_intel import import_feed
+from tests.test_kb_supersedence import cvrf
 
 
 def ingest(db_session, cve, remediations, ip="10.90.0.1"):
@@ -58,6 +61,17 @@ class TestFindingRemediations:
             "title": "KB5034127: Windows Server 2019 Security Update",
             "url": "https://support.microsoft.com/help/5034127",
         }
+
+    def test_a_superseded_kb_shows_the_later_one_and_what_it_replaces(
+        self, client, db_session
+    ):
+        import_feed(db_session, FEED_MSRC, cvrf("2024-Jan", ("KB5034127", "KB5033371")))
+        ingest(db_session, "CVE-2023-36025", [remediation("kb", "KB5033371")])
+
+        [item] = client.get("/api/v1/vulnerabilities/findings").json()["items"]
+        [fix] = item["remediations"]
+        assert fix["action"]["reference"] == "KB5034127"
+        assert fix["reported_reference"] == "KB5033371"
 
     def test_the_asset_view_carries_them_too(self, client, db_session):
         ingest(db_session, "CVE-2024-20674", [remediation("kb", "KB5034127")])

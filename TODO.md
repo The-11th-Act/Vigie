@@ -513,7 +513,8 @@ Les parseurs jetaient tout ce que les scanners disent du correctif. Les fichiers
 - [x] `remediations` dans les réponses de findings, colonnes `remediation` / `fixed_version` dans l'export CSV
 - [x] Colonne « Fix » dans le backlog : KB en badge, sinon le correctif et sa version cible
 - [ ] CrowdStrike : vérifier sur un vrai tenant que les entités de remédiation reviennent de `entities/vulnerabilities/v2`. Sinon, passer par l'endpoint `combined` avec `facet=remediation`
-- [ ] Remplacement des KB (supersedence) pour les sources qui ne donnent pas le KB par hôte : flux MSRC CVRF
+- [x] Remplacement des KB (supersedence) pour les sources qui ne donnent pas le KB par hôte : flux MSRC CVRF *(09/10/2026 : bulletins mensuels MSRC en JSON (champ `Supercedence`, orthographe de Microsoft), récupérés avec KEV et EPSS ou importés hors ligne ; un lien vers un KB remplacé pointe sur le dernier KB qui le remplace, à l'ingestion et à l'arrivée d'un bulletin, et garde le KB du scanner (`reported_reference`, « replaces KB… » dans le backlog). Remplacement appliqué seulement s'il est sans ambiguïté (une bifurcation jamais rejointe, vue en mars 2026 sur un hotpatch, laisse le KB du scanner). Appliqué à toutes les sources, Nessus compris : un scan ancien demande lui aussi un KB remplacé depuis. Vérifié sur les vrais bulletins 2024-Jan à 2026-Sep)*
+- [ ] Choisir, parmi les KB de plusieurs versions de Windows qu'une source liste pour un finding, celui de l'hôte : les bulletins MSRC donnent le produit et le build (`FixedBuild`) de chaque KB, mais le build exact de l'hôte n'est pas fiable dans les rapports. À faire sur un vrai export
 
 ## 0. Remise à plat
 - [x] Trier les PR Dependabot : regroupées en commits cohérents (bcrypt 5 sans passlib, React 19, Vite 8, vitest 5, node 26, nginx 1.31, Redis 8, black 26, ruff 0.16) ; postgres 18 bien ignoré, pydantic-core exclu *(30/09/2026)*

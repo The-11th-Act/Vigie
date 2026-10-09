@@ -10,7 +10,7 @@ FastAPI + SQLAlchemy + Celery/Redis + PostgreSQL ; React 19 + Vite 8.
   exploitation, sauvegarde, audits. **`TODO.md` : l'état de référence** — la
   section « Modules et remédiation » en fin de fichier suit la feuille de route
   en cours.
-- Migrations : tête `0024`. Chaque colonne de modèle doit avoir sa migration
+- Migrations : tête `0025`. Chaque colonne de modèle doit avoir sa migration
   (`alembic check` en CI).
 
 ## Façon de travailler (convenue avec l'utilisateur)
@@ -130,6 +130,11 @@ gh run list --workflow CI --branch main --limit 1          # pas seulement --lim
   (`app/services/remediation_plan.py`) ; tickets par correctif × équipe
   (`app/services/tickets.py`, `sync_tickets` après ingestion, triage,
   réouverture d'acceptation et passage quotidien).
+- **Remplacement des KB** (`app/services/kb_supersedence.py`, bulletins MSRC
+  lus par `app/parsers/msrc.py`, troisième flux `msrc` de `threat_intel.py`) :
+  un lien vers un KB remplacé pointe sur le dernier KB, le KB du scanner reste
+  dans `reported_reference`. Le champ MSRC s'écrit `Supercedence`, et l'API
+  répond en XML sans `Accept: application/json`.
 - **Catégorisation** : taxonomie dans `app/services/categorization.py`
   (titre puis famille du scanner), `asset_type` déduit de l'OS.
 - **Tableaux de bord** : `backlog_snapshots` pris par le passage quotidien,

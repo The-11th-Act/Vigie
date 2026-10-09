@@ -18,6 +18,7 @@ from app.models.asset import Asset, Criticality
 from app.models.threat_intel import (
     FEED_EPSS,
     FEED_KEV,
+    FEED_MSRC,
     EpssScoreEntry,
     KevCatalogEntry,
     ThreatFeedStatus,
@@ -341,8 +342,9 @@ class FakeClient:
     def __init__(self, bodies):
         self.bodies = bodies
 
-    def get(self, url):
-        body = self.bodies[url]
+    def get(self, url, headers=None):
+        # MSRC, absent from most of these tests, fails on its own.
+        body = self.bodies.get(url, ThreatFeedError(f"no body for {url}"))
         if isinstance(body, Exception):
             raise body
         return body
@@ -369,12 +371,17 @@ def epss_gz(rows):
 
 
 class TestRefresh:
-    def test_applies_both_feeds(self, db_session, track):
+    def test_applies_every_feed(self, db_session, track):
         finding = track("CVE-2024-0001")
         client = FakeClient(
             {
                 settings.THREAT_INTEL_KEV_URL: kev_json("CVE-2024-0001"),
                 settings.THREAT_INTEL_EPSS_URL: epss_gz({"CVE-2024-0001": 0.7}),
+                # An index with nothing in the window: MSRC is up to date.
+                settings.THREAT_INTEL_MSRC_URL
+                + "updates": json.dumps(
+                    {"value": [{"ID": "2016-Jan", "InitialReleaseDate": "2016-01-12"}]}
+                ).encode(),
             }
         )
 
@@ -383,7 +390,7 @@ class TestRefresh:
         assert result.ok
         assert finding.vulnerability.in_kev is True
         assert finding.vulnerability.epss_score == pytest.approx(0.7)
-        assert set(result.as_dict()) == {FEED_KEV, FEED_EPSS}
+        assert set(result.as_dict()) == {FEED_KEV, FEED_EPSS, FEED_MSRC}
 
     def test_one_failing_feed_keeps_its_data_and_spares_the_other(
         self, db_session, track

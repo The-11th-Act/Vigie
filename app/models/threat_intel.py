@@ -1,6 +1,15 @@
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, Float, Integer, String, Text
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import false
 
@@ -8,7 +17,10 @@ from app.db.database import Base
 
 FEED_KEV = "kev"
 FEED_EPSS = "epss"
-FEEDS = (FEED_KEV, FEED_EPSS)
+# Not threat intelligence strictly speaking, but fetched, guarded, imported
+# offline and reported on exactly like the two others.
+FEED_MSRC = "msrc"
+FEEDS = (FEED_KEV, FEED_EPSS, FEED_MSRC)
 
 
 class ThreatFeedStatus(Base):
@@ -77,3 +89,43 @@ class EpssScoreEntry(Base):
     score: Mapped[float] = mapped_column(Float, nullable=False)
     percentile: Mapped[float | None] = mapped_column(Float, nullable=True)
     score_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+
+class MsrcDocument(Base):
+    """A monthly MSRC document already applied, and which revision of it.
+
+    MSRC revises its documents constantly (new CVEs, Azure Linux entries); the
+    refresh compares ``current_release`` with the index to fetch only what is
+    new, rather than some 200 MB every day.
+    """
+
+    __tablename__ = "msrc_documents"
+
+    # "2024-Jan".
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    initial_release: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    current_release: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    supersedences: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    applied_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class KbSupersedence(Base):
+    """``kb`` replaces ``superseded_kb``, according to one MSRC document.
+
+    Kept per document so that a revised document replaces its own edges and
+    nothing else's.
+    """
+
+    __tablename__ = "kb_supersedences"
+
+    document_id: Mapped[str] = mapped_column(
+        ForeignKey("msrc_documents.id", ondelete="CASCADE"), primary_key=True
+    )
+    kb: Mapped[str] = mapped_column(String(16), primary_key=True)
+    superseded_kb: Mapped[str] = mapped_column(String(16), primary_key=True, index=True)

@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
 from app.models.asset import Asset
-from app.models.remediation import FindingRemediation, RemediationAction
+from app.models.remediation import FindingRemediation, RemediationAction, RemediationKind
 from app.models.vulnerability import (
     AssetVulnerability,
     FindingDetection,
@@ -34,6 +34,7 @@ from app.services.categorization import (
     classify_finding,
     more_specific,
 )
+from app.services.kb_supersedence import supersede, supersedence_map
 from app.services.remediation import apply_kev_sla, calculate_remediation_deadline
 from app.services.risk_scoring import RiskInputs, compute_risk
 from app.services.threat_intel import enrich_new_vulnerabilities
@@ -565,8 +566,22 @@ def _sync_remediations(
     missing January's fixes is asked for February's rollup, not both. A finding
     whose parser said nothing about remediation (key absent) is left alone; one
     reported with an empty list loses this source's links.
+
+    A KB that MSRC says is superseded is recorded as the KB replacing it, the
+    one to deploy today, with the scanner's KB kept on the link.
     """
+    latest = (
+        supersedence_map(db)
+        if any(
+            entry.kind == RemediationKind.kb.value
+            for finding in findings
+            for entry in finding.remediations or []
+        )
+        else {}
+    )
     wanted: dict[int, dict[str, ParsedRemediation]] = {}
+    replaced: dict[tuple[int, str], str] = {}
+    named: set[tuple[int, str]] = set()
     for finding, assoc in zip(findings, assocs, strict=True):
         entries = finding.remediations
         if entries is None:
@@ -574,7 +589,17 @@ def _sync_remediations(
         # One (asset, CVE) can come from several plugins of the same file.
         per_finding = wanted.setdefault(assoc.id, {})
         for entry in entries:
-            per_finding.setdefault(entry.reference, entry)
+            entry, reported = supersede(entry, latest)
+            key = (assoc.id, entry.reference)
+            if reported:
+                per_finding.setdefault(entry.reference, entry)
+                replaced.setdefault(key, reported)
+            else:
+                # The scanner's own description of a KB beats the bare entry
+                # standing for a KB it replaces.
+                if key not in named:
+                    per_finding[entry.reference] = entry
+                named.add(key)
     if not wanted:
         return
 
@@ -604,6 +629,9 @@ def _sync_remediations(
                     finding_id=finding_id, action_id=action.id, source=scan_source
                 )
                 db.add(link)
+            # None when the scanner also named the later KB itself.
+            key = (finding_id, entry.reference)
+            link.reported_reference = None if key in named else replaced.get(key)
             link.installed_version = entry.installed_version
             link.fixed_version = entry.fixed_version
             link.last_seen_at = now

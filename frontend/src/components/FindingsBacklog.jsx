@@ -67,9 +67,13 @@ function RemediationCell({ finding }) {
   }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', maxWidth: 260 }}>
-      {links.map(({ action, fixed_version: fixedVersion }) => {
+      {links.map(({ action, fixed_version: fixedVersion, reported_reference: replaces }) => {
         const label = action.kind === 'kb' ? action.reference : action.title || action.reference;
-        const detail = [action.title, fixedVersion && `Fixed in ${fixedVersion}`]
+        const detail = [
+          action.title,
+          replaces && `Replaces ${replaces}, which the scanner asked for`,
+          fixedVersion && `Fixed in ${fixedVersion}`,
+        ]
           .filter(Boolean)
           .join(' · ');
         return (
@@ -80,6 +84,9 @@ function RemediationCell({ finding }) {
               <span style={{ display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {action.kind === 'no_fix' ? 'No fix available' : label}
               </span>
+            )}
+            {replaces && (
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>replaces {replaces}</div>
             )}
             {fixedVersion && (
               <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>→ {fixedVersion}</div>

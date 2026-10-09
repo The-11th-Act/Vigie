@@ -6,7 +6,7 @@ import DashboardTrends from './DashboardTrends';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, CartesianGrid } from 'recharts';
 import { AlertTriangle, Server, ShieldAlert, Activity, Clock, Flame } from 'lucide-react';
 
-const FEED_LABELS = { kev: 'CISA KEV', epss: 'FIRST EPSS' };
+const FEED_LABELS = { kev: 'CISA KEV', epss: 'FIRST EPSS', msrc: 'MSRC' };
 
 function describeFeed(feed) {
   const label = FEED_LABELS[feed.feed] || feed.feed;

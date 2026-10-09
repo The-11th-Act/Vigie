@@ -127,7 +127,11 @@ class TestThreatContextOnTheDashboard:
         assert data["kev_open_count"] == 1
         assert data["kev_overdue_count"] == 1
         assert data["high_epss_open_count"] == 1
-        assert [f["feed"] for f in data["threat_intel"]["feeds"]] == ["kev", "epss"]
+        assert [f["feed"] for f in data["threat_intel"]["feeds"]] == [
+            "kev",
+            "epss",
+            "msrc",
+        ]
 
     def test_top_risks_carry_the_threat_context(self, client, db_session):
         self.seed(db_session)

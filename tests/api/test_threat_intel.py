@@ -4,8 +4,10 @@ import json
 import pytest
 
 from app.core.config import settings
+from app.models.threat_intel import KbSupersedence
 from app.models.vulnerability import Vulnerability
 from tests.conftest import VALID_PASSWORD
+from tests.test_kb_supersedence import cvrf
 
 
 def kev_file(*cves, released="2026-09-25"):
@@ -30,11 +32,11 @@ def tracked(db_session):
 
 
 class TestStatus:
-    def test_reports_both_feeds_as_stale_before_any_pull(self, client):
+    def test_reports_every_feed_as_stale_before_any_pull(self, client):
         data = client.get("/api/v1/threat-intel/status").json()
 
         assert data["enabled"] is settings.THREAT_INTEL_ENABLED
-        assert [f["feed"] for f in data["feeds"]] == ["kev", "epss"]
+        assert [f["feed"] for f in data["feeds"]] == ["kev", "epss", "msrc"]
         assert all(f["stale"] for f in data["feeds"])
 
     def test_an_import_makes_the_feed_fresh(self, client, tracked):
@@ -67,6 +69,30 @@ class TestImport:
         assert response.json()["changed"] == 1
         db_session.refresh(tracked)
         assert tracked.in_kev is True
+
+    def test_applies_an_msrc_document(self, client, db_session):
+        body = cvrf("2024-Jan", ("KB5034127", "KB5033371"))
+
+        response = client.post(
+            "/api/v1/threat-intel/import",
+            data={"feed": "msrc"},
+            files={"file": ("2024-Jan.json", io.BytesIO(body), "application/json")},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["feed"] == "msrc"
+        assert response.json()["records"] == 1
+        assert db_session.query(KbSupersedence).one().superseded_kb == "KB5033371"
+
+    def test_the_xml_form_of_an_msrc_document_says_how_to_get_json(self, client):
+        response = client.post(
+            "/api/v1/threat-intel/import",
+            data={"feed": "msrc"},
+            files={"file": ("2024-Jan.xml", io.BytesIO(b"<cvrf/>"), "application/xml")},
+        )
+
+        assert response.status_code == 400
+        assert "application/json" in response.json()["detail"]
 
     def test_an_unknown_feed_is_rejected(self, client):
         response = client.post(

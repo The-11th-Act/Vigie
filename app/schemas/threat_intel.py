@@ -13,6 +13,8 @@ class FeedStatusResponse(BaseModel):
     source_date: date | None = None
     records: int = 0
     stale: bool = True
+    # The monthly MSRC documents get longer than the daily feeds.
+    stale_after_hours: int | None = None
 
 
 class ThreatIntelStatusResponse(BaseModel):

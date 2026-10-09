@@ -96,10 +96,12 @@ class ThreatFeedClient:
         self.timeout = timeout
         self.max_bytes = max_bytes
 
-    def get(self, url: str) -> bytes:
+    def get(self, url: str, headers: dict[str, str] | None = None) -> bytes:
         for attempt in range(1, MAX_ATTEMPTS + 1):
             try:
-                response = self._session.get(url, timeout=self.timeout, stream=True)
+                response = self._session.get(
+                    url, headers=headers, timeout=self.timeout, stream=True
+                )
             except requests.RequestException as exc:
                 if attempt == MAX_ATTEMPTS:
                     raise ThreatFeedError(f"Could not reach {url}: {exc}") from exc

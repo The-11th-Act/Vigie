@@ -32,7 +32,7 @@ def get_status(db: Session = Depends(get_db), payload: dict = Depends(decode_tok
 
 @router.post("/refresh", status_code=status.HTTP_202_ACCEPTED)
 def refresh(admin: dict = Depends(require_admin)):
-    """Queue an immediate pull of both feeds, outside the daily schedule."""
+    """Queue an immediate pull of the feeds, outside the daily schedule."""
     if not settings.THREAT_INTEL_ENABLED:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -54,13 +54,13 @@ def refresh(admin: dict = Depends(require_admin)):
 
 @router.post("/import", response_model=FeedResultResponse)
 def import_file(
-    feed: str = Form(..., description="kev or epss"),
+    feed: str = Form(..., description="kev, epss or msrc (one monthly document)"),
     force: bool = Form(False, description="Apply even an older or shrunk snapshot"),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     admin: dict = Depends(require_admin),
 ):
-    """Apply a KEV or EPSS file downloaded out of band.
+    """Apply a KEV, EPSS or MSRC file downloaded out of band.
 
     Synchronous: the files are a few megabytes, the operation is rare and
     admin-only, and the administrator gets the outcome — or the reason for a

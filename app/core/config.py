@@ -259,6 +259,12 @@ class Settings(BaseSettings):
     THREAT_INTEL_MAX_FEED_BYTES: int = Field(default=64 * 1024 * 1024, gt=0)
     # A feed not refreshed for this long is reported as stale.
     THREAT_INTEL_STALE_AFTER_HOURS: int = Field(default=72, gt=0)
+    # MSRC CVRF API, for KB supersedence: the index is "<url>updates", each
+    # monthly document "<url>cvrf/<id>". Pulled with the two feeds above.
+    THREAT_INTEL_MSRC_URL: str = "https://api.msrc.microsoft.com/cvrf/v3.0/"
+    # Months of documents kept. A KB older than that is not resolved to the one
+    # replacing it, and stays as the scanner named it.
+    THREAT_INTEL_MSRC_MONTHS: int = Field(default=24, ge=1, le=120)
 
     # Outgoing webhooks (app/services/webhooks.py), registered by an admin. Off,
     # the worker sends nothing and deliveries wait in the outbox.
@@ -328,12 +334,20 @@ class Settings(BaseSettings):
                 )
         return value
 
-    @field_validator("THREAT_INTEL_KEV_URL", "THREAT_INTEL_EPSS_URL")
+    @field_validator(
+        "THREAT_INTEL_KEV_URL", "THREAT_INTEL_EPSS_URL", "THREAT_INTEL_MSRC_URL"
+    )
     @classmethod
     def validate_feed_url(cls, value: str) -> str:
         if not value.startswith(("https://", "http://")):
             raise ValueError("feed URLs must use http or https")
         return value
+
+    @field_validator("THREAT_INTEL_MSRC_URL")
+    @classmethod
+    def msrc_url_is_a_base(cls, value: str) -> str:
+        # The paths are appended to it.
+        return value if value.endswith("/") else value + "/"
 
     @field_validator("GLPI_URL")
     @classmethod

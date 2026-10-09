@@ -91,6 +91,46 @@ describe('AdminThreatFeeds', () => {
     ).toBeInTheDocument()
   })
 
+  it('imports an MSRC document and says how many links moved', async () => {
+    threatIntelService.status.mockResolvedValue({
+      data: {
+        ...STATUS,
+        feeds: [
+          ...STATUS.feeds,
+          {
+            feed: 'msrc',
+            last_success_at: null,
+            last_error: null,
+            source_version: null,
+            source_date: null,
+            records: 0,
+            stale: true,
+            stale_after_hours: 840,
+          },
+        ],
+      },
+    })
+    threatIntelService.importFeed.mockResolvedValue({
+      data: { feed: 'msrc', status: 'applied', records: 152, changed: 12, rescored: 0 },
+    })
+    const user = userEvent.setup()
+    render(<AdminThreatFeeds />)
+    const file = new File(['{}'], '2026-Sep.json')
+
+    expect(await screen.findByText('MSRC (KB supersedence)')).toBeInTheDocument()
+    expect(screen.getByText(/MSRC \(KB supersedence\): 35 days/)).toBeInTheDocument()
+    await user.selectOptions(screen.getByLabelText('Feed to import'), 'msrc')
+    await user.upload(screen.getByLabelText('Feed file'), file)
+    await user.click(screen.getByRole('button', { name: /import/i }))
+
+    await waitFor(() => expect(threatIntelService.importFeed).toHaveBeenCalledWith('msrc', file, false))
+    expect(
+      await screen.findByText(
+        'MSRC (KB supersedence) applied: 152 superseded KB(s) known, 12 remediation link(s) moved to a later KB.'
+      )
+    ).toBeInTheDocument()
+  })
+
   it('shows why a file was refused', async () => {
     threatIntelService.status.mockResolvedValue({ data: STATUS })
     threatIntelService.importFeed.mockRejectedValue({

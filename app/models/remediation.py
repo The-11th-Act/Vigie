@@ -79,6 +79,9 @@ class FindingRemediation(Base):
         index=True,
     )
     source: Mapped[str] = mapped_column(String(64), nullable=False)
+    # The KB the source asked for, when a later KB supersedes it (MSRC): the
+    # link then points at the later one, what a team deploys today.
+    reported_reference: Mapped[str | None] = mapped_column(String(128), nullable=True)
     # Per host: two hosts missing the same fix can run different versions.
     installed_version: Mapped[str | None] = mapped_column(String(256), nullable=True)
     fixed_version: Mapped[str | None] = mapped_column(String(256), nullable=True)

@@ -7,10 +7,35 @@ import { errorText } from './AdminAccounts';
 import { muted } from './RemediationShared';
 
 const FEEDS_KEY = ['admin', 'threat-intel'];
-const FEED_LABELS = { kev: 'CISA KEV', epss: 'FIRST EPSS' };
+const FEED_LABELS = { kev: 'CISA KEV', epss: 'FIRST EPSS', msrc: 'MSRC (KB supersedence)' };
 
 function formatMoment(value) {
   return value ? new Date(value).toLocaleString() : 'never';
+}
+
+function formatAge(hours) {
+  return hours % 24 === 0 && hours >= 48 ? `${hours / 24} days` : `${hours} hours`;
+}
+
+// The daily feeds share the global threshold; MSRC, monthly, has its own.
+function stalenessNote(data) {
+  const others = data.feeds.filter((f) => f.stale_after_hours && f.stale_after_hours !== data.stale_after_hours);
+  const extra = others.map((f) => `${FEED_LABELS[f.feed] || f.feed}: ${formatAge(f.stale_after_hours)}`);
+  return `Stale after ${data.stale_after_hours} hours without a successful update${extra.length ? ` (${extra.join(', ')})` : ''}.`;
+}
+
+function describeResult(result) {
+  const label = FEED_LABELS[result.feed] || result.feed;
+  if (result.feed === 'msrc') {
+    return (
+      `${label} ${result.status}: ${result.records.toLocaleString()} superseded KB(s) known, ` +
+      `${result.changed} remediation link(s) moved to a later KB.`
+    );
+  }
+  return (
+    `${label} ${result.status}: ${result.records.toLocaleString()} records, ` +
+    `${result.changed} CVE(s) changed, ${result.rescored} finding(s) rescored.`
+  );
 }
 
 function FeedRow({ feed }) {
@@ -69,12 +94,7 @@ export default function AdminThreatFeeds() {
 
   const importFile = (event) => {
     event.preventDefault();
-    act(
-      () => threatIntelService.importFeed(feed, file, force),
-      (result) =>
-        `${FEED_LABELS[result.feed] || result.feed} ${result.status}: ${result.records.toLocaleString()} records, ` +
-        `${result.changed} CVE(s) changed, ${result.rescored} finding(s) rescored.`
-    );
+    act(() => threatIntelService.importFeed(feed, file, force), describeResult);
   };
 
   return (
@@ -82,6 +102,8 @@ export default function AdminThreatFeeds() {
       <h2 style={{ fontSize: '1.15rem', marginBottom: '0.5rem' }}>Threat feeds</h2>
       <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginBottom: '1rem' }}>
         CISA KEV (exploited in the wild) and FIRST EPSS (probability of exploitation) weigh on every risk score.
+        The monthly MSRC documents say which Microsoft update replaces which, so that the remediation plan asks
+        for the latest one.
         {data && !data.enabled && ' The daily refresh is off (THREAT_INTEL_ENABLED): import the files below.'}
       </p>
       {loading && !data && <div className="loading">Loading the feeds...</div>}
@@ -106,7 +128,7 @@ export default function AdminThreatFeeds() {
               </tbody>
             </table>
           </div>
-          <div style={muted}>Stale after {data.stale_after_hours} hours without a successful update.</div>
+          <div style={muted}>{stalenessNote(data)}</div>
 
           <div>
             <button type="button" className="icon-button" onClick={refresh} disabled={busy || !data.enabled}>
@@ -118,6 +140,7 @@ export default function AdminThreatFeeds() {
             <select className="select" value={feed} onChange={(e) => setFeed(e.target.value)} aria-label="Feed to import">
               <option value="kev">CISA KEV (JSON)</option>
               <option value="epss">FIRST EPSS (CSV, gzip or not)</option>
+              <option value="msrc">MSRC monthly document (CVRF, JSON)</option>
             </select>
             <input
               type="file"

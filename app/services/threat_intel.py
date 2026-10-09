@@ -25,12 +25,21 @@ from app.core.config import settings
 from app.models.threat_intel import (
     FEED_EPSS,
     FEED_KEV,
+    FEED_MSRC,
     FEEDS,
     EpssScoreEntry,
+    KbSupersedence,
     KevCatalogEntry,
+    MsrcDocument,
     ThreatFeedStatus,
 )
 from app.models.vulnerability import AssetVulnerability, Status, Vulnerability
+from app.parsers.msrc import MsrcDocument as ParsedMsrcDocument
+from app.parsers.msrc import (
+    MsrcDocumentRef,
+    parse_msrc_document,
+    parse_msrc_index,
+)
 from app.parsers.threat_feeds import (
     EpssSnapshot,
     KevCatalog,
@@ -40,10 +49,12 @@ from app.parsers.threat_feeds import (
     parse_epss,
     parse_kev,
 )
+from app.services.kb_supersedence import apply_supersedence, store_documents
 from app.services.remediation import apply_kev_sla
 from app.services.rescoring import rescore_open_findings
 from app.services.risk_acceptance import reopen_for_kev
 from app.services.risk_scoring import epss_band
+from app.services.tickets import sync_tickets
 from app.services.webhooks import emit
 
 logger = logging.getLogger(__name__)
@@ -59,6 +70,18 @@ MIN_KEV_RETENTION = 0.9
 
 SOURCE_NETWORK = "network"
 SOURCE_IMPORT = "import"
+
+# MSRC documents are asked for as JSON: the API answers XML otherwise.
+MSRC_HEADERS = {"Accept": "application/json"}
+# MSRC revises a dozen recent documents a day, mostly to add CVEs. A revision
+# is fetched again only for documents of the last two months, where an
+# out-of-band update can still change what supersedes what; older ones are
+# fetched once.
+MSRC_REFETCH_WINDOW = timedelta(days=62)
+# One document a month (Patch Tuesday): an installation importing them by
+# hand is not stale three days after an import.
+MSRC_STALE_AFTER = timedelta(days=35)
+
 # CVEs named in one threat.kev_listed webhook event.
 KEV_EVENT_MAX_CVES = 100
 
@@ -123,7 +146,8 @@ def refresh_threat_intel(
         ),
         now,
     )
-    return RefreshResult(feeds=[kev, epss])
+    msrc = _refresh_one(db, FEED_MSRC, lambda: refresh_msrc(db, client, now), now)
+    return RefreshResult(feeds=[kev, epss, msrc])
 
 
 def import_feed(
@@ -147,7 +171,146 @@ def import_feed(
     if feed == FEED_EPSS:
         snapshot = parse_epss(raw, None, max_bytes)
         return apply_epss(db, snapshot, source=SOURCE_IMPORT, now=now, force=force)
+    if feed == FEED_MSRC:
+        document = parse_msrc_document(raw, max_bytes)
+        return apply_msrc(db, [document], source=SOURCE_IMPORT, now=now, force=force)
     raise ThreatFeedError(f"Unknown feed {feed!r}")
+
+
+def refresh_msrc(db: Session, client: ThreatFeedClient, now: datetime) -> FeedResult:
+    """Fetch the MSRC documents that are new or newly revised, and apply them.
+
+    Every document is fetched and parsed before anything is written: one that
+    fails leaves the stored supersedences as they were, like the other feeds.
+    """
+    base = settings.THREAT_INTEL_MSRC_URL
+    max_bytes = settings.THREAT_INTEL_MAX_FEED_BYTES
+    index = parse_msrc_index(
+        client.get(base + "updates", headers=MSRC_HEADERS), max_bytes
+    )
+    stored = {row.id: row for row in db.query(MsrcDocument)}
+    oldest = now - timedelta(days=31 * settings.THREAT_INTEL_MSRC_MONTHS)
+
+    wanted = sorted(
+        (
+            ref
+            for ref in index
+            if ref.initial_release is not None
+            and ref.initial_release >= oldest
+            and _msrc_outdated(ref, stored.get(ref.id), now)
+        ),
+        key=lambda ref: ref.initial_release or now,
+    )
+    documents = []
+    for ref in wanted:
+        document = parse_msrc_document(
+            client.get(f"{base}cvrf/{ref.id}", headers=MSRC_HEADERS), max_bytes
+        )
+        if document.id != ref.id:
+            raise ThreatFeedError(f"MSRC answered {document.id} when asked for {ref.id}")
+        documents.append(document)
+    return apply_msrc(db, documents, source=SOURCE_NETWORK, now=now, lenient=True)
+
+
+def _msrc_outdated(ref: MsrcDocumentRef, row: MsrcDocument | None, now: datetime) -> bool:
+    if row is None:
+        return True
+    if ref.current_release is None or row.current_release is None:
+        return False
+    revised = _aware(row.current_release) != ref.current_release
+    recent = ref.initial_release is not None and ref.initial_release >= (
+        now - MSRC_REFETCH_WINDOW
+    )
+    return revised and recent
+
+
+def apply_msrc(
+    db: Session,
+    documents: list[ParsedMsrcDocument],
+    *,
+    source: str,
+    now: datetime,
+    force: bool = False,
+    lenient: bool = False,
+) -> FeedResult:
+    """Store the supersedences of ``documents``, then move the links they affect.
+
+    A document older than the revision already applied, or one that would
+    erase all the supersedences its stored revision has (a format change looks
+    like that), is refused: the whole import fails unless forced. The network
+    refresh is ``lenient``: it skips such a document and applies the others,
+    rather than letting one odd document block every later month.
+    """
+    status = _feed_status(db, FEED_MSRC)
+    accepted = []
+    for document in documents:
+        reason = (
+            None if force else _msrc_refusal(db.get(MsrcDocument, document.id), document)
+        )
+        if reason is None:
+            accepted.append(document)
+        elif lenient:
+            logger.warning("MSRC document %s skipped: %s", document.id, reason)
+        else:
+            raise FeedRejected(f"{reason}; use force to apply it anyway")
+
+    changed_documents = store_documents(db, accepted, now)
+    # Only a changed supersedence can move a link; ingestion handles new ones.
+    moved = apply_supersedence(db) if changed_documents else 0
+    if moved:
+        # A finding moved to a later KB joins that KB's active ticket.
+        sync_tickets(db, now)
+
+    newest = (
+        db.query(MsrcDocument)
+        .order_by(MsrcDocument.initial_release.desc(), MsrcDocument.id.desc())
+        .first()
+    )
+    records = db.query(KbSupersedence).count()
+    _record_success(
+        status,
+        source,
+        newest.id if newest else None,
+        (
+            _aware(newest.initial_release).date()
+            if newest and newest.initial_release
+            else None
+        ),
+        records,
+        moved,
+        now,
+    )
+    db.commit()
+    logger.info(
+        "MSRC applied from %s: %d document(s) fetched, %d changed, %d supersedences "
+        "stored, %d remediation link(s) moved",
+        source,
+        len(documents),
+        changed_documents,
+        records,
+        moved,
+    )
+    return FeedResult(FEED_MSRC, "applied", records, moved)
+
+
+def _msrc_refusal(row: MsrcDocument | None, document: ParsedMsrcDocument) -> str | None:
+    if row is None:
+        return None
+    if (
+        row.current_release is not None
+        and document.current_release is not None
+        and document.current_release < _aware(row.current_release)
+    ):
+        return (
+            f"MSRC document {document.id} of {document.current_release:%Y-%m-%d} is "
+            f"older than the revision already applied ({_aware(row.current_release):%Y-%m-%d})"
+        )
+    if row.supersedences and not document.supersedences:
+        return (
+            f"MSRC document {document.id} names no superseded KB, where the "
+            f"applied revision named {row.supersedences}"
+        )
+    return None
 
 
 def apply_kev(
@@ -569,13 +732,15 @@ def feed_freshness(db: Session, now: datetime | None = None) -> list[dict]:
 
     A feed never applied, or not applied for ``THREAT_INTEL_STALE_AFTER_HOURS``,
     is stale: its values still count in the score, but they may be outdated.
+    MSRC publishes monthly and gets ``MSRC_STALE_AFTER`` at least.
     """
     now = now or datetime.now(UTC)
-    max_age = timedelta(hours=settings.THREAT_INTEL_STALE_AFTER_HOURS)
+    daily = timedelta(hours=settings.THREAT_INTEL_STALE_AFTER_HOURS)
     rows = {row.feed: row for row in db.query(ThreatFeedStatus).all()}
 
     feeds = []
     for feed in FEEDS:
+        max_age = max(daily, MSRC_STALE_AFTER) if feed == FEED_MSRC else daily
         row = rows.get(feed)
         last_success = (
             _aware(row.last_success_at) if row and row.last_success_at else None
@@ -591,6 +756,7 @@ def feed_freshness(db: Session, now: datetime | None = None) -> list[dict]:
                 "source_date": row.source_date if row else None,
                 "records": row.records if row else 0,
                 "stale": last_success is None or now - last_success > max_age,
+                "stale_after_hours": int(max_age.total_seconds() // 3600),
             }
         )
     return feeds

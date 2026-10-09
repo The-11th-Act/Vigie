@@ -126,6 +126,32 @@ describe('FindingsBacklog', () => {
     expect(screen.getByText('→ 3.0.13')).toBeInTheDocument()
   })
 
+  it('says which KB the scanner asked for when a later one replaces it', async () => {
+    vulnerabilityService.getFindings.mockResolvedValue({
+      data: {
+        total: 1,
+        items: [
+          {
+            ...FINDING,
+            remediations: [
+              {
+                source: 'openvas',
+                reported_reference: 'KB5033371',
+                installed_version: null,
+                fixed_version: null,
+                action: { reference: 'KB5034127', kind: 'kb', title: null, url: null },
+              },
+            ],
+          },
+        ],
+      },
+    })
+    render(<FindingsBacklog />)
+
+    expect(await screen.findByText('KB5034127')).toBeInTheDocument()
+    expect(screen.getByText('replaces KB5033371')).toBeInTheDocument()
+  })
+
   it('renders a risk-ranked finding with its asset and CVE', async () => {
     mockOneFinding()
     render(<FindingsBacklog />)

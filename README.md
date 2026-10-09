@@ -464,11 +464,16 @@ criticality in these rules refuses to start, rather than silently
 disabling the rule.
 
 
-### Threat intelligence (CISA KEV, FIRST EPSS)
+### Threat intelligence (CISA KEV, FIRST EPSS, MSRC)
 
 With `THREAT_INTEL_ENABLED=true`, the beat scheduler pulls both feeds daily at
 `THREAT_INTEL_REFRESH_HOUR_UTC` and rescores only the findings whose score can
-move (CVE entering or leaving KEV, EPSS changing band). The refresh never erases
+move (CVE entering or leaving KEV, EPSS changing band). The same task reads the
+MSRC CVRF index (`THREAT_INTEL_MSRC_URL`) and fetches, as JSON, the monthly
+documents of the last `THREAT_INTEL_MSRC_MONTHS` months (24 by default) that it
+has not applied yet; MSRC revises recent documents daily, so a revision is
+fetched again only for the last two months. They feed the KB supersedence of
+the remediation plan (see *Remediation actions*). The refresh never erases
 good data: a feed that fails or does not parse changes nothing and its error is
 recorded; an older snapshot, or a KEV catalogue under 90 % of the previous one
 (what a truncated download looks like), is refused unless forced. Proxies and
@@ -481,11 +486,21 @@ Without outbound Internet access, leave it disabled and import the files:
 #   https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json
 #   https://epss.empiricalsecurity.com/epss_scores-current.csv.gz
 python -m scripts.import_threat_intel --kev kev.json --epss epss_scores-current.csv.gz
+
+# MSRC: one JSON document per month (the API answers XML without the header)
+#   curl -H "Accept: application/json" -o 2026-Sep.json \
+#        https://api.msrc.microsoft.com/cvrf/v3.0/cvrf/2026-Sep
+python -m scripts.import_threat_intel --msrc 2026-Aug.json 2026-Sep.json
 ```
 
-or upload them as an admin through `POST /api/v1/threat-intel/import`.
-`GET /api/v1/threat-intel/status` reports when each feed was last applied and
-whether it is stale (`THREAT_INTEL_STALE_AFTER_HOURS`).
+or upload them as an admin through `POST /api/v1/threat-intel/import`
+(`feed=kev`, `epss` or `msrc`). An MSRC document older than the revision
+already applied, or one that would remove every supersedence its applied
+revision had, is refused unless forced; the network refresh skips such a
+document and applies the others. `GET /api/v1/threat-intel/status` reports
+when each feed was last applied and whether it is stale
+(`THREAT_INTEL_STALE_AFTER_HOURS`; 35 days at least for the monthly MSRC
+documents).
 
 The KEV catalogue is published by CISA; EPSS scores are published by
 [FIRST](https://www.first.org/epss/). Check their terms of use for your context.
@@ -525,6 +540,19 @@ Each source's links are replaced when it reports the finding again, so a
 superseded cumulative update disappears once the scanner asks for the next one.
 Findings carry them as `remediations`, and the CSV export adds `remediation`
 and `fixed_version` columns.
+
+**KB supersedence.** A scanner whose check names a fixed KB (an OpenVAS NVT, a
+Spotlight remediation, a Nessus cross-reference) keeps asking for December's
+cumulative update long after January's replaced it. The monthly MSRC documents
+say which KB supersedes which (see *Threat intelligence* below): a link to a
+superseded KB is recorded against the latest KB replacing it, at ingestion and
+whenever a new document arrives, and keeps the scanner's KB in
+`reported_reference` (shown as "replaces KB…" in the backlog). Only an
+unambiguous replacement is applied: a KB replaced along two chains that never
+meet again (a hotpatch superseded by two different updates) stays as the
+scanner named it, and so does a KB older than `THREAT_INTEL_MSRC_MONTHS`.
+Choosing among the KBs of several Windows versions for one host is not done:
+it would need the host's exact build, which the scanners report unevenly.
 
 The **Remediation** module folds the open backlog per fix
 (`GET /api/v1/remediation/actions`): each KB or fix with the hosts still

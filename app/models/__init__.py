@@ -4,7 +4,13 @@ from app.models.preferences import ModuleSetting, RoleProfile, UserPreference
 from app.models.remediation import FindingRemediation, RemediationAction
 from app.models.scan import ScanJob, ScanStatus
 from app.models.snapshot import BacklogSnapshot
-from app.models.threat_intel import EpssScoreEntry, KevCatalogEntry, ThreatFeedStatus
+from app.models.threat_intel import (
+    EpssScoreEntry,
+    KbSupersedence,
+    KevCatalogEntry,
+    MsrcDocument,
+    ThreatFeedStatus,
+)
 from app.models.ticket import (
     RemediationTicket,
     TicketAuditLog,
@@ -45,6 +51,8 @@ __all__ = [
     "ThreatFeedStatus",
     "KevCatalogEntry",
     "EpssScoreEntry",
+    "MsrcDocument",
+    "KbSupersedence",
     "Webhook",
     "WebhookDelivery",
 ]

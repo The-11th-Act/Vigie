@@ -234,7 +234,8 @@ def rescore_open_findings_task():
     time_limit=2100,
 )
 def refresh_threat_intel_task():
-    """Pull the KEV and EPSS feeds and rescore what they changed. Daily, by beat.
+    """Pull the KEV and EPSS feeds and rescore what they changed, then the new
+    MSRC documents (KB supersedence). Daily, by beat.
 
     No Celery-level retry: the feed client already retries transient errors,
     and a feed that stays down is simply tried again the next day, its failure
