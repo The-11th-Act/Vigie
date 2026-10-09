@@ -113,8 +113,11 @@ gh run list --workflow CI --branch main --limit 1          # pas seulement --lim
   sont pas lintés et le lint passe quand même (ESLint 8 les sautait déjà,
   jusqu'au 03/10/2026). Pas d'`import React` : runtime JSX automatique.
 - Recharts est remplacé par des composants vides dans les tests d'écran ;
-  `Charts.test.jsx` monte les vrais graphiques. `lucide-react` est en 0.577 :
-  vérifier qu'une icône existe (`node_modules/lucide-react/dist/lucide-react.d.ts`).
+  `Charts.test.jsx` monte les vrais graphiques (Recharts 3). `lucide-react`
+  est en 1.x : vérifier qu'une icône existe (`node_modules/lucide-react/dist/lucide-react.d.ts`).
+- ESLint 10 attend `eslint-plugin-react` (7.37.5 s'arrête à ESLint 9) : les
+  PR Dependabot `eslint` / `@eslint/js` 10 échouent à `npm ci` (ERESOLVE),
+  les laisser ouvertes tant que le plugin n'a pas suivi.
 
 ## Repères d'architecture
 

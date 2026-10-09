@@ -15,11 +15,11 @@
   "dependencies": {
     "@tanstack/react-query": "^5.104.0",
     "axios": "^1.4.0",
-    "lucide-react": "^0.577.0",
+    "lucide-react": "^1.54.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-router-dom": "^7.18.2",
-    "recharts": "^2.15.4"
+    "recharts": "^3.10.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
@@ -37,6 +37,6 @@
     "jsdom": "^30.0.1",
     "prettier": "^3.9.6",
     "vite": "^8.3.1",
-    "vitest": "^5.0.2"
+    "vitest": "^5.0.3"
   }
 }
