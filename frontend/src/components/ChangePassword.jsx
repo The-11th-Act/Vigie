@@ -68,7 +68,7 @@ export default function ChangePassword() {
           maxLength={72}
         />
         {mismatch && <div style={{ ...muted, color: 'var(--high)' }}>The two new passwords differ.</div>}
-        <div style={muted}>Every session closes, this one included: you will sign in again with the new password.</div>
+        <div style={muted}>Every session closes, this one included: you will sign in again with the new password. Your personal API tokens are revoked too.</div>
         {error && <div className="error-message">{error}</div>}
         <div>
           <button

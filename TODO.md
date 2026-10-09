@@ -739,10 +739,13 @@ check`, code mort (quasi nul).
       version dans le lockfile)*
 
 ## À décider
-- [ ] Les jetons d'API personnels survivent à un changement ou une
+- [x] Les jetons d'API personnels survivent à un changement ou une
       réinitialisation de mot de passe (les sessions, elles, sont coupées) ; non
       documenté. Après une compromission, seul un compte désactivé les coupe.
-      Proposé : révoquer aussi les jetons émis avant `sessions_valid_after`
+      *(09/10/2026, choix de l'utilisateur : un changement ou une
+      réinitialisation de mot de passe les révoque tous, `revoked_at` posé pour
+      qu'ils apparaissent « Revoked » dans la liste du propriétaire ; écrans,
+      README et `docs/EXPLOITATION.md` le disent)*
 - [ ] Après un remplacement de KB (MSRC), un finding reste dans le ticket actif
       de l'ancien KB et apparaît « non suivi » sous le nouveau : un second ticket
       peut le reprendre. Proposé : compter comme suivi un finding présent dans

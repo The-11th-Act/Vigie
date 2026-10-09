@@ -315,7 +315,9 @@ curl -H "Authorization: Bearer $VIGIE_TOKEN" \
   mandatory lifetime (at most 365 days) and 20 active per user. They are
   read-only (any other method is refused), act with their owner's current
   role and modules, and stop working when revoked, expired, or when the
-  owner's role loses the API Extracts module.
+  owner's role loses the API Extracts module. A password change or reset
+  revokes them all: after a compromise, a token the intruder created does
+  not outlive the new password.
 - XLSX (`format=xlsx`) is one sheet, the column keys as a bold header kept in
   view, numbers as numbers and moments in ISO 8601 as in JSON; text is never
   read as a formula there, so it needs no neutralising. Written with the

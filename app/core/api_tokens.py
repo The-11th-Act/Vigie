@@ -53,6 +53,21 @@ def new_token(
     return token, secret
 
 
+def revoke_all(db: Session, user: User) -> int:
+    """Revoke every token of ``user`` still in force; the caller commits.
+
+    Called when a password is changed or reset: after a compromise, that is
+    what an administrator does, and a token created by the intruder must not
+    outlive it. Revoked rather than refused on the fly, so the owner sees in
+    their list which tokens to recreate.
+    """
+    return (
+        db.query(ApiToken)
+        .filter(ApiToken.user_id == user.id, ApiToken.revoked_at.is_(None))
+        .update({ApiToken.revoked_at: datetime.now(UTC)}, synchronize_session="fetch")
+    )
+
+
 def _aware(value: datetime) -> datetime:
     return value if value.tzinfo else value.replace(tzinfo=UTC)
 

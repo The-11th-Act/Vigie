@@ -25,6 +25,13 @@ def login(api, username, password=VALID_PASSWORD):
     )
 
 
+def pat_status(api, secret):
+    """What a personal token gets on a route it may read."""
+    return api.get(
+        "/api/v1/extracts/datasets", headers={"Authorization": f"Bearer {secret}"}
+    ).status_code
+
+
 def bearer(api, username, password=VALID_PASSWORD):
     response = login(api, username, password)
     assert response.status_code == 200, response.text
@@ -188,6 +195,27 @@ class TestPasswordReset:
         assert login(api, "alice").status_code == 401
         assert login(api, "alice", NEW_PASSWORD).status_code == 200
 
+    def test_the_personal_tokens_are_revoked_too(self, api, admin, alice, db_session):
+        """After a compromise, a token the intruder created must not outlive
+        the reset."""
+        _, secret = new_token(db_session, alice, "script", timedelta(days=30))
+        other = _make_user(db_session, "bob", "analyst")
+        _, bobs = new_token(db_session, other, "script", timedelta(days=30))
+        db_session.commit()
+
+        api.put(
+            f"/api/v1/users/{alice.id}/password",
+            json={"password": NEW_PASSWORD},
+            headers=admin[1],
+        )
+
+        assert pat_status(api, secret) == 401
+        assert pat_status(api, bobs) == 200
+        db_session.expire_all()
+        [token] = db_session.query(ApiToken).filter_by(user_id=alice.id)
+        # Shown as revoked in the owner's list, not silently dead.
+        assert token.revoked_at is not None
+
     def test_a_weak_one_is_refused(self, api, admin, alice):
         response = api.put(
             f"/api/v1/users/{alice.id}/password",
@@ -236,6 +264,18 @@ class TestChangingOnesPassword:
         assert login(api, "alice").status_code == 401
         fresh = bearer(api, "alice", NEW_PASSWORD)
         assert api.get("/api/v1/auth/me", headers=fresh).status_code == 200
+
+    def test_the_personal_tokens_are_revoked_too(self, api, alice, db_session):
+        _, secret = new_token(db_session, alice, "script", timedelta(days=30))
+        db_session.commit()
+        headers = bearer(api, "alice")
+
+        # A wrong current password changes nothing.
+        assert self.change(api, headers, current="not-my-password-1").status_code == 403
+        assert pat_status(api, secret) == 200
+
+        assert self.change(api, headers).status_code == 204
+        assert pat_status(api, secret) == 401
 
 
 class TestSessionsValidAfter:

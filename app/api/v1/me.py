@@ -3,7 +3,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.core import ratelimit
+from app.core import api_tokens, ratelimit
 from app.core.modules import MODULES_BY_KEY, current_user, module_access
 from app.core.scope import api_team, scope_of
 from app.core.security import (
@@ -95,5 +95,10 @@ def change_my_password(
     ratelimit.reset("user", user.username)
     user.hashed_password = get_password_hash(change_in.new_password)
     end_sessions(user)
+    revoked = api_tokens.revoke_all(db, user)
     db.commit()
-    logger.info("'%s' changed their password", user.username)
+    logger.info(
+        "'%s' changed their password; %d personal API token(s) revoked",
+        user.username,
+        revoked,
+    )

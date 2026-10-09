@@ -216,7 +216,7 @@ export function AccountActions({ user, isSelf, onChanged }) {
                 () => {
                   setPassword('');
                   setResetting(false);
-                  setNotice('Password set; their sessions are closed.');
+                  setNotice('Password set; their sessions are closed and their personal API tokens revoked.');
                 }
               )
             }

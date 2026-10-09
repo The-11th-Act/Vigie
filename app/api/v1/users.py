@@ -7,6 +7,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import get_or_404
+from app.core import api_tokens
 from app.core.modules import ROLE_ADMIN
 from app.core.scope import team_value
 from app.core.security import end_sessions, get_password_hash, require_admin
@@ -194,12 +195,18 @@ def reset_user_password(
     db: Session = Depends(get_db),
     admin: dict = Depends(require_admin),
 ):
-    """Set a new password for a user who lost theirs; their sessions end."""
+    """Set a new password for a user who lost theirs, or whose account was
+    compromised: their sessions end and their personal API tokens are revoked."""
     user = get_or_404(db, User, user_id)
     user.hashed_password = get_password_hash(password_in.password)
     end_sessions(user)
+    revoked = api_tokens.revoke_all(db, user)
     db.commit()
-    logger.info("Password of '%s' reset by an administrator", user.username)
+    logger.info(
+        "Password of '%s' reset by an administrator; %d personal API token(s) revoked",
+        user.username,
+        revoked,
+    )
 
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
