@@ -605,7 +605,9 @@ variable, which `docker inspect` would show.
   runs in the worker, which serves no metrics; CrowdStrike syncs are recorded
   there like uploads), the size of the open/overdue backlog, open and
   overdue KEV findings, and `vigie_threat_feed_last_success_timestamp_seconds`
-  per feed (0 until first applied — alert on `time() - value > 2 * 86400`),
+  per feed (0 until first applied — alert on `time() - value > 2 * 86400`
+  for `kev` and `epss`; `msrc` is monthly when imported by hand, so give it
+  a little over its 35 days of freshness, `36 * 86400`),
   and the webhook deliveries pending or abandoned. Remediation over the last
   30 complete days, from the daily snapshots as on the Trends dashboard:
   `vigie_remediated_findings_30d`, `vigie_remediation_on_time_ratio_30d` and

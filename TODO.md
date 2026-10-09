@@ -1,11 +1,12 @@
 # TODO — Plateforme Vigie (RBVM)
 
-> **Statut au 02/10/2026 : les sections 1-18, -DEP et la feuille de route
-> « Modules et remédiation » (1 à 7) sont traitées.** Restent ouverts les points
-> qui attendent des données réelles (export Nessus, tenant CrowdStrike, instance
-> GLPI) ou une contrainte d'hébergement (coffre managé), et la section
-> « Audit du 02/10/2026 » en fin de fichier. Le détail de chaque choix figure
-> dans les messages de commit.
+> **Statut au 09/10/2026 : les sections 1-18, -DEP, la feuille de route
+> « Modules et remédiation » (1 à 7) et l'audit du 02/10/2026 sont traités.**
+> Restent ouverts les points qui attendent des données réelles (export Nessus,
+> tenant CrowdStrike, instance GLPI) ou une contrainte d'hébergement (coffre
+> managé), et les points à décider ou mineurs de la section « Audit du
+> 09/10/2026 » en fin de fichier. Le détail de chaque choix figure dans les
+> messages de commit.
 >
 > Deux points restent à connaître :
 > - Le client CrowdStrike (item 5) est testé contre un transport simulé, pas
@@ -16,7 +17,7 @@
 >   valeurs reportées dans `.env`.
 
 État des lieux initial au 29/07/2026. Base : FastAPI + SQLAlchemy + Celery + React.
-Suite de tests à l'époque : 109 tests. Au 02/10/2026 : **1 075 tests backend + 133
+Suite de tests à l'époque : 109 tests. Au 09/10/2026 : **1 126 tests backend + 149
 tests frontend, tous verts**, plus le test de la pile de production en CI.
 
 Priorités : **P0** = bloque un usage réel · **P1** = important · **P2** = confort / dette.
@@ -730,11 +731,12 @@ check`, code mort (quasi nul).
       vérifié statiquement (`tests/test_nginx_config.py`, qui échoue sur
       l'ancienne configuration) et sur les vraies réponses par le test de la pile
       de production (SPA, route du SPA, asset, API ; cache inchangé)
-- [ ] Alerte de fraîcheur des flux du README (`> 2 jours`) : sonnerait pour MSRC,
-      importé une fois par mois hors ligne
-- [ ] En-tête de ce fichier périmé (statut au 02/10, nombre de tests)
-- [ ] `urllib3` importé directement par l'envoi épinglé des webhooks, sans être
-      déclaré (il ne vient que par `requests`)
+- [x] Alerte de fraîcheur des flux du README (`> 2 jours`) : sonnerait pour MSRC,
+      importé une fois par mois hors ligne *(09/10/2026 : 36 jours pour `msrc`)*
+- [x] En-tête de ce fichier périmé (statut au 02/10, nombre de tests) *(09/10/2026)*
+- [x] `urllib3` importé directement par l'envoi épinglé des webhooks, sans être
+      déclaré (il ne vient que par `requests`) *(09/10/2026 : déclaré, même
+      version dans le lockfile)*
 
 ## À décider
 - [ ] Les jetons d'API personnels survivent à un changement ou une

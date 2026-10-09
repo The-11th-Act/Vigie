@@ -24,3 +24,6 @@ prometheus-client>=0.19.0,<1.0.0
 
 # Client HTTP de app/parsers/crowdstrike.py (synchro Falcon Spotlight).
 requests>=2.31.0,<3.0.0
+# Used directly, not only through requests: app/services/webhooks.py pins each
+# delivery's connection on the address it checked (SSRF).
+urllib3>=2.0.0,<3.0.0
