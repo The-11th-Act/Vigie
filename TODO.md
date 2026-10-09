@@ -746,10 +746,21 @@ check`, code mort (quasi nul).
       réinitialisation de mot de passe les révoque tous, `revoked_at` posé pour
       qu'ils apparaissent « Revoked » dans la liste du propriétaire ; écrans,
       README et `docs/EXPLOITATION.md` le disent)*
-- [ ] Après un remplacement de KB (MSRC), un finding reste dans le ticket actif
+- [x] Après un remplacement de KB (MSRC), un finding reste dans le ticket actif
       de l'ancien KB et apparaît « non suivi » sous le nouveau : un second ticket
-      peut le reprendre. Proposé : compter comme suivi un finding présent dans
-      un ticket actif, quel que soit son KB
+      peut le reprendre. *(09/10/2026 : en creusant, plus grave et plus ancien
+      que MSRC : dès qu'un scanner passait au cumulatif suivant, le ticket
+      comptait encore le finding mais le perdait de sa liste d'hôtes et de son
+      CSV, filtrés sur son KB. Choix de l'utilisateur : le ticket suit le KB.
+      Étape 1b de `sync_tickets` : un ticket dont tous les findings ouverts
+      demandent un même nouveau correctif, sans ticket de l'équipe pour lui,
+      passe à ce correctif (même ticket, note) ; sinon chaque finding rejoint
+      le ticket de l'équipe pour son nouveau correctif ou revient au plan, et
+      un ticket vidé est annulé. Un finding dont le nouveau correctif est
+      ambigu reste où il est)*
+- [ ] Un ticket déjà exporté vers GLPI y garde son ancien titre quand il suit
+      un nouveau KB : le connecteur n'exporte qu'à la création. Ajouter un
+      suivi (followup) GLPI au changement de correctif
 
 ## Mineur
 - [ ] `ScanJob.uploader` (relation) jamais lue

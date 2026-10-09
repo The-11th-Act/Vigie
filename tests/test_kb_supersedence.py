@@ -356,6 +356,25 @@ class TestApplyMsrc:
         }
         assert held == {f.id for f in db_session.query(AssetVulnerability)}
 
+    def test_a_ticket_on_the_superseded_kb_follows_the_later_one(self, db_session):
+        ingest_findings(db_session, [finding(remediations=[kb("KB5033371")])], "openvas")
+        old = db_session.query(RemediationAction).filter_by(reference="KB5033371").one()
+        ticket = RemediationTicket(
+            action_id=old.id, owner_team=None, title="Deploy KB5033371", status="open"
+        )
+        db_session.add(ticket)
+        db_session.flush()
+        finding_id = db_session.query(AssetVulnerability.id).scalar()
+        db_session.add(TicketFinding(ticket_id=ticket.id, finding_id=finding_id))
+        db_session.commit()
+
+        apply(db_session, cvrf("2024-Jan", ("KB5034127", "KB5033371")))
+
+        db_session.refresh(ticket)
+        assert ticket.action.reference == "KB5034127"
+        assert ticket.title.startswith("Deploy KB5034127")
+        assert ticket.status == "open"
+
     def test_records_the_feed_status(self, db_session):
         apply(
             db_session,

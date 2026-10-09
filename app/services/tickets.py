@@ -32,6 +32,8 @@ from app.services.webhooks import emit, ticket_data
 logger = logging.getLogger(__name__)
 
 SYSTEM_ACTOR = "system"
+# Bound-parameter friendly IN () lists, as elsewhere.
+CHUNK_SIZE = 500
 UNASSIGNED = "Unassigned"
 
 
@@ -42,6 +44,10 @@ class SyncResult:
     reopened: int = 0
     moved: int = 0
     cancelled: int = 0
+    # Tickets now on the fix their findings call for, and findings that went
+    # to another ticket (or back to the plan) because their fix changed.
+    retargeted: int = 0
+    followed: int = 0
 
 
 def ticket_title(action: RemediationAction, team: str | None) -> str:
@@ -187,17 +193,7 @@ def sync_tickets(db: Session, now: datetime | None = None) -> SyncResult:
     released = _release_moved_findings(db)
     result.moved = sum(released.values())
 
-    open_count = func.sum(case((AssetVulnerability.status == Status.open, 1), else_=0))
-    counts = {
-        row.ticket_id: (row.total, row.open or 0)
-        for row in db.query(
-            TicketFinding.ticket_id,
-            func.count(TicketFinding.id).label("total"),
-            open_count.label("open"),
-        )
-        .join(AssetVulnerability, AssetVulnerability.id == TicketFinding.finding_id)
-        .group_by(TicketFinding.ticket_id)
-    }
+    counts = _finding_counts(db)
 
     # 1. A resolved ticket whose finding came back is work again.
     for ticket in db.query(RemediationTicket).filter(
@@ -216,6 +212,11 @@ def sync_tickets(db: Session, now: datetime | None = None) -> SyncResult:
             ticket.resolved_at = None
             result.reopened += 1
     db.flush()
+
+    # 1b. A finding whose fix changed (a later KB) takes its ticket along, or
+    #     goes to the ticket of its new fix.
+    if _follow_changed_fixes(db, result):
+        counts = _finding_counts(db)
 
     active = (
         db.query(RemediationTicket)
@@ -284,17 +285,184 @@ def sync_tickets(db: Session, now: datetime | None = None) -> SyncResult:
             result.resolved += 1
 
     db.flush()
-    if result.attached or result.resolved or result.reopened or result.moved:
+    if (
+        result.attached
+        or result.resolved
+        or result.reopened
+        or result.moved
+        or result.followed
+    ):
         logger.info(
             "Tickets: %d finding(s) attached, %d moved with their host, "
+            "%d following a new fix (%d ticket(s) retargeted), "
             "%d resolved, %d reopened, %d cancelled",
             result.attached,
             result.moved,
+            result.followed,
+            result.retargeted,
             result.resolved,
             result.reopened,
             result.cancelled,
         )
     return result
+
+
+def _finding_counts(db: Session) -> dict[int, tuple[int, int]]:
+    """(findings, open findings) held by each ticket."""
+    open_count = func.sum(case((AssetVulnerability.status == Status.open, 1), else_=0))
+    return {
+        row.ticket_id: (row.total, row.open or 0)
+        for row in db.query(
+            TicketFinding.ticket_id,
+            func.count(TicketFinding.id).label("total"),
+            open_count.label("open"),
+        )
+        .join(AssetVulnerability, AssetVulnerability.id == TicketFinding.finding_id)
+        .group_by(TicketFinding.ticket_id)
+    }
+
+
+def _follow_changed_fixes(db: Session, result: SyncResult) -> bool:
+    """Keep each active ticket on the fix its open findings now call for.
+
+    A finding's fix changes when a later KB supersedes the one it was
+    ticketed for (MSRC), or when the scanner asks for the next cumulative
+    update itself. The ticket used to keep the finding in its counts but lose
+    it from its host list: "3 open findings" and nowhere to deploy.
+
+    - Every open finding of the ticket moved to the same fix, which its team
+      has no active ticket for: the ticket follows them (same ticket and
+      history, the new fix, a note).
+    - Otherwise each moved finding joins its team's active ticket for its new
+      fix, or, without one, leaves for the plan's untracked findings; a ticket
+      left with no finding at all is cancelled.
+
+    A finding is followed only when its new fix is clear: its one fix, or
+    among several the only one its team has an active ticket for. Returns
+    whether anything changed.
+    """
+    tickets = (
+        db.query(RemediationTicket)
+        .filter(RemediationTicket.status.in_(ACTIVE_TICKET_STATUSES))
+        .order_by(RemediationTicket.id)
+        .all()
+    )
+    if not tickets:
+        return False
+    held: dict[int, list[TicketFinding]] = defaultdict(list)
+    for link in (
+        db.query(TicketFinding)
+        .join(RemediationTicket, RemediationTicket.id == TicketFinding.ticket_id)
+        .join(AssetVulnerability, AssetVulnerability.id == TicketFinding.finding_id)
+        .filter(
+            RemediationTicket.status.in_(ACTIVE_TICKET_STATUSES),
+            AssetVulnerability.status == Status.open,
+        )
+        .order_by(TicketFinding.id)
+    ):
+        held[link.ticket_id].append(link)
+    fixes: dict[int, set[int]] = defaultdict(set)
+    finding_ids = list({link.finding_id for links in held.values() for link in links})
+    for i in range(0, len(finding_ids), CHUNK_SIZE):
+        for finding_id, action_id in db.query(
+            FindingRemediation.finding_id, FindingRemediation.action_id
+        ).filter(FindingRemediation.finding_id.in_(finding_ids[i : i + CHUNK_SIZE])):
+            fixes[finding_id].add(action_id)
+
+    # The findings are open: whether one is already in a ticket is known here.
+    membership = {
+        (link.ticket_id, link.finding_id) for links in held.values() for link in links
+    }
+    team_tickets: dict[tuple[int, str | None], RemediationTicket] = {}
+    for ticket in tickets:
+        team_tickets.setdefault((ticket.action_id, ticket.owner_team), ticket)
+
+    def new_fix(finding_id: int, team: str | None) -> int | None:
+        current = fixes.get(finding_id, set())
+        if len(current) == 1:
+            return next(iter(current))
+        ticketed = [a for a in current if (a, team) in team_tickets]
+        return ticketed[0] if len(ticketed) == 1 else None
+
+    changed = False
+    for ticket in tickets:
+        team = ticket.owner_team
+        stray = [
+            link
+            for link in held.get(ticket.id, [])
+            if ticket.action_id not in fixes.get(link.finding_id, set())
+        ]
+        targets: dict[int, int] = {}
+        for link in stray:
+            fix_id = new_fix(link.finding_id, team)
+            if fix_id is not None:
+                targets[link.id] = fix_id
+        movable = [link for link in stray if link.id in targets]
+        if not movable:
+            continue
+        changed = True
+        destinations = {targets[link.id] for link in movable}
+
+        # The whole ticket moves to one fix nobody on the team tickets yet.
+        if (
+            len(movable) == len(held[ticket.id])
+            and len(destinations) == 1
+            and (next(iter(destinations)), team) not in team_tickets
+        ):
+            old = ticket.action
+            new = db.get(RemediationAction, next(iter(destinations)))
+            if new is None:  # pragma: no cover - a link's action always exists
+                continue
+            if team_tickets.get((old.id, team)) is ticket:
+                del team_tickets[(old.id, team)]
+            team_tickets[(new.id, team)] = ticket
+            ticket.action = new
+            ticket.title = ticket_title(new, team)
+            log_ticket_change(
+                db,
+                ticket,
+                ticket.status,
+                ticket.status,
+                f"Its findings now call for {new.reference} instead of "
+                f"{old.reference}: the ticket follows.",
+                None,
+            )
+            result.retargeted += 1
+            result.followed += len(movable)
+            continue
+
+        joined: dict[str, int] = defaultdict(int)
+        for link in movable:
+            target = team_tickets.get((targets[link.id], team))
+            if target is not None and target is not ticket:
+                if (target.id, link.finding_id) not in membership:
+                    db.add(TicketFinding(ticket_id=target.id, finding_id=link.finding_id))
+                    membership.add((target.id, link.finding_id))
+                joined[f"the ticket #{target.id} of {target.action.reference}"] += 1
+            else:
+                fix = db.get(RemediationAction, targets[link.id])
+                reference = fix.reference if fix else "another fix"
+                joined[f"the plan's untracked findings of {reference}"] += 1
+            db.delete(link)
+            result.followed += 1
+        db.flush()
+        note = "; ".join(
+            f"{count} finding(s) now call for another fix and went to {where}"
+            for where, count in sorted(joined.items())
+        )
+        remaining = db.query(TicketFinding).filter_by(ticket_id=ticket.id).count()
+        if remaining:
+            log_ticket_change(db, ticket, ticket.status, ticket.status, note, None)
+        else:
+            log_ticket_change(
+                db, ticket, ticket.status, TicketStatus.cancelled.value, note, None
+            )
+            ticket.status = TicketStatus.cancelled.value
+            result.cancelled += 1
+            if team_tickets.get((ticket.action_id, team)) is ticket:
+                del team_tickets[(ticket.action_id, team)]
+    db.flush()
+    return changed
 
 
 def _release_moved_findings(db: Session) -> dict[int, int]:

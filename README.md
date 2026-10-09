@@ -575,6 +575,13 @@ moves its ticket to *in progress* or *deployed*; the scans decide the rest:
   accepted or dismissed), and **reopens** if one comes back;
 - a new finding of the same fix on the same team's hosts joins the team's
   open ticket;
+- a ticket follows its findings when their fix changes (the scanner asks for
+  the next cumulative update, or MSRC says a later KB supersedes it): if all
+  its open findings now call for one fix the team has no ticket for, the
+  ticket itself moves to it, with a note; otherwise each finding joins the
+  team's ticket for its new fix, or waits in the plan, and a ticket left
+  empty is cancelled. A ticket already exported to GLPI keeps its title
+  there;
 - cancelling (deciding not to fix) is an analyst's call and needs a note; the
   findings of a cancelled ticket can go into a new one.
 

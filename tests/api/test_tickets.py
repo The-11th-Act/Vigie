@@ -310,6 +310,137 @@ class TestMovingATicket:
         assert response.status_code == 422
 
 
+FEBRUARY = remediation("kb", "KB5034768", title="February rollup")
+
+
+def rescan(db_session, fixes_by_ip):
+    """The scanner reports these hosts again, asking for the given fixes."""
+    findings = [
+        finding(ip, cve=cve, fixes=fixes_by_ip[ip])
+        for ip, cve in [
+            ("10.0.0.1", "CVE-2024-0001"),
+            ("10.0.0.1", "CVE-2024-0002"),
+            ("10.0.0.2", "CVE-2024-0001"),
+            ("10.0.1.1", "CVE-2024-0001"),
+            ("10.0.9.9", "CVE-2024-0001"),
+        ]
+        if ip in fixes_by_ip
+    ]
+    ingest_findings(db_session, findings, "nessus", scanned_addresses=set(fixes_by_ip))
+
+
+def ticket_detail(client, ticket):
+    return client.get(f"/api/v1/remediation/tickets/{ticket['id']}").json()
+
+
+class TestAFixReplacedByALaterOne:
+    """A ticket follows its findings to the fix they now call for: the next
+    cumulative update asked by the scanner, or a later KB that MSRC says
+    supersedes it. It used to count them but lose them from its host list."""
+
+    def test_the_ticket_follows_when_all_its_findings_move(
+        self, client, db_session, estate
+    ):
+        create(client, estate)
+        servers = by_team(client)["Servers"]
+
+        rescan(db_session, {"10.0.0.1": (FEBRUARY,), "10.0.0.2": (FEBRUARY,)})
+
+        after = by_team(client)["Servers"]
+        assert after["id"] == servers["id"]
+        assert after["title"] == "Deploy KB5034768 — Servers"
+        detail = ticket_detail(client, after)
+        assert detail["action"]["reference"] == "KB5034768"
+        assert {h["ip_address"] for h in detail["hosts"]} == {"10.0.0.1", "10.0.0.2"}
+        note = detail["history"][0]["note"]
+        assert "KB5034768" in note and "KB5034127" in note
+        # Tracked under the new fix: nothing to ticket twice.
+        plan = client.get("/api/v1/remediation/actions").json()["items"]
+        february = next(i for i in plan if i["action"]["reference"] == "KB5034768")
+        assert february["tracked"] == february["findings"] == 3
+        assert create(client, february_action(db_session)).status_code == 409
+
+    def test_moved_findings_join_the_team_ticket_of_the_new_fix(
+        self, client, db_session, estate
+    ):
+        ingest_findings(
+            db_session,
+            [finding("10.0.0.1", cve="CVE-2024-0003", fixes=(FEBRUARY,))],
+            "nessus",
+        )
+        create(client, estate)
+        create(client, february_action(db_session))
+        january, february = sorted(
+            (t for t in tickets(client) if t["owner_team"] == "Servers"),
+            key=lambda t: t["id"],
+        )
+
+        rescan(db_session, {"10.0.0.2": (FEBRUARY,)})
+
+        assert {h["ip_address"] for h in ticket_detail(client, january)["hosts"]} == {
+            "10.0.0.1"
+        }
+        assert {h["ip_address"] for h in ticket_detail(client, february)["hosts"]} == {
+            "10.0.0.1",
+            "10.0.0.2",
+        }
+        assert f"ticket #{february['id']}" in (
+            ticket_detail(client, january)["history"][0]["note"]
+        )
+
+    def test_a_ticket_left_with_nothing_is_cancelled(self, client, db_session, estate):
+        ingest_findings(
+            db_session,
+            [finding("10.0.0.1", cve="CVE-2024-0003", fixes=(FEBRUARY,))],
+            "nessus",
+        )
+        create(client, estate)
+        create(client, february_action(db_session))
+        january = min(
+            (t for t in tickets(client) if t["owner_team"] == "Servers"),
+            key=lambda t: t["id"],
+        )
+
+        rescan(db_session, {"10.0.0.1": (FEBRUARY,), "10.0.0.2": (FEBRUARY,)})
+
+        cancelled = next(
+            t for t in tickets(client, status="all") if t["id"] == january["id"]
+        )
+        assert cancelled["status"] == "cancelled"
+        servers = [t for t in tickets(client) if t["owner_team"] == "Servers"]
+        assert [t["metrics"]["findings_open"] for t in servers] == [4]
+
+    def test_without_a_ticket_for_the_new_fix_they_wait_in_the_plan(
+        self, client, db_session, estate
+    ):
+        create(client, estate)
+
+        rescan(db_session, {"10.0.0.2": (FEBRUARY,)})
+
+        servers = by_team(client)["Servers"]
+        # Counts and host list agree again.
+        assert servers["metrics"]["hosts_open"] == 1
+        assert {h["ip_address"] for h in ticket_detail(client, servers)["hosts"]} == {
+            "10.0.0.1"
+        }
+        plan = client.get("/api/v1/remediation/actions").json()["items"]
+        february = next(i for i in plan if i["action"]["reference"] == "KB5034768")
+        assert (february["findings"], february["tracked"]) == (1, 0)
+
+    def test_a_finding_still_asking_for_the_ticket_fix_stays(
+        self, client, db_session, estate
+    ):
+        create(client, estate)
+
+        rescan(db_session, {"10.0.0.2": (ROLLUP, FEBRUARY)})
+
+        assert by_team(client)["Servers"]["metrics"]["hosts_open"] == 2
+
+
+def february_action(db_session):
+    return db_session.query(RemediationAction).filter_by(reference="KB5034768").one()
+
+
 class TestReading:
     def test_a_ticket_shows_only_its_team_hosts(self, client, estate):
         create(client, estate)

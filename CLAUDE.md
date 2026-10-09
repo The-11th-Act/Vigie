@@ -129,7 +129,10 @@ gh run list --workflow CI --branch main --limit 1          # pas seulement --lim
   l'ingestion (KB ou `nessus:<plugin>`, `openvas:<oid>`) ; vue par correctif
   (`app/services/remediation_plan.py`) ; tickets par correctif × équipe
   (`app/services/tickets.py`, `sync_tickets` après ingestion, triage,
-  réouverture d'acceptation et passage quotidien).
+  réouverture d'acceptation et passage quotidien). Un finding suit son hôte
+  (changement d'équipe) et son correctif (KB suivant) : la liste d'hôtes d'un
+  ticket est filtrée sur son correctif, un finding qui n'y est plus lié doit
+  quitter le ticket ou l'emmener (étape 1b).
 - **Remplacement des KB** (`app/services/kb_supersedence.py`, bulletins MSRC
   lus par `app/parsers/msrc.py`, troisième flux `msrc` de `threat_intel.py`) :
   un lien vers un KB remplacé pointe sur le dernier KB, le KB du scanner reste

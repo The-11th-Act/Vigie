@@ -258,7 +258,7 @@ def apply_msrc(
     # Only a changed supersedence can move a link; ingestion handles new ones.
     moved = apply_supersedence(db) if changed_documents else 0
     if moved:
-        # A finding moved to a later KB joins that KB's active ticket.
+        # Tickets follow their findings to the later KB (tickets.sync_tickets).
         sync_tickets(db, now)
 
     newest = (
