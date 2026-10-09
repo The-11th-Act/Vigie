@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 
-export function errorMessage(err) {
+function errorMessage(err) {
   return err?.response?.data?.detail || err?.message || 'An error occurred'
 }
 

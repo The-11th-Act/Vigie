@@ -3,10 +3,9 @@
 from datetime import UTC, date, datetime, time, timedelta
 
 from app.core.config import settings
-from app.services.policy import DEFAULT_SLA_DAYS, SLA_DAYS, get_sla_days
+from app.services.policy import SLA_DAYS, get_sla_days
 
 __all__ = [
-    "DEFAULT_SLA_DAYS",
     "SLA_DAYS",
     "apply_kev_sla",
     "calculate_remediation_deadline",

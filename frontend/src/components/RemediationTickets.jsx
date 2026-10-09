@@ -15,7 +15,7 @@ import {
   safeName,
 } from './RemediationShared';
 
-export const STATUS_LABELS = {
+const STATUS_LABELS = {
   open: 'Open',
   in_progress: 'In progress',
   deployed: 'Deployed, awaiting scan',

@@ -16,9 +16,10 @@ Ils ne testent pas une implémentation, ils testent un invariant entre deux modu
 
 import pytest
 
+from app.core.config import settings
 from app.models.vulnerability import Severity
 from app.parsers.utils import severity_from_cvss
-from app.services.remediation import DEFAULT_SLA_DAYS, SLA_DAYS
+from app.services.remediation import SLA_DAYS
 from app.services.risk_scoring import (
     CRITICALITY_MULTIPLIERS,
     EPSS_BANDS,
@@ -63,7 +64,7 @@ class TestPolicyCompleteness:
         for severity in Severity:
             assert severity.value in SLA_DAYS, (
                 f"'{severity.value}' n'a pas de fenêtre SLA et hériterait de "
-                f"{DEFAULT_SLA_DAYS} jours par défaut."
+                f"{settings.SLA_DEFAULT_DAYS} jours par défaut."
             )
 
     def test_every_criticality_has_a_multiplier(self):
@@ -133,8 +134,6 @@ class TestThreatContextPolicy:
 
     def test_the_kev_window_is_no_longer_than_the_critical_one(self):
         """Un CVE exploité ne doit jamais avoir plus de temps qu'un critique."""
-        from app.core.config import settings
-
         assert 0 < settings.KEV_SLA_DAYS <= SLA_DAYS["Critical"]
 
     def test_the_ransomware_window_is_at_least_as_strict_as_the_kev_one(self):

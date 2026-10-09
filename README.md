@@ -142,7 +142,11 @@ What the overlay changes, and why:
 
 The frontend container also acts as the reverse proxy: it serves the static SPA and
 forwards `/api` to the API (`frontend/nginx.conf`). It binds to `127.0.0.1:8080` by
-default — put a TLS terminator in front of it.
+default — put a TLS terminator in front of it, and have the terminator send HSTS
+(`Strict-Transport-Security: max-age=31536000`): Nginx speaks plain HTTP behind
+it and leaves that header out, and without it a first visit typed as `http://`
+can be intercepted before any redirect. Add `includeSubDomains` only if every
+subdomain serves HTTPS.
 
 **Backups**: the `backup` service dumps the database at start-up and every
 `BACKUP_INTERVAL_HOURS`, encrypted with [age](https://age-encryption.org) for

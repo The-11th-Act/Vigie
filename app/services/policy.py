@@ -61,13 +61,13 @@ INTERNET_FACING_MULTIPLIER = 1.2
 # the backlog to 10.0, where nothing can be told apart any more.
 MAX_CONTEXT_MULTIPLIER = 1.5
 
-DEFAULT_SLA_DAYS_MAP: dict[str, int] = {
-    "Critical": 14,
-    "High": 30,
-    "Medium": 90,
-    "Low": 180,
+# Each severity's SLA window is a setting; the defaults live in Settings only.
+SLA_SETTINGS: dict[str, str] = {
+    "Critical": "SLA_CRITICAL_DAYS",
+    "High": "SLA_HIGH_DAYS",
+    "Medium": "SLA_MEDIUM_DAYS",
+    "Low": "SLA_LOW_DAYS",
 }
-DEFAULT_SLA_DAYS = 90
 
 
 def _as_str(value: Any) -> str:
@@ -77,16 +77,8 @@ def _as_str(value: Any) -> str:
 
 def get_sla_days(severity: Any) -> int:
     """Return the configured SLA days for a given severity level."""
-    sev = _as_str(severity)
-    if sev == "Critical":
-        return getattr(settings, "SLA_CRITICAL_DAYS", 14)
-    if sev == "High":
-        return getattr(settings, "SLA_HIGH_DAYS", 30)
-    if sev == "Medium":
-        return getattr(settings, "SLA_MEDIUM_DAYS", 90)
-    if sev == "Low":
-        return getattr(settings, "SLA_LOW_DAYS", 180)
-    return getattr(settings, "SLA_DEFAULT_DAYS", DEFAULT_SLA_DAYS)
+    name = SLA_SETTINGS.get(_as_str(severity), "SLA_DEFAULT_DAYS")
+    return getattr(settings, name)
 
 
 class _SlaDaysProxy(dict):
@@ -102,22 +94,22 @@ class _SlaDaysProxy(dict):
             return default
 
     def __contains__(self, key: Any) -> bool:
-        return _as_str(key) in DEFAULT_SLA_DAYS_MAP
+        return _as_str(key) in SLA_SETTINGS
 
     def __iter__(self):
-        return iter(DEFAULT_SLA_DAYS_MAP)
+        return iter(SLA_SETTINGS)
 
     def __len__(self) -> int:
-        return len(DEFAULT_SLA_DAYS_MAP)
+        return len(SLA_SETTINGS)
 
     def items(self):
-        return [(k, get_sla_days(k)) for k in DEFAULT_SLA_DAYS_MAP]
+        return [(k, get_sla_days(k)) for k in SLA_SETTINGS]
 
     def values(self):
-        return [get_sla_days(k) for k in DEFAULT_SLA_DAYS_MAP]
+        return [get_sla_days(k) for k in SLA_SETTINGS]
 
     def keys(self):
-        return DEFAULT_SLA_DAYS_MAP.keys()
+        return SLA_SETTINGS.keys()
 
 
 SLA_DAYS = _SlaDaysProxy()

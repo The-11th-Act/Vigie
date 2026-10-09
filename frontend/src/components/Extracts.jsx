@@ -34,7 +34,7 @@ export function extractParams(dataset, columns, filters, format) {
   return params;
 }
 
-export function curlCommand(path, params) {
+function curlCommand(path, params) {
   const query = new URLSearchParams(params).toString();
   return `curl -H "Authorization: Bearer $VIGIE_TOKEN" "${window.location.origin}/api/v1${path}?${query}"`;
 }

@@ -2,11 +2,10 @@
 
 > **Statut au 09/10/2026 : les sections 1-18, -DEP, la feuille de route
 > « Modules et remédiation » (1 à 7) et l'audit du 02/10/2026 sont traités.**
-> Restent ouverts les points qui attendent des données réelles (export Nessus,
-> tenant CrowdStrike, instance GLPI) ou une contrainte d'hébergement (coffre
-> managé), et les points à décider ou mineurs de la section « Audit du
-> 09/10/2026 » en fin de fichier. Le détail de chaque choix figure dans les
-> messages de commit.
+> L'audit du 09/10/2026 (fin de fichier) est traité aussi. Restent ouverts les
+> points qui attendent des données réelles (export Nessus, tenant CrowdStrike,
+> instance GLPI) ou une contrainte d'hébergement (coffre managé). Le détail de
+> chaque choix figure dans les messages de commit.
 >
 > Deux points restent à connaître :
 > - Le client CrowdStrike (item 5) est testé contre un transport simulé, pas
@@ -17,7 +16,7 @@
 >   valeurs reportées dans `.env`.
 
 État des lieux initial au 29/07/2026. Base : FastAPI + SQLAlchemy + Celery + React.
-Suite de tests à l'époque : 109 tests. Au 09/10/2026 : **1 126 tests backend + 149
+Suite de tests à l'époque : 109 tests. Au 09/10/2026 : **1 137 tests backend + 149
 tests frontend, tous verts**, plus le test de la pile de production en CI.
 
 Priorités : **P0** = bloque un usage réel · **P1** = important · **P2** = confort / dette.
@@ -771,12 +770,15 @@ check`, code mort (quasi nul).
       réouverture de Vigie pour un geste de l'équipe)*
 
 ## Mineur
-- [ ] `ScanJob.uploader` (relation) jamais lue
-- [ ] `policy.get_sla_days` lit les SLA par `getattr` avec des valeurs de repli
-      qui doublonnent les défauts de `Settings`
-- [ ] `.env.example` propose `SCAN_UPLOAD_DIR` sans dire qu'il est ignoré sous
-      Docker (chemin du volume fixe)
-- [ ] Le README ne recommande pas HSTS sur le terminateur TLS placé devant Nginx
-- [ ] Exports frontend sans autre usage : `ASSET_TYPES`, `curlCommand`,
-      `STATUS_LABELS`, `errorMessage`
+- [x] `ScanJob.uploader` (relation) jamais lue *(09/10/2026 : supprimée, la
+      colonne `uploaded_by` reste)*
+- [x] `policy.get_sla_days` lit les SLA par `getattr` avec des valeurs de repli
+      qui doublonnent les défauts de `Settings` *(09/10/2026 : une table
+      sévérité → réglage, sans valeur de repli ; `DEFAULT_SLA_DAYS` supprimé)*
+- [x] `.env.example` propose `SCAN_UPLOAD_DIR` sans dire qu'il est ignoré sous
+      Docker (chemin du volume fixe) *(09/10/2026 : précisé)*
+- [x] Le README ne recommande pas HSTS sur le terminateur TLS placé devant Nginx
+      *(09/10/2026 : recommandé, `includeSubDomains` sous condition)*
+- [x] Exports frontend sans autre usage : `ASSET_TYPES`, `curlCommand`,
+      `STATUS_LABELS`, `errorMessage` *(09/10/2026 : plus exportés)*
 

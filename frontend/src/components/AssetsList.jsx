@@ -11,7 +11,7 @@ import SearchInput from './SearchInput';
 const PAGE_SIZE = 20;
 const CRITICALITIES = ['Low', 'Medium', 'High', 'Critical'];
 // Mirrors ASSET_TYPES in app/services/categorization.py.
-export const ASSET_TYPES = {
+const ASSET_TYPES = {
   server: 'Server',
   workstation: 'Workstation',
   network: 'Network device',
