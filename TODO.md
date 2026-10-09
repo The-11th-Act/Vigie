@@ -517,7 +517,7 @@ Les parseurs jetaient tout ce que les scanners disent du correctif. Les fichiers
 
 ## 0. Remise à plat
 - [x] Trier les PR Dependabot : regroupées en commits cohérents (bcrypt 5 sans passlib, React 19, Vite 8, vitest 5, node 26, nginx 1.31, Redis 8, black 26, ruff 0.16) ; postgres 18 bien ignoré, pydantic-core exclu *(30/09/2026)*
-- [x] Deuxième vague Dependabot *(09/10/2026)* : FastAPI 0.143, PyJWT 2.15.1, charset-normalizer 3.5.2 (lockfile régénéré : la PR de Dependabot y omettait `opentelemetry-api`, nouvelle dépendance de FastAPI depuis 0.142), Recharts 3, lucide-react 1.x, vitest 5.0.3. ESLint 10 attend `eslint-plugin-react`
+- [x] Deuxième vague Dependabot *(09/10/2026)* : FastAPI 0.143, PyJWT 2.15.1, charset-normalizer 3.5.2 (lockfile régénéré : la PR de Dependabot y omettait `opentelemetry-api`, nouvelle dépendance de FastAPI depuis 0.142), Recharts 3, lucide-react 1.x, vitest 5.0.3, source-map-js 1.2.2 (avis « high » apparu entre-temps), puis les correctifs du jour (SQLAlchemy 2.1.4, uvloop 0.23, vite 8.3.4, jsdom 30.1.2…). ESLint 10 attend `eslint-plugin-react`
 - [x] `.gitattributes` *(30/09/2026)*
 - [x] TanStack Query en remplacement de `useFetch` (T5), socle des nouveaux écrans *(30/09/2026)*
 
