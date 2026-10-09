@@ -148,6 +148,25 @@ BANNER=$(curl -fsS "$API/instance" | jq -r .banner) || fail "/instance inaccessi
 [ "$BANNER" = "Smoke" ] || fail "INSTANCE_BANNER n'atteint pas l'API (« $BANNER »)"
 echo "ok - bandeau d'instance lisible sans session, à travers Nginx"
 
+# Les en-têtes de sécurité sur tout ce que sert Nginx : une location qui pose
+# son propre add_header les perdait (index.html partait sans CSP).
+ASSET=$(curl -fsS "$BASE/" | grep -o '/assets/[^"]*\.js' | head -n 1 || true)
+[ -n "$ASSET" ] || fail "aucun asset JS référencé par index.html"
+for path in / /login "$ASSET" /api/v1/instance; do
+  HEADERS=$(curl -fsS -D - -o /dev/null "$BASE$path") || fail "$path inaccessible"
+  for header in Content-Security-Policy X-Frame-Options X-Content-Type-Options \
+    Referrer-Policy Permissions-Policy; do
+    grep -qi "^$header:" <<<"$HEADERS" || fail "$header absent de $path"
+  done
+done
+# Lus dans une variable : avec pipefail, `curl | grep -q` échoue si grep
+# referme le tube avant que curl ait fini d'écrire.
+HEADERS=$(curl -fsS -D - -o /dev/null "$BASE/")
+grep -qi '^Cache-Control:.*no-store' <<<"$HEADERS" || fail "index.html n'est plus servi en no-store"
+HEADERS=$(curl -fsS -D - -o /dev/null "$BASE$ASSET")
+grep -qi '^Cache-Control:.*immutable' <<<"$HEADERS" || fail "les assets ne sont plus servis en immutable"
+echo "ok - en-têtes de sécurité sur le SPA, ses assets et l'API ; cache inchangé"
+
 # --- Images de la version ---------------------------------------------------
 # La promotion (docs/PREPRODUCTION.md) repose sur une image par version :
 # l'API, les migrations, le worker et le beat exécutent la même, celle que la

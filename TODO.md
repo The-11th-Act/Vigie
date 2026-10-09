@@ -706,3 +706,53 @@ modules, dépendances, hygiène du dépôt, tests ignorés (tous légitimes).
 - [x] Filtre par tag dans l'écran Assets *(03/10/2026 : champ « Tag » à côté de la
       recherche, et clic sur un badge de tag ; l'API l'avait seule)*
 
+---
+
+# Audit du 09/10/2026
+
+Deuxième revue globale, même démarche que celle du 02/10 : vulture, garde de
+chacune des 74 routes (authentification, rôle, module, périmètre), appels du
+frontend contre les routes, réglages contre le code, `.env.example` et le
+compose, chemins et fichiers cités par la documentation, dépendances déclarées
+contre importées, revue de sécurité (CSRF, jetons personnels, XML, exports,
+secrets, en-têtes HTTP). Sans écart : contrôles d'accès, CSRF, jetons
+personnels en lecture seule, defusedxml, neutralisation CSV, échappement XLSX,
+secrets jamais renvoyés, appels du frontend, câblage des réglages, `alembic
+check`, code mort (quasi nul).
+
+## Corrigé
+- [x] **En-têtes de sécurité absents d'index.html** *(09/10/2026)* : `location /`
+      et `location /assets/` posaient leur propre `add_header` (Cache-Control),
+      ce qui fait abandonner à Nginx tous ceux du serveur : la page partait sans
+      CSP, X-Frame-Options, nosniff, Referrer-Policy ni Permissions-Policy,
+      depuis l'ajout de ces en-têtes (06/08/2026). Désormais dans `frontend/security-headers.conf`,
+      inclus par le serveur et par chaque location qui ajoute un en-tête ;
+      vérifié statiquement (`tests/test_nginx_config.py`, qui échoue sur
+      l'ancienne configuration) et sur les vraies réponses par le test de la pile
+      de production (SPA, route du SPA, asset, API ; cache inchangé)
+- [ ] Alerte de fraîcheur des flux du README (`> 2 jours`) : sonnerait pour MSRC,
+      importé une fois par mois hors ligne
+- [ ] En-tête de ce fichier périmé (statut au 02/10, nombre de tests)
+- [ ] `urllib3` importé directement par l'envoi épinglé des webhooks, sans être
+      déclaré (il ne vient que par `requests`)
+
+## À décider
+- [ ] Les jetons d'API personnels survivent à un changement ou une
+      réinitialisation de mot de passe (les sessions, elles, sont coupées) ; non
+      documenté. Après une compromission, seul un compte désactivé les coupe.
+      Proposé : révoquer aussi les jetons émis avant `sessions_valid_after`
+- [ ] Après un remplacement de KB (MSRC), un finding reste dans le ticket actif
+      de l'ancien KB et apparaît « non suivi » sous le nouveau : un second ticket
+      peut le reprendre. Proposé : compter comme suivi un finding présent dans
+      un ticket actif, quel que soit son KB
+
+## Mineur
+- [ ] `ScanJob.uploader` (relation) jamais lue
+- [ ] `policy.get_sla_days` lit les SLA par `getattr` avec des valeurs de repli
+      qui doublonnent les défauts de `Settings`
+- [ ] `.env.example` propose `SCAN_UPLOAD_DIR` sans dire qu'il est ignoré sous
+      Docker (chemin du volume fixe)
+- [ ] Le README ne recommande pas HSTS sur le terminateur TLS placé devant Nginx
+- [ ] Exports frontend sans autre usage : `ASSET_TYPES`, `curlCommand`,
+      `STATUS_LABELS`, `errorMessage`
+
