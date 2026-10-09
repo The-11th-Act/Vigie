@@ -32,6 +32,7 @@ from app.services.ticketing import (
 from app.services.tickets import create_tickets, sync_tickets
 
 ROLLUP = remediation("kb", "KB5034127", title="January rollup")
+FEBRUARY = remediation("kb", "KB5034768", title="February rollup")
 HOSTS = {"10.0.0.1": "Servers", "10.0.0.2": "Servers", "10.0.1.1": "Workplace"}
 OTHER_KEY = "another-instance-signing-key-0123456789abcdef"
 
@@ -50,6 +51,7 @@ class FakeTool:
         self.next_id = 100
         self.down = False
         self.refuse: set[int] = set()  # Vigie ticket ids whose creation fails
+        self.refuse_updates = False
         self.sessions = 0
 
     def open(self):
@@ -88,11 +90,18 @@ class FakeTool:
         self.tickets[ref]["notes"].append(message)
         return ExternalState.in_progress
 
+    def retarget(self, ref, export, message):
+        self.calls.append(("retarget", ref))
+        if self.refuse_updates:
+            raise ExternalTicketError("GLPI PUT Ticket: HTTP 400 ERROR_GLPI_UPDATE")
+        self.tickets[ref]["export"] = export
+        self.tickets[ref]["notes"].append(message)
+
     def made(self, kind):
         return [call for call in self.calls if call[0] == kind]
 
 
-def finding(ip, cve="CVE-2024-0001"):
+def finding(ip, cve="CVE-2024-0001", fix=ROLLUP):
     return {
         "ip_address": ip,
         "hostname": None,
@@ -102,7 +111,7 @@ def finding(ip, cve="CVE-2024-0001"):
         "description": None,
         "cvss_score": 8.0,
         "severity": "High",
-        "remediations": [ROLLUP],
+        "remediations": [fix],
     }
 
 
@@ -322,6 +331,108 @@ class TestVigieDecides:
         sync_tickets_with(db_session, tool)
         assert ("state", servers.external_ref) not in tool.calls
         assert overview(db_session, tool)["gone"] == 1
+
+
+def february_for_servers(db_session):
+    """The next scan asks the Servers hosts for the February rollup instead:
+    their ticket follows it (app/services/tickets.py, step 1b)."""
+    ingest_findings(
+        db_session,
+        [finding(ip, fix=FEBRUARY) for ip in ("10.0.0.1", "10.0.0.2")],
+        "nessus",
+        scanned_addresses={"10.0.0.1", "10.0.0.2"},
+    )
+    db_session.commit()
+
+
+class TestATicketFollowingALaterFix:
+    def test_the_tool_ticket_is_retitled_once_with_a_followup(
+        self, db_session, tickets, tool
+    ):
+        sync_tickets_with(db_session, tool)
+        servers = tickets["Servers"]
+        january = servers.action_id
+        assert servers.external_action_id == january
+        february_for_servers(db_session)
+        assert servers.action.reference == "KB5034768"
+
+        run = sync_tickets_with(db_session, tool)
+
+        assert (run.retargeted, run.pulled, run.exported) == (1, 0, 0)
+        ticket = tool.tickets[servers.external_ref]
+        assert ticket["export"].title == "Deploy KB5034768 — Servers"
+        assert ticket["export"].action.reference == "KB5034768"
+        assert sorted(h.ip_address for h in ticket["export"].hosts) == [
+            "10.0.0.1",
+            "10.0.0.2",
+        ]
+        assert "KB5034768 instead of KB5034127" in ticket["notes"][-1]
+        assert servers.external_action_id == servers.action_id != january
+        assert history(db_session, servers)[-1] == (
+            "glpi",
+            None,
+            "open",
+            f"GLPI ticket {servers.external_ref} updated for KB5034768",
+        )
+        # Told once; the other teams' tickets did not move.
+        assert sync_tickets_with(db_session, tool).retargeted == 0
+        assert tool.made("retarget") == [("retarget", servers.external_ref)]
+
+    def test_a_refused_update_is_retried_without_moving_the_ticket(
+        self, db_session, tickets, tool
+    ):
+        sync_tickets_with(db_session, tool)
+        servers = tickets["Servers"]
+        tool.tickets[servers.external_ref]["state"] = ExternalState.in_progress
+        sync_tickets_with(db_session, tool)
+        february_for_servers(db_session)
+        tool.refuse_updates = True
+
+        run = sync_tickets_with(db_session, tool)
+
+        assert (run.retargeted, run.errors) == (0, 1)
+        assert "ERROR_GLPI_UPDATE" in servers.external_error
+        assert servers.external_action_id != servers.action_id
+
+        tool.refuse_updates = False
+        run = sync_tickets_with(db_session, tool)
+        assert (run.retargeted, run.pulled) == (1, 0)
+        assert servers.external_error is None
+        assert servers.status == "in_progress"
+
+    def test_waits_while_the_tool_ticket_is_done(self, db_session, tickets, tool):
+        sync_tickets_with(db_session, tool)
+        servers = tickets["Servers"]
+        tool.tickets[servers.external_ref]["state"] = ExternalState.solved
+        sync_tickets_with(db_session, tool)
+        assert servers.status == "deployed"
+        february_for_servers(db_session)
+
+        # A followup could reopen it in the tool: nothing is sent.
+        assert sync_tickets_with(db_session, tool).retargeted == 0
+        assert tool.made("retarget") == []
+
+        tool.tickets[servers.external_ref]["state"] = ExternalState.in_progress
+        run = sync_tickets_with(db_session, tool)
+        assert (run.pulled, run.retargeted) == (1, 1)
+
+    def test_a_replacement_describes_the_new_fix_already(self, db_session, tickets, tool):
+        sync_tickets_with(db_session, tool)
+        servers = tickets["Servers"]
+        first = servers.external_ref
+        set_findings(db_session, servers, Status.remediated)
+        sync_tickets_with(db_session, tool)
+        tool.tickets[first]["state"] = ExternalState.closed
+        # The hosts come back, asking for the February rollup.
+        february_for_servers(db_session)
+        assert (servers.status, servers.action.reference) == ("open", "KB5034768")
+
+        run = sync_tickets_with(db_session, tool)
+
+        assert (run.replaced, run.retargeted) == (1, 0)
+        replacement = tool.tickets[servers.external_ref]["export"]
+        assert replacement.title == "Deploy KB5034768 — Servers"
+        assert servers.external_action_id == servers.action_id
 
 
 class TestOneInstanceOneServer:

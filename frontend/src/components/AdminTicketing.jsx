@@ -13,6 +13,7 @@ const RESULT_LABELS = {
   solved: 'solved',
   reopened: 'reopened',
   replaced: 'replaced',
+  retargeted: 'moved to a later fix',
   gone: 'deleted',
   foreign: 'other instance',
   errors: 'errors',

@@ -383,7 +383,10 @@ tool would be another connector). The worker syncs every
   solution is added. A finding back on a done ticket: the GLPI ticket goes
   back to processing with a followup, or is replaced by a new one when it is
   closed. GLPI closing a solved ticket on its own is not mistaken for the
-  team's work.
+  team's work. A ticket that follows its findings to a later fix gets the new
+  title and description in GLPI, with a followup naming the old and new fix
+  (urgency, group and category are left as the team set them); while the GLPI
+  ticket is solved, this waits until it is reopened.
 - **Links are the connector's.** They cannot be edited by hand (409), and are
   sealed with the instance's signing key and the GLPI address: a staging
   restored from production shows production's GLPI links but never touches
@@ -580,8 +583,8 @@ moves its ticket to *in progress* or *deployed*; the scans decide the rest:
   its open findings now call for one fix the team has no ticket for, the
   ticket itself moves to it, with a note; otherwise each finding joins the
   team's ticket for its new fix, or waits in the plan, and a ticket left
-  empty is cancelled. A ticket already exported to GLPI keeps its title
-  there;
+  empty is cancelled. A ticket already exported to GLPI is updated there
+  on the next sync;
 - cancelling (deciding not to fix) is an analyst's call and needs a note; the
   findings of a cancelled ticket can go into a new one.
 

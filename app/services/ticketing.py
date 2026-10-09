@@ -10,7 +10,9 @@ status the scans keep honest. A connector mirrors them in an external tool
   still decide when it is resolved;
 - Vigie's own decisions go out: a ticket resolved by the scans or cancelled
   is solved in the tool; a ticket with work again (a finding came back) is
-  reopened there, or replaced when the tool's ticket is closed for good.
+  reopened there, or replaced when the tool's ticket is closed for good; a
+  ticket that followed its findings to a later fix is retitled and described
+  anew there, with a followup saying why.
 
 Each side's changes are told from the other's by the external state last
 seen or set (``external_state``). A link is sealed to the instance and to the
@@ -141,6 +143,9 @@ class TicketConnector(ConnectorIdentity, Protocol):
     def reopen(self, ref: str, message: str) -> ExternalState:
         """Raises ExternalTicketClosed when the ticket can only be replaced."""
 
+    def retarget(self, ref: str, export: TicketExport, message: str) -> None:
+        """The ticket is now about another fix: new title and description."""
+
 
 @dataclass
 class SyncRun:
@@ -149,6 +154,7 @@ class SyncRun:
     solved: int = 0
     reopened: int = 0
     replaced: int = 0
+    retargeted: int = 0
     gone: int = 0
     foreign: int = 0
     errors: int = 0
@@ -377,6 +383,14 @@ def _sync_one(
 
         ticket.external_state = remote.value
         ticket.external_error = None
+        # Once the state is recorded: a failure here must not pass Vigie's
+        # own reopening for the team's progress on the next run.
+        if (
+            ticket.status in ACTIVE_TICKET_STATUSES
+            and remote.value not in DONE_STATES
+            and ticket.external_action_id != ticket.action_id
+        ):
+            _retarget(db, connector, ticket, run)
     except ExternalTicketError as exc:
         ticket.external_error = str(exc)[:MAX_ERROR_LENGTH]
         run.errors += 1
@@ -406,6 +420,36 @@ def _reopen(
         )
         run.replaced += 1
         return created.state
+
+
+def _retarget(
+    db: Session, connector: TicketConnector, ticket: RemediationTicket, run: SyncRun
+) -> None:
+    """Tell the tool the ticket follows a later fix (tickets.py, step 1b).
+
+    Left for later while the tool's ticket is done: a followup could reopen
+    it there. A replacement is created with the current fix anyway.
+    """
+    old = (
+        db.get(RemediationAction, ticket.external_action_id)
+        if ticket.external_action_id is not None
+        else None
+    )
+    new = ticket.action
+    message = (
+        f"This ticket now calls for {new.reference} instead of "
+        f"{old.reference if old else 'its previous fix'}: its findings now ask "
+        "for the later update. Title and description updated by Vigie."
+    )
+    connector.retarget(ticket.external_ref or "", _export_of(db, ticket), message)
+    ticket.external_action_id = ticket.action_id
+    _note(
+        db,
+        ticket,
+        connector,
+        f"{connector.label} ticket {ticket.external_ref} updated for {new.reference}",
+    )
+    run.retargeted += 1
 
 
 def _finished_message(ticket: RemediationTicket) -> str:
@@ -459,6 +503,7 @@ def _link(
     ticket.external_system = connector.name
     ticket.external_ref = created.ref
     ticket.external_url = created.url
+    ticket.external_action_id = ticket.action_id
     seal_link(ticket, connector)
 
 

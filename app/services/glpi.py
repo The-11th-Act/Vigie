@@ -14,6 +14,8 @@ requires one. A session is opened per run and closed at its end.
 - Vigie solves a ticket with an ITILSolution, and reopens it by moving it back
   to "processing (assigned)" with a followup saying why. A closed GLPI ticket
   cannot be reopened: the sync replaces it.
+- A ticket that follows a later fix gets the new title and description, and a
+  followup saying why.
 
 Tested against a simulated GLPI (tests/test_glpi.py) and, in the production
 stack test, against a stand-in server: check it against your own GLPI before
@@ -372,6 +374,25 @@ class GlpiConnector:
             raise ExternalTicketClosed(f"GLPI ticket {ref} is {current.value}")
         ticket_id = self._id(ref)
         self._client.call("PUT", f"Ticket/{ticket_id}", {"input": {"status": ASSIGNED}})
+        self._followup(ticket_id, message)
+        return ExternalState.in_progress
+
+    def retarget(self, ref: str, export: TicketExport, message: str) -> None:
+        # Urgency, group and category stay as the team may have set them.
+        ticket_id = self._id(ref)
+        self._client.call(
+            "PUT",
+            f"Ticket/{ticket_id}",
+            {
+                "input": {
+                    "name": export.title[:MAX_TITLE_LENGTH],
+                    "content": describe(export),
+                }
+            },
+        )
+        self._followup(ticket_id, message)
+
+    def _followup(self, ticket_id: int, message: str) -> None:
         self._client.call(
             "POST",
             "ITILFollowup",
@@ -383,7 +404,6 @@ class GlpiConnector:
                 }
             },
         )
-        return ExternalState.in_progress
 
 
 def glpi_connector() -> GlpiConnector | None:

@@ -369,6 +369,28 @@ class TestSolveAndReopen:
         assert server.tickets[int(ref)]["status"] == 2
         assert server.followups[-1]["content"] == "<p>A finding came back</p>"
 
+    def test_retargeted_with_a_new_title_description_and_followup(
+        self, connector, server, glpi_settings
+    ):
+        ref = connector.create(export(hosts=2)).ref
+        server.tickets[int(ref)]["urgency"] = 5  # raised by the team
+        later = export(hosts=3)
+        later.title = "Deploy KB5034768 — Servers"
+
+        connector.retarget(ref, later, "Now KB5034768 instead of KB5034127")
+
+        ticket = server.tickets[int(ref)]
+        assert ticket["name"] == "Deploy KB5034768 — Servers"
+        assert "srv-3 (10.0.0.3)" in ticket["content"]
+        assert ticket["urgency"] == 5 and ticket["status"] == 1
+        (update,) = server.calls("PUT", f"Ticket/{ref}")
+        assert set(update["input"]) == {"name", "content"}
+        assert server.followups[-1] == {
+            "itemtype": "Ticket",
+            "items_id": int(ref),
+            "content": "<p>Now KB5034768 instead of KB5034127</p>",
+        }
+
     def test_a_closed_ticket_cannot_be_reopened(self, connector, server, glpi_settings):
         ref = connector.create(export()).ref
         server.tickets[int(ref)]["status"] = 6

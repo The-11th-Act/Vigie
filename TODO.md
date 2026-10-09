@@ -758,9 +758,17 @@ check`, code mort (quasi nul).
       le ticket de l'équipe pour son nouveau correctif ou revient au plan, et
       un ticket vidé est annulé. Un finding dont le nouveau correctif est
       ambigu reste où il est)*
-- [ ] Un ticket déjà exporté vers GLPI y garde son ancien titre quand il suit
+- [x] Un ticket déjà exporté vers GLPI y garde son ancien titre quand il suit
       un nouveau KB : le connecteur n'exporte qu'à la création. Ajouter un
-      suivi (followup) GLPI au changement de correctif
+      suivi (followup) GLPI au changement de correctif *(09/10/2026 : colonne
+      `external_action_id`, le correctif que décrit le ticket externe
+      (migration 0026, remplie pour les liens existants). À la synchro, un
+      ticket actif dont le correctif a changé reçoit dans GLPI le nouveau titre,
+      la nouvelle description et un suivi nommant l'ancien et le nouveau KB ;
+      urgence, groupe et catégorie inchangés. Différé tant que le ticket GLPI
+      est résolu (un suivi pourrait le rouvrir) ; un remplacement naît déjà
+      avec le bon correctif. Un échec est réessayé sans faire passer la
+      réouverture de Vigie pour un geste de l'équipe)*
 
 ## Mineur
 - [ ] `ScanJob.uploader` (relation) jamais lue

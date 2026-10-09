@@ -72,6 +72,11 @@ class RemediationTicket(Base):
         DateTime(timezone=True), nullable=True
     )
     external_error: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # The fix the external ticket describes: behind action_id once the ticket
+    # follows a later KB, until the connector tells the tool.
+    external_action_id: Mapped[int | None] = mapped_column(
+        ForeignKey("remediation_actions.id", ondelete="SET NULL"), nullable=True
+    )
     created_by: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
@@ -85,7 +90,7 @@ class RemediationTicket(Base):
         DateTime(timezone=True), nullable=True
     )
 
-    action = relationship("RemediationAction")
+    action = relationship("RemediationAction", foreign_keys=[action_id])
     creator = relationship("User")
     findings = relationship(
         "TicketFinding", back_populates="ticket", cascade="all, delete-orphan"
